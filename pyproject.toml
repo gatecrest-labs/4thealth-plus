@@ -15,7 +15,7 @@ dependencies = [
     "paramiko>=5.0.0",
     "pyyaml>=6.0.3",
     "anthropic>=0.122.0",
-    "openai>=3.3.0",
+    "openai>=3.3.1",
     "scp>=0.16.1",
     "psutil>=7.2.2",
 ]
