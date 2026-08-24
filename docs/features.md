@@ -356,6 +356,40 @@ resp = requests.post(
 data = resp.json()
 ```
 
+### Executive Summary Endpoint
+
+The **4tExecutive dashboard** polls fleet-wide metrics from the `/external/api/executive/summary` endpoint:
+
+```http
+GET /external/api/executive/summary
+Authorization: Bearer 4th_<your-token>
+```
+
+Response:
+```json
+{
+  "hygiene_score": 87.3,
+  "version_compliance_pct": 91.2,
+  "pending_config_diff_count": 4,
+  "firewall_online_count": 212,
+  "firewalls_total": 218,
+  "status": "ok",
+  "last_updated": "2026-08-24T15:00:00Z"
+}
+```
+
+**Metrics:**
+- `hygiene_score` — findings-density across five cheap hygiene checks (unnamed, unlogged, disabled, expired, unhit), expressed as a 0–100 percentage; `null` if no policy packages are found.
+- `version_compliance_pct` — percentage of devices matching an admin-configured target version list; `null` if the list is not configured (see below).
+- `pending_config_diff_count` — total devices with out-of-sync or modified configuration across all ADOMs.
+- `firewall_online_count` / `firewalls_total` — connected vs. total FortiGate device count.
+- `status` — one of `pending`, `running`, `ok`, or `error`; lets consumers distinguish "not computed yet" from "real data."
+- `last_updated` — ISO 8601 timestamp of the last successful refresh.
+
+**Configuring Version Compliance:** In **Admin → External API**, add a comma-separated list of compliant firmware versions (e.g., `v7.4.1, v7.4.2`) to **Executive Compliant Versions**. Devices matching any version in that list count as compliant. Leave empty to report `version_compliance_pct: null` (better than a fabricated number with no target configured).
+
+**Note:** `last_backup_status` is intentionally omitted — this app backs up its own application config, not firewall device configs, so including it would mislead an executive about the firewall backup posture.
+
 ### Runtime Files
 
 | File | Purpose |
