@@ -73,3 +73,4 @@ def test_returns_summary_payload_when_authorized(client):
     assert data["hygiene_score"] == 87.3
     assert data["firewall_online_count"] == 212
     assert "last_backup_status" not in data
+    assert "error" not in data
