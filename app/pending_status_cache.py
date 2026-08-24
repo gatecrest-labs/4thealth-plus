@@ -47,6 +47,12 @@ def get_cached_devices(adom: str) -> list[dict] | None:
         return list(entry["devices"])
 
 
+def get_all_cached_devices() -> dict[str, list[dict]]:
+    """Return a snapshot of every cached ADOM's device list, keyed by ADOM name."""
+    with _lock:
+        return {adom: list(entry["devices"]) for adom, entry in _cache.items()}
+
+
 def get_cache_status() -> dict:
     """Return a snapshot of overall cache state."""
     with _lock:
