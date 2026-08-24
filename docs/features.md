@@ -386,7 +386,7 @@ Response:
 - `status` — one of `pending`, `running`, `ok`, or `error`; lets consumers distinguish "not computed yet" from "real data."
 - `last_updated` — ISO 8601 timestamp of the last successful refresh.
 
-**Configuring Version Compliance:** In **Admin → External API**, add a comma-separated list of compliant firmware versions (e.g., `v7.4.1, v7.4.2`) to **Executive Compliant Versions**. Devices matching any version in that list count as compliant. Leave empty to report `version_compliance_pct: null` (better than a fabricated number with no target configured).
+**Configuring Version Compliance:** In **Admin → External API**, add a comma-separated list of compliant firmware versions (e.g., `v7.4.1, v7.4.2`) to **Executive Summary — compliant firmware version(s)**. Devices matching any version in that list count as compliant. Leave empty to report `version_compliance_pct: null` (better than a fabricated number with no target configured).
 
 **Note:** `last_backup_status` is intentionally omitted — this app backs up its own application config, not firewall device configs, so including it would mislead an executive about the firewall backup posture.
 
@@ -394,7 +394,7 @@ Response:
 
 | File | Purpose |
 |---|---|
-| `app_settings.json` | Stores `external_api_enabled` flag (created automatically) |
+| `app_settings.json` | Stores `external_api_enabled`, `executive_compliant_versions`, and `ai_assist_enabled` (created automatically) |
 | `api_tokens.json` | Stores SHA-256 token hashes (created automatically) |
 
 ---

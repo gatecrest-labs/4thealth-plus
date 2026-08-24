@@ -5,12 +5,22 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 import pytest
 
 from app.executive_summary_cache import (
+    _HYGIENE_CHECKS,
     _classify_online,
     _device_version,
     _hygiene_score,
     _pending_diff_count,
     _version_compliance_pct,
 )
+
+
+# ── _HYGIENE_CHECKS ─────────────────────────────────────────────────────────
+
+def test_hygiene_checks_excludes_shadow():
+    # "shadow" needs live addr/svc resolvers and is deliberately excluded from
+    # the cheap check set used by the executive summary sweep — see spec
+    # decision 5.
+    assert "shadow" not in _HYGIENE_CHECKS
 
 
 # ── _classify_online ────────────────────────────────────────────────────────
@@ -174,6 +184,10 @@ def test_run_job_populates_store_from_mocked_fmg(monkeypatch, app_ctx):
         "app.pending_status_cache.get_all_cached_devices",
         lambda: {"Customer1": [{"conf_status": "outofsync", "db_status": "nomod", "pkg_status": "nomod"}]},
     )
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_cache_status",
+        lambda: {"status": "ok", "last_updated": "2026-08-24T00:00:00+00:00", "adoms_cached": 1, "error": None},
+    )
 
     fake_client = _fake_client()
     with patch("app.fmg_helpers.make_client", return_value=fake_client):
@@ -187,6 +201,31 @@ def test_run_job_populates_store_from_mocked_fmg(monkeypatch, app_ctx):
     assert summary["pending_config_diff_count"] == 1
     assert summary["hygiene_score"] is not None
     assert summary["last_updated"] is not None
+
+
+def test_run_job_pending_count_is_none_when_pending_cache_not_ok(monkeypatch, app_ctx):
+    # Even if get_all_cached_devices() would return data, an unavailable
+    # pending-status cache (not yet run, or errored) must not be trusted —
+    # reporting 0 pending diffs in that case would fabricate a number.
+    monkeypatch.setattr(
+        "app.app_settings.get_setting", lambda key, default=None: default
+    )
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_all_cached_devices",
+        lambda: {"Customer1": [{"conf_status": "outofsync", "db_status": "nomod", "pkg_status": "nomod"}]},
+    )
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_cache_status",
+        lambda: {"status": "pending", "last_updated": None, "adoms_cached": 0, "error": None},
+    )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        cache_mod._run_job(app_ctx)
+
+    summary = cache_mod.get_summary()
+    assert summary["status"] == "ok"
+    assert summary["pending_config_diff_count"] is None
 
 
 def test_run_job_only_counts_non_forti_adoms(monkeypatch, app_ctx):

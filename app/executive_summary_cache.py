@@ -128,7 +128,7 @@ def _run_job(app) -> None:
         from app.app_settings import get_setting
         from app.fmg_helpers import make_client
         from app.hygiene import run_checks
-        from app.pending_status_cache import get_all_cached_devices
+        from app.pending_status_cache import get_all_cached_devices, get_cache_status
 
         devices_flat: list[dict] = []
         total_findings = 0
@@ -192,13 +192,18 @@ def _run_job(app) -> None:
         online, total = _classify_online(devices_flat)
         compliant_versions = get_setting("executive_compliant_versions", [])
         compliance_pct = _version_compliance_pct(devices_flat, compliant_versions)
-        pending_count = _pending_diff_count(get_all_cached_devices())
+        pending_cache_status = get_cache_status()
+        pending_count = (
+            _pending_diff_count(get_all_cached_devices())
+            if pending_cache_status["status"] == "ok"
+            else None
+        )
         hygiene_score = _hygiene_score(total_findings, total_policies)
 
         elapsed = round(_time.monotonic() - t0, 1)
         logger.info(
             "executive_summary_cache: done in %ss — %d/%d online, "
-            "compliance=%s, pending=%d, hygiene=%s",
+            "compliance=%s, pending=%s, hygiene=%s",
             elapsed,
             online,
             total,
@@ -258,8 +263,20 @@ def init_scheduler(app):
         "executive_summary_cache: scheduler started — every %d minutes", interval_min
     )
 
+    # Fire immediately in a background thread so the first page load has data ASAP.
+    # One retry after 15 s handles transient FMG connectivity at container startup.
+    def _startup(app=app):
+        _run_job(app)
+        with _lock:
+            if _store["status"] != "ok":
+                logger.info(
+                    "executive_summary_cache: startup run failed, retrying in 15s"
+                )
+                _time.sleep(15)
+                _run_job(app)
+
     t = threading.Thread(
-        target=_run_job, args=[app], name="executive_summary_cache_startup", daemon=True
+        target=_startup, name="executive_summary_cache_startup", daemon=True
     )
     t.start()
 
