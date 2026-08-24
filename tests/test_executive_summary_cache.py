@@ -143,7 +143,9 @@ def _reset_store():
             "error": None,
             "last_updated": None,
         })
+    cache_mod._running.clear()
     yield
+    cache_mod._running.clear()
 
 
 def _fake_client():
