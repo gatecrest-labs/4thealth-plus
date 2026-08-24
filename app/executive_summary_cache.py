@@ -20,10 +20,7 @@ GET /external/api/executive/summary. See docs/superpowers/specs/
 from __future__ import annotations
 
 import logging
-import os
 import threading
-import time as _time
-from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +95,7 @@ def _device_version(d: dict) -> str:
     mr = d.get("mr")
     patch = d.get("patch")
     major = (
-        int(os_ver) // 100
-        if str(os_ver).isdigit() and int(os_ver) >= 100
-        else os_ver
+        int(os_ver) // 100 if str(os_ver).isdigit() and int(os_ver) >= 100 else os_ver
     )
     if mr is not None and patch is not None and int(patch) >= 0:
         return f"v{major}.{mr}.{patch}"
