@@ -150,6 +150,24 @@
     <span id="extApiToggleMsg" style="font-size:.83rem"></span>
   </div>
 
+  <!-- Executive summary: compliant firmware versions -->
+  <div style="margin-bottom:1.5rem;padding:.75rem 1rem;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px">
+    <label for="execCompliantVersions" style="display:block;font-weight:500;margin-bottom:.4rem">
+      Executive Summary — compliant firmware version(s)
+    </label>
+    <p class="text-muted" style="font-size:.82rem;margin:0 0 .5rem">
+      One version per line or comma-separated (e.g. <code>v7.4.3, v7.6.2</code>).
+      Used to compute <code>version_compliance_pct</code> for
+      <code>/external/api/executive/summary</code>. Leave empty to report
+      compliance as unavailable rather than a fabricated number.
+    </p>
+    <textarea id="execCompliantVersions" rows="3" style="width:100%;font-family:monospace"></textarea>
+    <div style="margin-top:.5rem;display:flex;align-items:center;gap:1rem">
+      <button class="btn btn-primary btn-sm" id="btnSaveExecVersions">Save</button>
+      <span id="execVersionsMsg" style="font-size:.83rem"></span>
+    </div>
+  </div>
+
   <!-- Token management -->
   <div class="admin-panel-header" style="margin-top:1rem">
     <div>
