@@ -40,6 +40,7 @@ External API tokens (JSON):
 """
 
 import os
+import re
 
 from flask import Blueprint, jsonify, render_template, request, session
 
@@ -290,6 +291,22 @@ def api_settings_put():
         set_setting("ai_assist_enabled", enabled)
         app_log(
             "INFO", "admin", "AI Assist toggled", by=session["user"], enabled=enabled
+        )
+    if "executive_compliant_versions" in data:
+        versions = data["executive_compliant_versions"]
+        if isinstance(versions, str):
+            versions = [v.strip() for v in re.split(r"[\n,]+", versions) if v.strip()]
+        elif isinstance(versions, list):
+            versions = [str(v).strip() for v in versions if str(v).strip()]
+        else:
+            versions = []
+        set_setting("executive_compliant_versions", versions)
+        app_log(
+            "INFO",
+            "admin",
+            "Executive compliant versions updated",
+            by=session["user"],
+            count=len(versions),
         )
     return jsonify(get_all_settings())
 
