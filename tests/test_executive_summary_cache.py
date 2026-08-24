@@ -2,6 +2,8 @@
 import os
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
+import pytest
+
 from app.executive_summary_cache import (
     _classify_online,
     _device_version,
@@ -119,3 +121,94 @@ def test_device_version_major_mr_only():
 
 def test_device_version_unknown():
     assert _device_version({"os_ver": 0, "mr": None, "patch": None}) == "n/a"
+
+
+# ── _run_job (mocked FMG client) ────────────────────────────────────────────
+
+from unittest.mock import MagicMock, patch
+
+import app.executive_summary_cache as cache_mod
+
+
+@pytest.fixture(autouse=True)
+def _reset_store():
+    with cache_mod._lock:
+        cache_mod._store.update({
+            "hygiene_score": None,
+            "version_compliance_pct": None,
+            "pending_config_diff_count": None,
+            "firewall_online_count": None,
+            "firewalls_total": None,
+            "status": "pending",
+            "error": None,
+            "last_updated": None,
+        })
+    yield
+
+
+def _fake_client():
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.get_adoms.return_value = [{"name": "Customer1"}, {"name": "FortiForticloud"}]
+    client.get_devices.return_value = [
+        {"name": "FW1", "conn_status": 1, "os_ver": 700, "mr": 4, "patch": 3},
+        {"name": "FW2", "conn_status": 0, "os_ver": 700, "mr": 4, "patch": 3},
+    ]
+    client.get_policy_packages.return_value = [{"path": "default", "name": "default"}]
+    client.get_policies.return_value = [
+        {"policyid": 1, "name": "", "status": 1, "logtraffic": 0},  # unnamed + unlogged
+        {"policyid": 2, "name": "allow-web", "status": 1, "logtraffic": 2},
+    ]
+    return client
+
+
+def test_run_job_populates_store_from_mocked_fmg(monkeypatch, app_ctx):
+    monkeypatch.setattr(
+        "app.app_settings.get_setting",
+        lambda key, default=None: ["v7.4.3"] if key == "executive_compliant_versions" else default,
+    )
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_all_cached_devices",
+        lambda: {"Customer1": [{"conf_status": "outofsync", "db_status": "nomod", "pkg_status": "nomod"}]},
+    )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        cache_mod._run_job(app_ctx)
+
+    summary = cache_mod.get_summary()
+    assert summary["status"] == "ok"
+    assert summary["firewalls_total"] == 2
+    assert summary["firewall_online_count"] == 1
+    assert summary["version_compliance_pct"] == 100.0  # both devices are v7.4.3
+    assert summary["pending_config_diff_count"] == 1
+    assert summary["hygiene_score"] is not None
+    assert summary["last_updated"] is not None
+
+
+def test_run_job_only_counts_non_forti_adoms(monkeypatch, app_ctx):
+    monkeypatch.setattr(
+        "app.app_settings.get_setting", lambda key, default=None: default
+    )
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_all_cached_devices", lambda: {}
+    )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        cache_mod._run_job(app_ctx)
+
+    # get_devices/get_policy_packages must only be called for "Customer1",
+    # not "FortiForticloud"
+    assert fake_client.get_devices.call_count == 1
+    fake_client.get_devices.assert_called_with("Customer1")
+
+
+def test_run_job_sets_error_status_on_exception(monkeypatch, app_ctx):
+    with patch("app.fmg_helpers.make_client", side_effect=RuntimeError("boom")):
+        cache_mod._run_job(app_ctx)
+
+    summary = cache_mod.get_summary()
+    assert summary["status"] == "error"
+    assert "boom" in summary["error"]
