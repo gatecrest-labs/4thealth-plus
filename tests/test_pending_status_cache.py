@@ -51,3 +51,48 @@ def test_get_cache_status_initial():
     status = mod.get_cache_status()
     assert status["status"] == "pending"
     assert status["adoms_cached"] == 0
+
+
+def test_get_all_cached_devices_returns_empty_dict_when_empty():
+    import importlib
+    import app.pending_status_cache as mod
+    importlib.reload(mod)
+    assert mod.get_all_cached_devices() == {}
+
+
+def test_get_all_cached_devices_returns_snapshot_across_adoms():
+    import importlib
+    import app.pending_status_cache as mod
+    importlib.reload(mod)
+
+    with mod._lock:
+        mod._cache["ADOM1"] = {
+            "devices": [{"name": "FW1", "conf_status": "outofsync"}],
+            "last_updated": "2026-07-17T01:00:00",
+        }
+        mod._cache["ADOM2"] = {
+            "devices": [{"name": "FW2", "conf_status": "insync"}],
+            "last_updated": "2026-07-17T01:00:00",
+        }
+
+    result = mod.get_all_cached_devices()
+    assert result == {
+        "ADOM1": [{"name": "FW1", "conf_status": "outofsync"}],
+        "ADOM2": [{"name": "FW2", "conf_status": "insync"}],
+    }
+
+
+def test_get_all_cached_devices_returns_copies_not_references():
+    import importlib
+    import app.pending_status_cache as mod
+    importlib.reload(mod)
+
+    with mod._lock:
+        mod._cache["ADOM1"] = {
+            "devices": [{"name": "FW1"}],
+            "last_updated": "2026-07-17T01:00:00",
+        }
+
+    result = mod.get_all_cached_devices()
+    result["ADOM1"].append({"name": "INJECTED"})
+    assert len(mod._cache["ADOM1"]["devices"]) == 1

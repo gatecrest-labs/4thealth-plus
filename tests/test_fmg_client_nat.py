@@ -76,3 +76,31 @@ def test_get_ippool_objects_graceful_on_error():
         result = client.get_ippool_objects("TestADOM")
 
     assert result == []
+
+
+def test_get_device_vip_objects_returns_paged_result():
+    client = _make_client()
+    device_vips = [{"name": "vip-dev", "extip": "9.9.9.9"}]
+
+    captured = {}
+    def fake_paged(url):
+        captured["url"] = url
+        return device_vips
+
+    with patch.object(client, "_get_paged", side_effect=fake_paged):
+        result = client.get_device_vip_objects("FW01", "root")
+
+    assert result == device_vips
+    assert captured["url"] == "/pm/config/device/FW01/vdom/root/firewall/vip"
+
+
+def test_get_device_vip_objects_graceful_on_error():
+    client = _make_client()
+
+    def fake_paged(url):
+        raise Exception("FMG unreachable")
+
+    with patch.object(client, "_get_paged", side_effect=fake_paged):
+        result = client.get_device_vip_objects("FW01")
+
+    assert result == []

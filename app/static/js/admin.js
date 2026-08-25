@@ -325,6 +325,8 @@
     if (!settingsRes.ok) return;
     const settings = await settingsRes.json();
     document.getElementById('extApiEnabled').checked = !!settings.external_api_enabled;
+    document.getElementById('execCompliantVersions').value =
+      (settings.executive_compliant_versions || []).join('\n');
 
     if (tokensRes.ok) {
       const tokens = await tokensRes.json();
@@ -368,6 +370,25 @@
     if (res.ok) {
       msgEl.textContent = enabled ? 'External API enabled.' : 'External API disabled.';
       msgEl.style.color = enabled ? 'var(--success)' : 'var(--warning)';
+    } else {
+      msgEl.textContent = 'Failed to save.';
+      msgEl.style.color = 'var(--danger)';
+    }
+    setTimeout(() => { msgEl.textContent = ''; }, 3000);
+  });
+
+  // Save executive-summary compliant versions
+  document.getElementById('btnSaveExecVersions').addEventListener('click', async () => {
+    const raw = document.getElementById('execCompliantVersions').value;
+    const msgEl = document.getElementById('execVersionsMsg');
+    const res = await fetch('/admin/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ executive_compliant_versions: raw }),
+    });
+    if (res.ok) {
+      msgEl.textContent = 'Saved.';
+      msgEl.style.color = 'var(--success)';
     } else {
       msgEl.textContent = 'Failed to save.';
       msgEl.style.color = 'var(--danger)';

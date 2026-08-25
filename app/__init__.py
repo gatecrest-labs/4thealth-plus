@@ -140,6 +140,16 @@ def create_app(test_config: dict | None = None) -> Flask:
         init_pending_status_scheduler(app)
 
     if not app.config.get("TESTING") and not app.config.get(
+        "_EXEC_SUMMARY_CACHE_STARTED"
+    ):
+        app.config["_EXEC_SUMMARY_CACHE_STARTED"] = True
+        from app.executive_summary_cache import (
+            init_scheduler as init_exec_summary_scheduler,
+        )
+
+        init_exec_summary_scheduler(app)
+
+    if not app.config.get("TESTING") and not app.config.get(
         "_CONFIG_DIFF_SCHEDULER_STARTED"
     ):
         app.config["_CONFIG_DIFF_SCHEDULER_STARTED"] = True

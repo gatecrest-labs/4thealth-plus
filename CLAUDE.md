@@ -553,15 +553,17 @@ Provides read-only zone policy access to external programs (e.g. FW-Analyst) via
 - `POST /external/api/zone/query` — same payload/response as internal `/api/zone/query`
 - `GET  /external/api/zone/zones` — zone list
 - `GET  /external/api/zone/policies` — policy list
+- `GET  /external/api/executive/summary` — fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance %, pending config-diff count, firewall online count/total); backed by `app/executive_summary_cache.py`, which runs TWO independent scheduled sweeps at different cadences — a cheap device sweep (online count, version compliance, pending diffs; default every 15 min, `EXEC_SUMMARY_REFRESH_MINUTES`) and an expensive hygiene sweep (downloads every policy in every ADOM; default every 60 min, `EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES` — raise this in large environments to reduce FMG load). Each sweep only updates its own fields in the shared store, so a slow hygiene sweep never blanks out fresh device data.
 
 **CSRF:** `/external/api/` requests are exempt from CSRF validation (bearer token is the auth mechanism, no session cookie exists).
 
 **Supporting modules:**
 - `app/app_settings.py` — atomic read/write of `app_settings.json` (feature flags)
 - `app/api_tokens.py` — token create/list/revoke/validate; tokens stored as SHA-256 hashes
+- `app/executive_summary_cache.py` — background sweep computing the four executive-summary metrics; same pending|running|ok|error store pattern as `summary_job.py`
 
 **Admin endpoints added to `admin_routes.py`:**
-- `GET/PUT /admin/api/settings` — get/set `external_api_enabled`
+- `GET/PUT /admin/api/settings` — get/set `external_api_enabled` and `executive_compliant_versions`
 - `GET /admin/api/tokens` — list tokens
 - `POST /admin/api/tokens` — create token (returns plaintext once)
 - `DELETE /admin/api/tokens/<id>` — revoke token

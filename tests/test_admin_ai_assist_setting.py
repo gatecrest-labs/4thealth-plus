@@ -102,3 +102,46 @@ def test_ai_usage_response_includes_summary_fields(admin_client):
     assert data["total_cost_usd"] == 0.05
     assert len(data["buckets"]) == 1
     assert "start" in data and "end" in data
+
+
+def test_settings_get_includes_executive_compliant_versions(admin_client):
+    resp = admin_client.get("/admin/api/settings")
+    assert resp.status_code == 200
+    assert "executive_compliant_versions" in resp.get_json()
+
+
+def test_settings_put_accepts_list_of_versions(admin_client):
+    with patch("app.routes.admin_routes.set_setting") as mock_set:
+        resp = admin_client.put(
+            "/admin/api/settings",
+            json={"executive_compliant_versions": ["v7.4.3", "v7.6.2"]},
+            headers={"X-CSRF-Token": "test-csrf"},
+        )
+    assert resp.status_code == 200
+    mock_set.assert_any_call(
+        "executive_compliant_versions", ["v7.4.3", "v7.6.2"]
+    )
+
+
+def test_settings_put_splits_comma_and_newline_separated_string(admin_client):
+    with patch("app.routes.admin_routes.set_setting") as mock_set:
+        resp = admin_client.put(
+            "/admin/api/settings",
+            json={"executive_compliant_versions": "v7.4.3,\nv7.6.2, v7.6.3"},
+            headers={"X-CSRF-Token": "test-csrf"},
+        )
+    assert resp.status_code == 200
+    mock_set.assert_any_call(
+        "executive_compliant_versions", ["v7.4.3", "v7.6.2", "v7.6.3"]
+    )
+
+
+def test_settings_put_empty_string_clears_versions(admin_client):
+    with patch("app.routes.admin_routes.set_setting") as mock_set:
+        resp = admin_client.put(
+            "/admin/api/settings",
+            json={"executive_compliant_versions": ""},
+            headers={"X-CSRF-Token": "test-csrf"},
+        )
+    assert resp.status_code == 200
+    mock_set.assert_any_call("executive_compliant_versions", [])

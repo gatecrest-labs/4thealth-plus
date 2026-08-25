@@ -12,6 +12,7 @@ _SETTINGS_PATH = Path(__file__).parent.parent / "app_settings.json"
 _DEFAULTS: dict = {
     "external_api_enabled": False,
     "ai_assist_enabled": False,
+    "executive_compliant_versions": [],
 }
 _lock = threading.Lock()
 
