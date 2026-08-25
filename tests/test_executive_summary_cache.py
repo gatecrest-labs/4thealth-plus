@@ -133,7 +133,7 @@ def test_device_version_unknown():
     assert _device_version({"os_ver": 0, "mr": None, "patch": None}) == "n/a"
 
 
-# ── _run_job (mocked FMG client) ────────────────────────────────────────────
+# ── _run_device_sweep / _run_hygiene_sweep (mocked FMG client) ──────────────
 
 from unittest.mock import MagicMock, patch
 
@@ -153,9 +153,11 @@ def _reset_store():
             "error": None,
             "last_updated": None,
         })
-    cache_mod._running.clear()
+    cache_mod._device_running.clear()
+    cache_mod._hygiene_running.clear()
     yield
-    cache_mod._running.clear()
+    cache_mod._device_running.clear()
+    cache_mod._hygiene_running.clear()
 
 
 def _fake_client():
@@ -175,7 +177,10 @@ def _fake_client():
     return client
 
 
-def test_run_job_populates_store_from_mocked_fmg(monkeypatch, app_ctx):
+# ── _run_device_sweep ────────────────────────────────────────────────────────
+
+
+def test_run_device_sweep_populates_store_from_mocked_fmg(monkeypatch, app_ctx):
     monkeypatch.setattr(
         "app.app_settings.get_setting",
         lambda key, default=None: ["v7.4.3"] if key == "executive_compliant_versions" else default,
@@ -191,19 +196,45 @@ def test_run_job_populates_store_from_mocked_fmg(monkeypatch, app_ctx):
 
     fake_client = _fake_client()
     with patch("app.fmg_helpers.make_client", return_value=fake_client):
-        cache_mod._run_job(app_ctx)
+        result = cache_mod._run_device_sweep(app_ctx)
 
+    assert result is True
     summary = cache_mod.get_summary()
     assert summary["status"] == "ok"
     assert summary["firewalls_total"] == 2
     assert summary["firewall_online_count"] == 1
     assert summary["version_compliance_pct"] == 100.0  # both devices are v7.4.3
     assert summary["pending_config_diff_count"] == 1
-    assert summary["hygiene_score"] is not None
     assert summary["last_updated"] is not None
+    # The device sweep never touches hygiene_score — it's the other sweep's job.
+    assert summary["hygiene_score"] is None
+    fake_client.get_policy_packages.assert_not_called()
+    fake_client.get_policies.assert_not_called()
 
 
-def test_run_job_pending_count_is_none_when_pending_cache_not_ok(monkeypatch, app_ctx):
+def test_run_device_sweep_preserves_existing_hygiene_score(monkeypatch, app_ctx):
+    with cache_mod._lock:
+        cache_mod._store["hygiene_score"] = 87.3
+
+    monkeypatch.setattr(
+        "app.app_settings.get_setting", lambda key, default=None: default
+    )
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_all_cached_devices", lambda: {}
+    )
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_cache_status",
+        lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
+    )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        cache_mod._run_device_sweep(app_ctx)
+
+    assert cache_mod.get_summary()["hygiene_score"] == 87.3
+
+
+def test_run_device_sweep_pending_count_is_none_when_pending_cache_not_ok(monkeypatch, app_ctx):
     # Even if get_all_cached_devices() would return data, an unavailable
     # pending-status cache (not yet run, or errored) must not be trusted —
     # reporting 0 pending diffs in that case would fabricate a number.
@@ -221,35 +252,119 @@ def test_run_job_pending_count_is_none_when_pending_cache_not_ok(monkeypatch, ap
 
     fake_client = _fake_client()
     with patch("app.fmg_helpers.make_client", return_value=fake_client):
-        cache_mod._run_job(app_ctx)
+        cache_mod._run_device_sweep(app_ctx)
 
     summary = cache_mod.get_summary()
     assert summary["status"] == "ok"
     assert summary["pending_config_diff_count"] is None
 
 
-def test_run_job_only_counts_non_forti_adoms(monkeypatch, app_ctx):
+def test_run_device_sweep_only_counts_non_forti_adoms(monkeypatch, app_ctx):
     monkeypatch.setattr(
         "app.app_settings.get_setting", lambda key, default=None: default
     )
     monkeypatch.setattr(
         "app.pending_status_cache.get_all_cached_devices", lambda: {}
     )
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_cache_status",
+        lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
+    )
 
     fake_client = _fake_client()
     with patch("app.fmg_helpers.make_client", return_value=fake_client):
-        cache_mod._run_job(app_ctx)
+        cache_mod._run_device_sweep(app_ctx)
 
-    # get_devices/get_policy_packages must only be called for "Customer1",
-    # not "FortiForticloud"
+    # get_devices must only be called for "Customer1", not "FortiForticloud"
     assert fake_client.get_devices.call_count == 1
     fake_client.get_devices.assert_called_with("Customer1")
 
 
-def test_run_job_sets_error_status_on_exception(monkeypatch, app_ctx):
+def test_run_device_sweep_sets_error_status_on_exception(monkeypatch, app_ctx):
     with patch("app.fmg_helpers.make_client", side_effect=RuntimeError("boom")):
-        cache_mod._run_job(app_ctx)
+        result = cache_mod._run_device_sweep(app_ctx)
 
+    assert result is False
     summary = cache_mod.get_summary()
     assert summary["status"] == "error"
     assert "boom" in summary["error"]
+
+
+def test_run_device_sweep_skips_when_already_running():
+    cache_mod._device_running.set()
+    try:
+        result = cache_mod._run_device_sweep(None)
+    finally:
+        cache_mod._device_running.clear()
+    assert result is False
+
+
+# ── _run_hygiene_sweep ───────────────────────────────────────────────────────
+
+
+def test_run_hygiene_sweep_populates_hygiene_score_only(app_ctx):
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = cache_mod._run_hygiene_sweep(app_ctx)
+
+    assert result is True
+    summary = cache_mod.get_summary()
+    assert summary["status"] == "ok"
+    assert summary["hygiene_score"] is not None
+    assert summary["last_updated"] is not None
+    # The hygiene sweep never touches device-sweep fields.
+    assert summary["firewall_online_count"] is None
+    assert summary["firewalls_total"] is None
+    assert summary["version_compliance_pct"] is None
+    assert summary["pending_config_diff_count"] is None
+    fake_client.get_devices.assert_not_called()
+
+
+def test_run_hygiene_sweep_preserves_existing_device_fields(app_ctx):
+    with cache_mod._lock:
+        cache_mod._store.update(
+            {
+                "firewall_online_count": 5,
+                "firewalls_total": 6,
+                "version_compliance_pct": 90.0,
+                "pending_config_diff_count": 2,
+            }
+        )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        cache_mod._run_hygiene_sweep(app_ctx)
+
+    summary = cache_mod.get_summary()
+    assert summary["firewall_online_count"] == 5
+    assert summary["firewalls_total"] == 6
+    assert summary["version_compliance_pct"] == 90.0
+    assert summary["pending_config_diff_count"] == 2
+
+
+def test_run_hygiene_sweep_only_counts_non_forti_adoms(app_ctx):
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        cache_mod._run_hygiene_sweep(app_ctx)
+
+    assert fake_client.get_policy_packages.call_count == 1
+    fake_client.get_policy_packages.assert_called_with("Customer1")
+
+
+def test_run_hygiene_sweep_sets_error_status_on_exception():
+    with patch("app.fmg_helpers.make_client", side_effect=RuntimeError("boom")):
+        result = cache_mod._run_hygiene_sweep(None)
+
+    assert result is False
+    summary = cache_mod.get_summary()
+    assert summary["status"] == "error"
+    assert "boom" in summary["error"]
+
+
+def test_run_hygiene_sweep_skips_when_already_running():
+    cache_mod._hygiene_running.set()
+    try:
+        result = cache_mod._run_hygiene_sweep(None)
+    finally:
+        cache_mod._hygiene_running.clear()
+    assert result is False
