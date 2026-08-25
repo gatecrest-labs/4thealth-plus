@@ -1245,7 +1245,7 @@ git commit -m "Add PSIRT workaround_checks module with real trusted-hosts check"
 
 **Interfaces:**
 - Consumes: `app.psirt.models.{Advisory, AffectedRange, DeviceFinding, PsirtAssessment}`, `app.psirt.enrich.enrich_advisory`, `app.psirt.scoring.compute_priority`, `app.psirt.version_match.{version_in_range, VersionMatchError}`, `app.psirt.workaround_checks.{check_workaround, match_workaround_pattern}`
-- Produces: `assess(advisory: Advisory, fmg_client: Any, adom_scope: str, http_client: Any, kev_url: str, enrichment_enabled: bool = True) -> PsirtAssessment`. `adom_scope` is either one ADOM name or the literal `"*"` — when `"*"`, the caller (the route, Task 10) is responsible for passing only ADOMs the requesting user may access; `engine.py` itself has no user/session concept.
+- Produces: `assess(advisory: Advisory, fmg_client: Any, adom_scope: str, http_client: Any, kev_url: str, enrichment_enabled: bool = True, fetch_timeout: float = 5.0) -> PsirtAssessment`. `adom_scope` is either one ADOM name or the literal `"*"` — when `"*"`, the caller (the route, Task 11) is responsible for passing only ADOMs the requesting user may access; `engine.py` itself has no user/session concept. `fetch_timeout` forwards to `enrich_advisory()` — the route passes `Config.PSIRT_FETCH_TIMEOUT`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1589,14 +1589,20 @@ def assess(
     http_client: Any,
     kev_url: str,
     enrichment_enabled: bool = True,
+    fetch_timeout: float = 5.0,
 ) -> PsirtAssessment:
     """Main entry point.
 
     adom_scope: a single ADOM name, or "*" to scan every ADOM
     fmg_client.get_adoms() returns (caller is responsible for pre-filtering
     which ADOMs "*" may include for the requesting user).
+    fetch_timeout: seconds, forwarded to enrich_advisory()'s HTTP calls
+    (Config.PSIRT_FETCH_TIMEOUT at the route layer).
     """
-    advisory = enrich_advisory(advisory, http_client, kev_url, enrichment_enabled=enrichment_enabled)
+    advisory = enrich_advisory(
+        advisory, http_client, kev_url,
+        enrichment_enabled=enrichment_enabled, timeout=fetch_timeout,
+    )
     kev_hit = getattr(advisory, "_kev_hit", False)
 
     out_of_scope = sorted({
@@ -2530,7 +2536,7 @@ def test_extract_status_reports_disabled_by_default(client):
 
 
 def test_extract_status_reports_enabled(client):
-    with patch("app.app_settings.get_setting", return_value=True):
+    with patch("app.routes.psirt_routes.get_setting", return_value=True):
         resp = client.get("/api/device-review/psirt/extract-status")
     assert resp.get_json()["available"] is True
 
@@ -2796,6 +2802,7 @@ def psirt_assess_device():
                 advisory, client, adom, _http_client(),
                 Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else "",
                 enrichment_enabled=Config.PSIRT_ENRICHMENT_ENABLED,
+                fetch_timeout=Config.PSIRT_FETCH_TIMEOUT,
             )
     except FMGError as exc:
         return upstream_api_error("psirt", exc)
@@ -2852,6 +2859,7 @@ def psirt_assess_bulk():
                     advisory, client, adom_scope, _http_client(),
                     Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else "",
                     enrichment_enabled=Config.PSIRT_ENRICHMENT_ENABLED,
+                    fetch_timeout=Config.PSIRT_FETCH_TIMEOUT,
                 )
             else:
                 from app.psirt.scoring import compute_priority
@@ -2862,6 +2870,7 @@ def psirt_assess_bulk():
                         advisory, client, one_adom, _http_client(),
                         Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else "",
                         enrichment_enabled=Config.PSIRT_ENRICHMENT_ENABLED,
+                        fetch_timeout=Config.PSIRT_FETCH_TIMEOUT,
                     )
                     if merged is None:
                         merged = partial

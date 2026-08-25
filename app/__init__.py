@@ -13,6 +13,7 @@ _BLUEPRINT_MODULES = [
     "app.routes.admin_routes",
     "app.routes.hygiene_routes",
     "app.routes.device_review_routes",
+    "app.routes.psirt_routes",
     "app.routes.rule_review_routes",
     "app.routes.zone_routes",
     "app.routes.pending_changes_routes",
