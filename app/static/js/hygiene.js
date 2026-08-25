@@ -1646,7 +1646,7 @@ async function runNatLookup() {
       return;
     }
     nlAllResults = data.results || [];
-    nlMeta       = { adom, ip: data.searched_ip || query };
+    nlMeta       = { adom, ip: data.searched_ip || query, objects_checked: data.objects_checked || null };
     nlPage       = 1;
     nlFilter     = '';
     document.getElementById('nlFilter').value = '';
@@ -1669,6 +1669,7 @@ function applyNlFilter() {
   nlFiltered = nlAllResults.filter(r =>
     (r.name       || '').toLowerCase().includes(q) ||
     (r.nat_type   || '').toLowerCase().includes(q) ||
+    (r.device     || '').toLowerCase().includes(q) ||
     (r.ext_ip     || '').toLowerCase().includes(q) ||
     (r.mapped_ip  || '').toLowerCase().includes(q) ||
     (r.start_ip   || '').toLowerCase().includes(q) ||
@@ -1688,10 +1689,18 @@ function renderNlTable() {
   const shown = rows.length === nlAllResults.length
     ? `${nlAllResults.length} result${nlAllResults.length !== 1 ? 's' : ''}`
     : `${rows.length} of ${nlAllResults.length} result${nlAllResults.length !== 1 ? 's' : ''}`;
+  const nlCheckedSuffix = (() => {
+    const oc = meta.objects_checked;
+    if (!oc) return '';
+    const vipPart = oc.devices > 0
+      ? `${oc.shared_vips} shared + ${oc.device_vips} device VIPs across ${oc.devices} device${oc.devices !== 1 ? 's' : ''}`
+      : `${oc.shared_vips} VIP${oc.shared_vips !== 1 ? 's' : ''}`;
+    return ` — searched ${vipPart}, ${oc.pools} pool${oc.pools !== 1 ? 's' : ''}`;
+  })();
   document.getElementById('nlSummary').textContent =
     nlAllResults.length === 0
-      ? `No NAT entries found for ${meta.ip || ''} in ${meta.adom || ''}`
-      : `${shown} for ${meta.ip || ''} in ${meta.adom || ''}`;
+      ? `No NAT entries found for ${meta.ip || ''} in ${meta.adom || ''}${nlCheckedSuffix}`
+      : `${shown} for ${meta.ip || ''} in ${meta.adom || ''}${nlCheckedSuffix}`;
   document.getElementById('nlCount').textContent =
     `${shown} — page ${nlPage} of ${total}`;
 
@@ -1704,33 +1713,37 @@ function renderNlTable() {
     const globalIdx = (nlPage - 1) * nlPageSize + i + 1;
     let extIp, mappedIp, extIntf, protPort, notes;
 
+    let deviceCell;
     if (r.nat_type === 'VIP') {
-      extIp    = esc(r.ext_ip || '—');
-      mappedIp = esc(r.mapped_ip || '—');
-      extIntf  = esc(r.ext_intf || '—');
-      protPort = r.port_forward && r.protocol
+      extIp      = esc(r.ext_ip || '—');
+      mappedIp   = esc(r.mapped_ip || '—');
+      extIntf    = esc(r.ext_intf || '—');
+      protPort   = r.port_forward && r.protocol
         ? esc(`${r.protocol}:${r.ext_port}→${r.mapped_port}`)
         : '—';
-      notes    = esc(r.comments || '—');
+      notes      = esc(r.comments || '—');
+      deviceCell = r.device ? `<span class="obj-type-badge" style="font-size:.72rem">${esc(r.device)}</span>` : '<span style="color:var(--text-muted);font-size:.8rem">shared</span>';
     } else {
-      extIp    = esc(`${r.start_ip}–${r.end_ip}`);
-      mappedIp = '—';
-      extIntf  = '—';
-      protPort = esc(r.pool_type || '—');
-      notes    = esc(r.comments || '—');
+      extIp      = esc(`${r.start_ip}–${r.end_ip}`);
+      mappedIp   = '—';
+      extIntf    = '—';
+      protPort   = esc(r.pool_type || '—');
+      notes      = esc(r.comments || '—');
+      deviceCell = '<span style="color:var(--text-muted);font-size:.8rem">shared</span>';
     }
 
     return `<tr>
       <td style="font-size:.8rem;color:var(--text-muted)">${globalIdx}</td>
       <td>${typeBadge(r.nat_type)}</td>
       <td><strong>${esc(r.name)}</strong></td>
+      <td style="font-size:.8rem">${deviceCell}</td>
       <td style="font-size:.8rem">${extIp}</td>
       <td style="font-size:.8rem">${mappedIp}</td>
       <td style="font-size:.8rem;color:var(--text-muted)">${extIntf}</td>
       <td style="font-size:.8rem">${protPort}</td>
       <td style="font-size:.8rem;color:var(--text-muted)">${notes}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="8" class="empty-state" style="padding:.85rem 1rem">No NAT entries match your filter.</td></tr>`;
+  }).join('') || `<tr><td colspan="9" class="empty-state" style="padding:.85rem 1rem">No NAT entries match your filter.</td></tr>`;
 
   renderNlPagination(total);
 }
@@ -1753,7 +1766,7 @@ function renderNlPagination(total) {
 /* ── NAT Lookup exports ─────────────────────────────────────────────────────── */
 function nlExportCsv() {
   const meta = nlMeta || {};
-  const header = ['#', 'Type', 'Name', 'External IP', 'Mapped / Pool IP', 'Interface', 'Protocol / Port', 'Notes'];
+  const header = ['#', 'Type', 'Name', 'Device', 'External IP', 'Mapped / Pool IP', 'Interface', 'Protocol / Port', 'Notes'];
   const fh = [
     `# ADOM: ${meta.adom || ''}`,
     `# IP: ${meta.ip || ''}`,
@@ -1768,7 +1781,7 @@ function nlExportCsv() {
     const intf    = r.nat_type === 'VIP' ? r.ext_intf : '';
     const pport   = r.nat_type === 'VIP' && r.port_forward && r.protocol
       ? `${r.protocol}:${r.ext_port}->${r.mapped_port}` : (r.pool_type || '');
-    lines.push([i + 1, q(r.nat_type), q(r.name), q(extIp), q(mapped), q(intf), q(pport), q(r.comments || '')].join(','));
+    lines.push([i + 1, q(r.nat_type), q(r.name), q(r.device || ''), q(extIp), q(mapped), q(intf), q(pport), q(r.comments || '')].join(','));
   });
   download('nat_lookup.csv', lines.join('\r\n'), 'text/csv');
 }
@@ -1800,6 +1813,7 @@ function nlExportPdf() {
       <td>${i + 1}</td>
       <td>${esc(r.nat_type)}</td>
       <td><strong>${esc(r.name)}</strong></td>
+      <td style="color:#5a6478">${esc(r.device || 'shared')}</td>
       <td>${esc(extIp)}</td>
       <td>${esc(mapped)}</td>
       <td>${esc(intf)}</td>
@@ -1822,7 +1836,7 @@ function nlExportPdf() {
 <h1>${esc(title)}</h1>
 <div class="meta">Generated ${ts} &bull; ${nlFiltered.length} of ${nlAllResults.length} results</div>
 <table>
-  <thead><tr><th>#</th><th>Type</th><th>Name</th><th>External IP</th><th>Mapped / Pool IP</th><th>Interface</th><th>Protocol / Port</th><th>Notes</th></tr></thead>
+  <thead><tr><th>#</th><th>Type</th><th>Name</th><th>Device</th><th>External IP</th><th>Mapped / Pool IP</th><th>Interface</th><th>Protocol / Port</th><th>Notes</th></tr></thead>
   <tbody>${tableRows}</tbody>
 </table>
 </body></html>`;
