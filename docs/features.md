@@ -384,7 +384,9 @@ Response:
 - `pending_config_diff_count` — total devices with out-of-sync or modified configuration across all ADOMs.
 - `firewall_online_count` / `firewalls_total` — connected vs. total FortiGate device count.
 - `status` — one of `pending`, `running`, `ok`, or `error`; lets consumers distinguish "not computed yet" from "real data."
-- `last_updated` — ISO 8601 timestamp of the last successful refresh.
+- `last_updated` — ISO 8601 timestamp of whichever sweep (see below) most recently completed.
+
+**Two independent background sweeps, on different cadences:** `hygiene_score` is expensive to compute — it downloads every policy in every package in every ADOM — so it refreshes on its own, much slower schedule (`EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES`, default 60 minutes) than the other four metrics (`EXEC_SUMMARY_REFRESH_MINUTES`, default 15 minutes), which only need one lightweight device-list call per ADOM. Each sweep only updates its own fields; the other sweep's most recent values are always preserved in between. In large environments (hundreds of FortiGates), raise `EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES` further to reduce load on FortiManager.
 
 **Configuring Version Compliance:** In **Admin → External API**, add a comma-separated list of compliant firmware versions (e.g., `v7.4.1, v7.4.2`) to **Executive Summary — compliant firmware version(s)**. Devices matching any version in that list count as compliant. Leave empty to report `version_compliance_pct: null` (better than a fabricated number with no target configured).
 

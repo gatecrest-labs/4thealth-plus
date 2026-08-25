@@ -1,20 +1,36 @@
 """Background cache for the executive-summary external API endpoint.
 
-Runs a periodic sweep (default every EXEC_SUMMARY_REFRESH_MINUTES=15 minutes)
-across every non-forti* ADOM, computing four fleet-wide metrics from a
-single per-ADOM device list plus a per-ADOM policy sweep:
+Runs TWO independent periodic sweeps, on different cadences, both writing
+into the same in-memory _store:
 
-  - firewall_online_count / firewalls_total  (device conn_status)
-  - version_compliance_pct                   (device version vs. an admin-
-                                                configured target list)
-  - pending_config_diff_count                (aggregated from the existing
-                                                pending_status_cache)
-  - hygiene_score                            (findings-density across a
-                                                restricted, cheap check set)
+  - Device sweep (default every EXEC_SUMMARY_REFRESH_MINUTES=15 minutes):
+    one get_devices() call per non-forti* ADOM, computing
+      - firewall_online_count / firewalls_total  (device conn_status)
+      - version_compliance_pct                   (device version vs. an
+                                                    admin-configured target
+                                                    list)
+      - pending_config_diff_count                (aggregated from the
+                                                    existing
+                                                    pending_status_cache)
+    Cheap — one lightweight call per ADOM.
 
-Results are held in _store and served instantly by
-GET /external/api/executive/summary. See docs/superpowers/specs/
-2026-08-24-executive-summary-api-design.md for the full rationale.
+  - Hygiene sweep (default every EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES=60
+    minutes): downloads every policy in every package in every non-forti*
+    ADOM to compute hygiene_score (findings-density across a restricted,
+    cheap check set). This is the expensive half — a full fleet-wide
+    policy-body download — so it runs on its own, much slower cadence,
+    independent of the device sweep's tighter interval. In between
+    hygiene-sweep runs, hygiene_score simply keeps its last computed value.
+
+Each sweep only ever writes its own subset of _store's keys (plus the
+shared status/error/last_updated, reflecting whichever sweep most recently
+completed) — a sweep never resets the other sweep's fields, so a slow or
+failing hygiene sweep never blanks out fresh device data and vice versa.
+
+Results are served instantly by GET /external/api/executive/summary. See
+docs/superpowers/specs/2026-08-24-executive-summary-api-design.md for the
+original rationale, and the split-cadence follow-up discussion for why the
+single-sweep design was split in two.
 """
 
 from __future__ import annotations
@@ -43,7 +59,8 @@ _store: dict = {
 }
 
 _lock = threading.Lock()
-_running = threading.Event()
+_device_running = threading.Event()
+_hygiene_running = threading.Event()
 
 
 def get_summary() -> dict:
@@ -107,42 +124,50 @@ def _device_version(d: dict) -> str:
     return "n/a"
 
 
-# ── FMG sweep ───────────────────────────────────────────────────────────────
+def _list_target_adoms(client) -> list[str]:
+    """Return non-forti* ADOM names from a live FMG client."""
+    adoms_raw = client.get_adoms()
+    return [
+        a.get("name", "")
+        for a in adoms_raw
+        if isinstance(a, dict)
+        and a.get("name")
+        and not a.get("name", "").lower().startswith("forti")
+    ]
 
 
-def _run_job(app) -> None:
-    """Sweep every non-forti* ADOM and refresh the summary store."""
-    if _running.is_set():
-        logger.info("executive_summary_cache: already running, skipping overlap")
-        return
+# ── Device sweep (cheap, frequent) ─────────────────────────────────────────────
 
-    _running.set()
+
+def _run_device_sweep(app) -> bool:
+    """Sweep device online/version data and pending-diff aggregation.
+
+    Returns True if the store was updated with a fresh "ok" result, False on
+    error or if a prior device sweep is still running (overlap skipped).
+    """
+    if _device_running.is_set():
+        logger.info(
+            "executive_summary_cache: device sweep already running, skipping overlap"
+        )
+        return False
+
+    _device_running.set()
     with _lock:
         _store["status"] = "running"
         _store["error"] = None
 
-    logger.info("executive_summary_cache: starting refresh")
+    logger.info("executive_summary_cache: starting device sweep")
     t0 = _time.monotonic()
 
     try:
         from app.app_settings import get_setting
         from app.fmg_helpers import make_client
-        from app.hygiene import run_checks
         from app.pending_status_cache import get_all_cached_devices, get_cache_status
 
         devices_flat: list[dict] = []
-        total_findings = 0
-        total_policies = 0
 
         with make_client() as client:
-            adoms_raw = client.get_adoms()
-            adom_names = [
-                a.get("name", "")
-                for a in adoms_raw
-                if isinstance(a, dict)
-                and a.get("name")
-                and not a.get("name", "").lower().startswith("forti")
-            ]
+            adom_names = _list_target_adoms(client)
 
             for adom in adom_names:
                 try:
@@ -163,6 +188,87 @@ def _run_job(app) -> None:
                         }
                     )
 
+        online, total = _classify_online(devices_flat)
+        compliant_versions = get_setting("executive_compliant_versions", [])
+        compliance_pct = _version_compliance_pct(devices_flat, compliant_versions)
+        pending_cache_status = get_cache_status()
+        pending_count = (
+            _pending_diff_count(get_all_cached_devices())
+            if pending_cache_status["status"] == "ok"
+            else None
+        )
+
+        elapsed = round(_time.monotonic() - t0, 1)
+        logger.info(
+            "executive_summary_cache: device sweep done in %ss — %d/%d online, "
+            "compliance=%s, pending=%s",
+            elapsed,
+            online,
+            total,
+            compliance_pct,
+            pending_count,
+        )
+
+        with _lock:
+            _store.update(
+                {
+                    "version_compliance_pct": compliance_pct,
+                    "pending_config_diff_count": pending_count,
+                    "firewall_online_count": online,
+                    "firewalls_total": total,
+                    "status": "ok",
+                    "error": None,
+                    "last_updated": datetime.now(UTC).isoformat(),
+                }
+            )
+        return True
+
+    except Exception as exc:
+        logger.exception("executive_summary_cache: device sweep unhandled error")
+        with _lock:
+            _store["status"] = "error"
+            _store["error"] = str(exc)
+        return False
+    finally:
+        _device_running.clear()
+
+
+# ── Hygiene sweep (expensive, slow cadence) ────────────────────────────────────
+
+
+def _run_hygiene_sweep(app) -> bool:
+    """Sweep fleet-wide policy findings to compute hygiene_score.
+
+    Downloads every policy in every package in every non-forti* ADOM — the
+    expensive half of the executive summary, deliberately run on its own,
+    much slower cadence than the device sweep. Returns True if the store
+    was updated with a fresh "ok" result, False on error or overlap.
+    """
+    if _hygiene_running.is_set():
+        logger.info(
+            "executive_summary_cache: hygiene sweep already running, skipping overlap"
+        )
+        return False
+
+    _hygiene_running.set()
+    with _lock:
+        _store["status"] = "running"
+        _store["error"] = None
+
+    logger.info("executive_summary_cache: starting hygiene sweep")
+    t0 = _time.monotonic()
+
+    try:
+        from app.fmg_helpers import make_client
+        from app.hygiene import run_checks
+
+        total_findings = 0
+        total_policies = 0
+
+        with make_client() as client:
+            adom_names = _list_target_adoms(client)
+
+            for adom in adom_names:
                 try:
                     packages = client.get_policy_packages(adom)
                 except Exception as exc:
@@ -189,26 +295,12 @@ def _run_job(app) -> None:
                     total_policies += len(policies)
                     total_findings += len(run_checks(policies, _HYGIENE_CHECKS))
 
-        online, total = _classify_online(devices_flat)
-        compliant_versions = get_setting("executive_compliant_versions", [])
-        compliance_pct = _version_compliance_pct(devices_flat, compliant_versions)
-        pending_cache_status = get_cache_status()
-        pending_count = (
-            _pending_diff_count(get_all_cached_devices())
-            if pending_cache_status["status"] == "ok"
-            else None
-        )
         hygiene_score = _hygiene_score(total_findings, total_policies)
 
         elapsed = round(_time.monotonic() - t0, 1)
         logger.info(
-            "executive_summary_cache: done in %ss — %d/%d online, "
-            "compliance=%s, pending=%s, hygiene=%s",
+            "executive_summary_cache: hygiene sweep done in %ss — hygiene=%s",
             elapsed,
-            online,
-            total,
-            compliance_pct,
-            pending_count,
             hygiene_score,
         )
 
@@ -216,67 +308,104 @@ def _run_job(app) -> None:
             _store.update(
                 {
                     "hygiene_score": hygiene_score,
-                    "version_compliance_pct": compliance_pct,
-                    "pending_config_diff_count": pending_count,
-                    "firewall_online_count": online,
-                    "firewalls_total": total,
                     "status": "ok",
                     "error": None,
                     "last_updated": datetime.now(UTC).isoformat(),
                 }
             )
+        return True
 
     except Exception as exc:
-        logger.exception("executive_summary_cache: unhandled error")
+        logger.exception("executive_summary_cache: hygiene sweep unhandled error")
         with _lock:
             _store["status"] = "error"
             _store["error"] = str(exc)
+        return False
     finally:
-        _running.clear()
+        _hygiene_running.clear()
 
 
 def refresh_now(app) -> None:
-    """Trigger an immediate background refresh (non-blocking)."""
-    t = threading.Thread(
-        target=_run_job, args=[app], name="executive_summary_cache_refresh", daemon=True
-    )
-    t.start()
+    """Trigger an immediate background refresh of both sweeps (non-blocking)."""
+    threading.Thread(
+        target=_run_device_sweep,
+        args=[app],
+        name="executive_summary_cache_device_refresh",
+        daemon=True,
+    ).start()
+    threading.Thread(
+        target=_run_hygiene_sweep,
+        args=[app],
+        name="executive_summary_cache_hygiene_refresh",
+        daemon=True,
+    ).start()
 
 
 def init_scheduler(app):
-    """Start the refresh scheduler and fire an initial warm-up immediately."""
+    """Start both refresh schedulers and fire initial warm-ups immediately."""
     from apscheduler.schedulers.background import BackgroundScheduler
 
-    interval_min = int(os.environ.get("EXEC_SUMMARY_REFRESH_MINUTES", "15"))
+    device_interval_min = int(os.environ.get("EXEC_SUMMARY_REFRESH_MINUTES", "15"))
+    hygiene_interval_min = int(
+        os.environ.get("EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES", "60")
+    )
 
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(
-        func=_run_job,
+        func=_run_device_sweep,
         args=[app],
         trigger="interval",
-        minutes=interval_min,
-        id="executive_summary_refresh",
-        name="Executive summary cache refresh",
+        minutes=device_interval_min,
+        id="executive_summary_device_refresh",
+        name="Executive summary device sweep",
+    )
+    scheduler.add_job(
+        func=_run_hygiene_sweep,
+        args=[app],
+        trigger="interval",
+        minutes=hygiene_interval_min,
+        id="executive_summary_hygiene_refresh",
+        name="Executive summary hygiene sweep",
     )
     scheduler.start()
     logger.info(
-        "executive_summary_cache: scheduler started — every %d minutes", interval_min
+        "executive_summary_cache: scheduler started — device every %d min, "
+        "hygiene every %d min",
+        device_interval_min,
+        hygiene_interval_min,
     )
 
-    # Fire immediately in a background thread so the first page load has data ASAP.
-    # One retry after 15 s handles transient FMG connectivity at container startup.
-    def _startup(app=app):
-        _run_job(app)
-        with _lock:
-            needs_retry = _store["status"] != "ok"
-        if needs_retry:
-            logger.info("executive_summary_cache: startup run failed, retrying in 15s")
+    # Fire both sweeps immediately in background threads so the first page
+    # load has data ASAP. One retry after 15 s each handles transient FMG
+    # connectivity at container startup. Each sweep's own return value (not
+    # a re-read of the shared _store["status"]) drives its own retry
+    # decision, since the two sweeps can run concurrently and would
+    # otherwise race on that shared field.
+    def _startup_device(app=app):
+        if not _run_device_sweep(app):
+            logger.info(
+                "executive_summary_cache: device startup run failed, retrying in 15s"
+            )
             _time.sleep(15)
-            _run_job(app)
+            _run_device_sweep(app)
 
-    t = threading.Thread(
-        target=_startup, name="executive_summary_cache_startup", daemon=True
-    )
-    t.start()
+    def _startup_hygiene(app=app):
+        if not _run_hygiene_sweep(app):
+            logger.info(
+                "executive_summary_cache: hygiene startup run failed, retrying in 15s"
+            )
+            _time.sleep(15)
+            _run_hygiene_sweep(app)
+
+    threading.Thread(
+        target=_startup_device,
+        name="executive_summary_cache_device_startup",
+        daemon=True,
+    ).start()
+    threading.Thread(
+        target=_startup_hygiene,
+        name="executive_summary_cache_hygiene_startup",
+        daemon=True,
+    ).start()
 
     return scheduler
