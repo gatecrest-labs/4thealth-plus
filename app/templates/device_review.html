@@ -9,6 +9,8 @@
   </div>
 </div>
 
+<div class="rr-section-label">CIS Hardening &amp; Interface Protocols</div>
+
 <!-- Selectors -->
 <div class="hygiene-selectors">
   <div class="hygiene-selector-row">
@@ -148,6 +150,98 @@
   <!-- Pagination -->
   <div class="pagination" id="drPager" style="margin-top:.75rem"></div>
 </div>
+
+<!-- ── PSIRT Advisory Assessment ──────────────────────────────────────────── -->
+<div class="rr-section-label" style="margin-top:2rem">PSIRT Advisory Assessment</div>
+
+<div class="hygiene-selectors">
+  <div class="hygiene-selector-row">
+    <label for="psirtAdom">ADOM</label>
+    <select id="psirtAdom" class="form-select">
+      <option value="">— select ADOM —</option>
+      <option value="*">All ADOMs</option>
+    </select>
+  </div>
+
+  <div class="hygiene-selector-row" style="margin-top:.6rem;align-items:flex-start">
+    <label style="padding-top:.3rem">Advisory</label>
+    <div style="flex:1">
+      <div style="display:flex;gap:.5rem;margin-bottom:.5rem">
+        <button class="btn btn-xs active" id="psirtModePaste" type="button">Paste text</button>
+        <button class="btn btn-xs" id="psirtModeFile" type="button">Upload file</button>
+      </div>
+      <textarea id="psirtEmailText" class="form-control" rows="8"
+        placeholder="Paste the full PSIRT advisory email text here…" style="width:100%"></textarea>
+      <input type="file" id="psirtEmailFile" accept=".eml,.txt" style="display:none" />
+    </div>
+  </div>
+
+  <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+    <button class="btn btn-primary" id="psirtExtractBtn" disabled>Extract Advisory</button>
+    <span id="psirtExtractRunning" class="text-muted" style="display:none;font-style:italic">Extracting…</span>
+    <span id="psirtExtractError" class="text-danger" style="display:none"></span>
+    <span id="psirtUnavailableNotice" class="text-muted" style="display:none;font-style:italic">
+      AI Assist is not enabled — an admin can turn it on under Admin → AI Assist.
+    </span>
+  </div>
+</div>
+
+<!-- Editable review form — populated after extraction -->
+<div id="psirtReviewForm" style="display:none;margin-top:1.25rem;padding:1rem;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px">
+  <div style="font-size:.8rem;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">
+    Review Extracted Fields — confirm or correct before running the assessment
+  </div>
+  <div class="hygiene-selector-row"><label>Advisory ID</label><input type="text" id="psirtFieldAdvisoryId" class="form-control" style="max-width:280px"></div>
+  <div class="hygiene-selector-row" style="margin-top:.5rem"><label>Advisory URL</label><input type="text" id="psirtFieldAdvisoryUrl" class="form-control" style="max-width:420px"></div>
+  <div class="hygiene-selector-row" style="margin-top:.5rem"><label>CVE ID(s)</label><input type="text" id="psirtFieldCveIds" class="form-control" style="max-width:420px" placeholder="comma-separated, e.g. CVE-2024-12345, CVE-2024-12346"></div>
+  <div class="hygiene-selector-row" style="margin-top:.5rem"><label>Severity</label><input type="text" id="psirtFieldSeverity" class="form-control" style="max-width:160px" placeholder="Critical / High / Medium / Low"></div>
+  <div class="hygiene-selector-row" style="margin-top:.5rem"><label>CVSS Score</label><input type="text" id="psirtFieldCvss" class="form-control" style="max-width:100px"></div>
+  <div class="hygiene-selector-row" style="margin-top:.5rem;align-items:flex-start"><label style="padding-top:.4rem">Workaround Text</label><textarea id="psirtFieldWorkaround" class="form-control" rows="2" style="width:100%;max-width:600px"></textarea></div>
+  <div class="hygiene-selector-row" style="margin-top:.5rem;align-items:flex-start"><label style="padding-top:.4rem">Exploitation Text</label><textarea id="psirtFieldExploited" class="form-control" rows="2" style="width:100%;max-width:600px"></textarea></div>
+
+  <div style="margin-top:.75rem">
+    <div style="font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.4rem">Affected Ranges</div>
+    <div id="psirtRangesRows"></div>
+    <button class="btn btn-xs" id="psirtAddRangeBtn" type="button" style="margin-top:.4rem">+ Add range</button>
+  </div>
+
+  <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem">
+    <button class="btn btn-primary" id="psirtRunBtn">Run Assessment</button>
+    <span id="psirtRunning" class="text-muted" style="display:none;font-style:italic">Scanning…</span>
+    <span id="psirtRunError" class="text-danger" style="display:none"></span>
+  </div>
+
+  <div id="psirtProgressWrap" style="display:none;margin-top:.9rem">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.3rem">
+      <span id="psirtProgressLabel" class="text-muted" style="font-size:.82rem"></span>
+    </div>
+    <div class="dr-progress-track"><div class="dr-progress-bar" id="psirtProgressBar">0%</div></div>
+  </div>
+</div>
+
+<!-- Results -->
+<div id="psirtResults" style="display:none;margin-top:1.5rem">
+  <div class="obj-lookup-result-header">
+    <span id="psirtSummary" class="obj-lookup-summary"></span>
+    <div class="hygiene-export-row">
+      <button class="btn btn-sm" id="psirtReportBtn">&#8659; View HTML Report</button>
+    </div>
+  </div>
+
+  <div id="psirtWarnings" class="alert alert-danger" style="display:none;margin-top:.5rem"></div>
+
+  <div class="table-wrapper" style="margin-top:.75rem">
+    <table class="data-table" id="psirtTable">
+      <thead>
+        <tr>
+          <th>Device</th><th>ADOM</th><th>Product</th><th>Current Version</th>
+          <th>In Range</th><th>Workaround</th><th>Verdict</th><th>Reason</th>
+        </tr>
+      </thead>
+      <tbody id="psirtTbody"></tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -156,4 +250,5 @@
 const CHECK_DEFS = {{ checks | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/device_review.js') }}?v=8"></script>
+<script src="{{ url_for('static', filename='js/psirt.js') }}?v=1"></script>
 {% endblock %}
