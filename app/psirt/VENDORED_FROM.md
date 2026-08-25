@@ -6,7 +6,7 @@ pattern documented in `app/planner/VENDORED_FROM.md`.
 
 - Source repo: `~/code/github/ai/4tanalyst`
 - Source path: `psirt/`
-- Ported from commit: (fill in with `git -C ~/code/github/ai/4tanalyst rev-parse HEAD` at port time)
+- Ported from commit: `41db7c1417949a0dcb3d24569134cc6a4deff828` (2026-08-25)
 - Port date: 2026-08-25
 
 ## Why a fork, not a dependency

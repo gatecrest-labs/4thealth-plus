@@ -3,6 +3,22 @@
 let psirtExtracted = null;   // last extracted Advisory dict, before/after edits
 let psirtAssessment = null;  // last completed PsirtAssessment dict
 
+/* ── ADOM loader ───────────────────────────────────────────────────────────── */
+async function loadPsirtAdoms() {
+  const sel = document.getElementById('psirtAdom');
+  try {
+    const resp = await fetch('/api/adoms');
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const adoms = await resp.json();
+    if (!Array.isArray(adoms)) return;
+    adoms.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.name; opt.textContent = a.name;
+      sel.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
 /* ── Availability check ───────────────────────────────────────────────────── */
 async function checkPsirtAvailability() {
   try {
@@ -160,7 +176,11 @@ async function runPsirtAssessment() {
   document.getElementById('psirtRunning').style.display = '';
   document.getElementById('psirtResults').style.display = 'none';
   document.getElementById('psirtProgressWrap').style.display = '';
-  showPsirtProgress(0, 1, 'Running assessment…');
+  // The bulk /assess endpoint is a single request covering an entire ADOM
+  // (or every accessible ADOM) — there's no per-device progress signal to
+  // report, so show an honest indeterminate indicator rather than a
+  // determinate bar stuck at "0%" for the whole scan.
+  showPsirtIndeterminateProgress('Scanning fleet — this may take a while…');
 
   try {
     const resp = await fetch('/api/device-review/psirt/assess', {
@@ -185,15 +205,16 @@ async function runPsirtAssessment() {
     document.getElementById('psirtRunBtn').disabled = false;
     document.getElementById('psirtRunning').style.display = 'none';
     document.getElementById('psirtProgressWrap').style.display = 'none';
+    document.getElementById('psirtProgressBar').classList.remove('indeterminate');
   }
 }
 
-function showPsirtProgress(done, total, label) {
+function showPsirtIndeterminateProgress(label) {
   const bar = document.getElementById('psirtProgressBar');
   const lbl = document.getElementById('psirtProgressLabel');
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  bar.style.width = pct + '%';
-  bar.textContent = pct + '%';
+  bar.classList.add('indeterminate');
+  bar.style.width = '';
+  bar.textContent = '';
   lbl.textContent = label;
 }
 
@@ -203,6 +224,31 @@ function renderPsirtResults(data) {
   const kevSuffix = data.kev_hit ? ' — KEV-LISTED' : '';
   document.getElementById('psirtSummary').textContent =
     `Priority: ${priorityLabel}${kevSuffix} — ${data.findings.length} device(s) evaluated. ${data.priority_rationale || ''}`;
+
+  const verdictCounts = {};
+  (data.findings || []).forEach(f => {
+    const v = f.verdict || 'unknown';
+    verdictCounts[v] = (verdictCounts[v] || 0) + 1;
+  });
+  const verdictEl = document.getElementById('psirtVerdictSummary');
+  const verdictParts = Object.keys(verdictCounts).sort().map(
+    v => `${verdictCounts[v]} ${v.replace(/_/g, ' ')}`
+  );
+  if (verdictParts.length) {
+    verdictEl.textContent = verdictParts.join(', ');
+    verdictEl.style.display = '';
+  } else {
+    verdictEl.style.display = 'none';
+  }
+
+  const oosEl = document.getElementById('psirtOutOfScope');
+  if (data.out_of_scope_products && data.out_of_scope_products.length) {
+    oosEl.textContent = 'Also mentioned but not matched by this tool — review manually: '
+      + data.out_of_scope_products.join(', ');
+    oosEl.style.display = '';
+  } else {
+    oosEl.style.display = 'none';
+  }
 
   const warnEl = document.getElementById('psirtWarnings');
   if (data.warnings && data.warnings.length) {
@@ -242,9 +288,22 @@ document.getElementById('psirtReportBtn').addEventListener('click', async () => 
     body: JSON.stringify({ assessment: psirtAssessment }),
   });
   const html = await resp.text();
+  const advisoryId = (psirtAssessment.advisory && psirtAssessment.advisory.advisory_id) || 'advisory';
+  downloadPsirtReport(`psirt-report-${advisoryId}.html`, html);
+  // Also open in a new tab for a quick look, same as before.
   const win = window.open('', '_blank');
   if (win) { win.document.write(html); win.document.close(); }
 });
 
+function downloadPsirtReport(filename, html) {
+  const a = document.createElement('a');
+  const bl = new Blob([html], { type: 'text/html' });
+  a.href = URL.createObjectURL(bl);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 /* ── Init ──────────────────────────────────────────────────────────────────── */
 checkPsirtAvailability();
+loadPsirtAdoms();

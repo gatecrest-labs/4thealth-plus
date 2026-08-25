@@ -141,6 +141,13 @@ def psirt_extract():
 @bp.route("/api/device-review/psirt/assess/device", methods=["POST"])
 @tab_required("device_review")
 def psirt_assess_device():
+    # NOTE: not currently called by the frontend (psirt.js only calls the
+    # bulk /assess endpoint below and drives its own per-device UI off the
+    # merged result). Runs a full ADOM-wide assess() — including both
+    # enrichment HTTP fetches — then filters to one device, so it is not
+    # efficient to drive in a per-device loop across many devices. Kept for
+    # API completeness / direct testing; building a true per-device engine
+    # entry point is a larger change out of scope for this fix wave.
     data = request.get_json(silent=True) or {}
     adom = (data.get("adom") or "").strip()
     device = (data.get("device") or "").strip()
@@ -217,29 +224,73 @@ def psirt_assess_bulk():
                     fetch_timeout=Config.PSIRT_FETCH_TIMEOUT,
                 )
             else:
+                if not allowed:
+                    return jsonify({"error": "You have no accessible ADOMs"}), 403
+
+                from app.psirt.enrich import enrich_advisory
                 from app.psirt.scoring import compute_priority
+
+                kev_url = Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else ""
+                # Enrich exactly once here (fortiguard.com page fetch + CISA
+                # KEV download) rather than once per ADOM — with N allowed
+                # ADOMs that would otherwise be 2*N external fetches inside a
+                # single request. Each per-ADOM psirt_assess() call below is
+                # passed enrichment_enabled=False; enrich_advisory() detects
+                # the already-enriched advisory (via the _kev_hit dynamic
+                # attribute) and passes its enrichment signal through
+                # unchanged rather than re-stomping it.
+                advisory = enrich_advisory(
+                    advisory, _http_client(), kev_url,
+                    enrichment_enabled=Config.PSIRT_ENRICHMENT_ENABLED,
+                    timeout=Config.PSIRT_FETCH_TIMEOUT,
+                )
 
                 merged = None
                 for one_adom in allowed:
                     partial = psirt_assess(
                         advisory, client, one_adom, _http_client(),
-                        Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else "",
-                        enrichment_enabled=Config.PSIRT_ENRICHMENT_ENABLED,
+                        kev_url,
+                        enrichment_enabled=False,
                         fetch_timeout=Config.PSIRT_FETCH_TIMEOUT,
                     )
                     if merged is None:
                         merged = partial
                     else:
-                        merged.findings.extend(partial.findings)
+                        # engine.assess() appends a "FortiManager (primary)"
+                        # finding whenever the advisory names FortiManager as
+                        # an affected product — that happens on every
+                        # per-ADOM call, so only keep it from the first
+                        # iteration to avoid N duplicate rows in the merge.
+                        new_findings = [
+                            f for f in partial.findings
+                            if not (f.device == "FortiManager (primary)" and f.adom == "-")
+                        ]
+                        merged.findings.extend(new_findings)
                         merged.warnings.extend(partial.warnings)
                         merged.degraded = merged.degraded or partial.degraded
                         merged.kev_hit = merged.kev_hit or partial.kev_hit
                 # Each per-ADOM psirt_assess() call computed priority from only
                 # that ADOM's findings — recompute once over the full merged
                 # set so "any device in range" reflects the whole scope, not
-                # just whichever ADOM happened to run first.
-                if merged is not None:
-                    any_in_range = any(f.in_range for f in merged.findings)
+                # just whichever ADOM happened to run first. Mirror engine.
+                # assess()'s degraded-coverage guards here too, so a partial
+                # ADOM failure elsewhere in the merge can't get reported as
+                # "informational / nothing to act on".
+                any_in_range = any(f.in_range for f in merged.findings)
+                if merged.degraded and not merged.findings:
+                    merged.priority = "unknown"
+                    merged.priority_rationale = (
+                        "Fleet assessment is degraded and no devices could be checked. "
+                        "Manual verification required."
+                    )
+                elif merged.degraded and merged.findings and not any_in_range:
+                    merged.priority = "unknown"
+                    merged.priority_rationale = (
+                        "Fleet assessment is degraded and no devices were confirmed to be "
+                        "in the advisory's affected range(s) — partial fleet coverage means "
+                        "this fleet may still be exposed. Manual verification required."
+                    )
+                else:
                     merged.priority, merged.priority_rationale = compute_priority(
                         cvss_score=merged.advisory.cvss_score,
                         fortinet_severity=merged.advisory.fortinet_severity,

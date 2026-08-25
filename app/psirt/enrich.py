@@ -24,23 +24,30 @@ _CVSS_RE = re.compile(r"CVSS\s*Score:?\s*([\d]+(?:\.[\d]+)?)", re.IGNORECASE)
 _SEVERITY_RE = re.compile(r"Severity:?\s*(Critical|High|Medium|Low)", re.IGNORECASE)
 
 
-def check_kev(cve_ids: list[str], http_client: Any, kev_url: str, timeout: float = 5.0) -> bool:
+def check_kev(
+    cve_ids: list[str], http_client: Any, kev_url: str, timeout: float = 5.0
+) -> tuple[bool, bool]:
     """Check if any CVE in cve_ids appears in the CISA KEV catalog.
 
-    Never raises — network failures return False.
+    Never raises. Returns (hit, fetched_successfully).
+
+    `hit` is only meaningful when `fetched_successfully` is True — a False
+    hit alongside a failed fetch means "we don't know," not "not KEV-listed."
+    An empty cve_ids/kev_url is treated as a deliberate no-op, not a
+    failure: (False, True).
     """
     if not cve_ids or not kev_url:
-        return False
+        return False, True
     try:
         resp = http_client.get(kev_url, timeout=timeout)
         if resp.status_code != 200:
-            return False
+            return False, False
         data = resp.json()
     except Exception:
-        return False
+        return False, False
     entries = data.get("vulnerabilities", []) if isinstance(data, dict) else []
     known = {e.get("cveID", "") for e in entries if isinstance(e, dict)}
-    return any(cve in known for cve in cve_ids)
+    return any(cve in known for cve in cve_ids), True
 
 
 def fetch_advisory_page(advisory_url: str, http_client: Any, timeout: float = 5.0) -> dict:
@@ -78,15 +85,26 @@ def enrich_advisory(
     """Enrich an Advisory from fortiguard.com and CISA KEV catalog.
 
     Returns a new Advisory; never raises. When enrichment_enabled is False,
-    both fetches are skipped entirely and enrichment_degraded is set True.
+    both fetches are skipped entirely.
+
+    If `advisory` has already been through this function once (detected via
+    the `_kev_hit` dynamic attribute it sets), a disabled call preserves the
+    already-computed `enrichment_degraded`/`_kev_hit`/`_kev_fetch_failed`
+    values instead of stomping them — this lets a caller enrich an advisory
+    once and then reuse it across multiple engine.assess() calls (each
+    passed enrichment_enabled=False) without losing the enrichment signal.
+    A genuinely fresh advisory (the PSIRT_ENRICHMENT_ENABLED=false
+    air-gapped case) still degrades as before.
     """
     if not enrichment_enabled:
-        enriched = replace(advisory, enrichment_degraded=True)
-        enriched._kev_hit = False  # type: ignore[attr-defined]
+        already_enriched = hasattr(advisory, "_kev_hit")
+        enriched = replace(advisory) if already_enriched else replace(advisory, enrichment_degraded=True)
+        enriched._kev_hit = getattr(advisory, "_kev_hit", False)  # type: ignore[attr-defined]
+        enriched._kev_fetch_failed = getattr(advisory, "_kev_fetch_failed", False)  # type: ignore[attr-defined]
         return enriched
 
     page = fetch_advisory_page(advisory.advisory_url, http_client, timeout=timeout)
-    kev_hit = check_kev(advisory.cve_ids, http_client, kev_url, timeout=timeout)
+    kev_hit, kev_fetched_ok = check_kev(advisory.cve_ids, http_client, kev_url, timeout=timeout)
 
     updates: dict = {}
     if page["fetched"]:
@@ -95,8 +113,9 @@ def enrich_advisory(
         if not advisory.fortinet_severity and page["fortinet_severity"]:
             updates["fortinet_severity"] = page["fortinet_severity"]
 
-    updates["enrichment_degraded"] = not page["fetched"]
+    updates["enrichment_degraded"] = (not page["fetched"]) or (not kev_fetched_ok)
 
     enriched = replace(advisory, **updates)
     enriched._kev_hit = kev_hit  # type: ignore[attr-defined]
+    enriched._kev_fetch_failed = not kev_fetched_ok  # type: ignore[attr-defined]
     return enriched

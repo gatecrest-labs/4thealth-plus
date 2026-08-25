@@ -203,6 +203,8 @@ def assess(
     findings: list[DeviceFinding] = []
     warnings: list[str] = []
     degraded = advisory.enrichment_degraded
+    if getattr(advisory, "_kev_fetch_failed", False):
+        warnings.append("CISA KEV catalog unreachable — exploitation status not corroborated.")
 
     fortios_ranges = [
         r for r in advisory.affected_ranges
@@ -228,7 +230,13 @@ def assess(
     if fortios_ranges:
         if adom_scope == "*":
             try:
-                adoms = [a.get("name", "") for a in fmg_client.get_adoms() if isinstance(a, dict)]
+                # Filter out FortiManager system ADOMs (FortiManager_Managed_
+                # Devices, etc.) — same forti-prefix convention as every other
+                # ADOM-returning endpoint in this repo (see CLAUDE.md).
+                adoms = [
+                    a.get("name", "") for a in fmg_client.get_adoms()
+                    if isinstance(a, dict) and not str(a.get("name", "")).lower().startswith("forti")
+                ]
             except Exception as exc:
                 degraded = True
                 warnings.append(f"Could not list ADOMs: {exc}")
@@ -263,6 +271,28 @@ def assess(
             priority_rationale=(
                 "Fleet assessment is degraded and no devices could be checked. "
                 "Manual verification required."
+            ),
+            kev_hit=kev_hit,
+            degraded=degraded,
+            warnings=warnings,
+        )
+
+    if degraded and findings and not any_in_range:
+        # Some devices WERE checked (findings is non-empty), but a
+        # different ADOM's device list failed (degraded=True) and none of
+        # the devices that WERE checked fell in the affected range. Do not
+        # let compute_priority() call this "informational / nothing to act
+        # on" — the fleet coverage is incomplete, so the true answer is
+        # unknown, not "safe."
+        return PsirtAssessment(
+            advisory=advisory,
+            findings=findings,
+            out_of_scope_products=out_of_scope,
+            priority="unknown",
+            priority_rationale=(
+                "Fleet assessment is degraded and no devices were confirmed to be "
+                "in the advisory's affected range(s) — partial fleet coverage means "
+                "this fleet may still be exposed. Manual verification required."
             ),
             kev_hit=kev_hit,
             degraded=degraded,
