@@ -553,15 +553,17 @@ Provides read-only zone policy access to external programs (e.g. FW-Analyst) via
 - `POST /external/api/zone/query` — same payload/response as internal `/api/zone/query`
 - `GET  /external/api/zone/zones` — zone list
 - `GET  /external/api/zone/policies` — policy list
+- `GET  /external/api/executive/summary` — fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance %, pending config-diff count, firewall online count/total); backed by a new background sweep, `app/executive_summary_cache.py` (default every 15 min, `EXEC_SUMMARY_REFRESH_MINUTES`)
 
 **CSRF:** `/external/api/` requests are exempt from CSRF validation (bearer token is the auth mechanism, no session cookie exists).
 
 **Supporting modules:**
 - `app/app_settings.py` — atomic read/write of `app_settings.json` (feature flags)
 - `app/api_tokens.py` — token create/list/revoke/validate; tokens stored as SHA-256 hashes
+- `app/executive_summary_cache.py` — background sweep computing the four executive-summary metrics; same pending|running|ok|error store pattern as `summary_job.py`
 
 **Admin endpoints added to `admin_routes.py`:**
-- `GET/PUT /admin/api/settings` — get/set `external_api_enabled`
+- `GET/PUT /admin/api/settings` — get/set `external_api_enabled` and `executive_compliant_versions`
 - `GET /admin/api/tokens` — list tokens
 - `POST /admin/api/tokens` — create token (returns plaintext once)
 - `DELETE /admin/api/tokens/<id>` — revoke token

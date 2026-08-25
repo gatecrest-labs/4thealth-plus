@@ -18,6 +18,7 @@ Endpoints
   POST /external/api/zone/query     Query src→dst flows against zone policy DB
   GET  /external/api/zone/zones     List all zones + subnets
   GET  /external/api/zone/policies  List all segmentation policies
+  GET  /external/api/executive/summary  Fleet-wide metrics for the 4tExecutive dashboard
 """
 
 import re
@@ -155,3 +156,28 @@ def ext_zone_policies():
         return jsonify(rows)
     except Exception as exc:
         return internal_api_error("external_api", exc)
+
+
+# ── Executive summary ────────────────────────────────────────────────────────
+
+
+@bp.route("/executive/summary")
+def ext_executive_summary():
+    err = _gate()
+    if err:
+        return err
+
+    from app.executive_summary_cache import get_summary
+
+    summary = get_summary()
+    return jsonify(
+        {
+            "hygiene_score": summary.get("hygiene_score"),
+            "version_compliance_pct": summary.get("version_compliance_pct"),
+            "pending_config_diff_count": summary.get("pending_config_diff_count"),
+            "firewall_online_count": summary.get("firewall_online_count"),
+            "firewalls_total": summary.get("firewalls_total"),
+            "status": summary.get("status"),
+            "last_updated": summary.get("last_updated"),
+        }
+    )

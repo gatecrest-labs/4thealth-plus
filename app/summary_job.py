@@ -183,10 +183,11 @@ def init_scheduler(app):
     def _startup(app=app):
         _run_job(app)
         with _lock:
-            if _store["status"] != "ok":
-                logger.info("summary_job: startup run failed, retrying in 15s")
-                _time.sleep(15)
-                _run_job(app)
+            needs_retry = _store["status"] != "ok"
+        if needs_retry:
+            logger.info("summary_job: startup run failed, retrying in 15s")
+            _time.sleep(15)
+            _run_job(app)
 
     t = threading.Thread(target=_startup, name="summary_job_startup", daemon=True)
     t.start()

@@ -129,5 +129,6 @@ All external API endpoints require `Authorization: Bearer <token>` and return `5
 | POST | `/external/api/zone/query` | Query src→dst flows against the zone policy DB |
 | GET | `/external/api/zone/zones` | List all zones and subnets |
 | GET | `/external/api/zone/policies` | List all segmentation policies |
+| GET | `/external/api/executive/summary` | Fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance, pending config diffs, firewall online count) |
 
 See [features.md](features.md#external-api) for setup and usage details.
