@@ -23,5 +23,5 @@ def render_psirt_html(assessment: dict) -> str:
         priority_rationale=assessment["priority_rationale"],
         kev_hit=assessment["kev_hit"],
         warnings=assessment["warnings"],
-        generated_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        generated_at=datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"),
     )

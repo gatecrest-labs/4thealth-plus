@@ -1,7 +1,13 @@
 """Tests for FortiOS/FortiManager version comparison."""
 import pytest
+
 from app.psirt.models import AffectedRange
-from app.psirt.version_match import VersionMatchError, compare_versions, parse_version, version_in_range
+from app.psirt.version_match import (
+    VersionMatchError,
+    compare_versions,
+    parse_version,
+    version_in_range,
+)
 
 
 def test_parse_version_three_part():

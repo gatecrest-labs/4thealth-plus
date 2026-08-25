@@ -1,5 +1,6 @@
 """Tests for PSIRT HTML report rendering."""
 import os
+
 import pytest
 
 from app.psirt.models import Advisory, AffectedRange, DeviceFinding, PsirtAssessment
@@ -15,7 +16,9 @@ def _app_context():
         yield
 
 
-from app.psirt.render import render_psirt_html  # noqa: E402  (import after env vars set)
+from app.psirt.render import (
+    render_psirt_html,
+)
 
 
 def _sample_assessment():

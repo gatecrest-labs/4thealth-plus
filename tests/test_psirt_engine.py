@@ -16,15 +16,15 @@ def _fake_http_client():
 
 
 def _make_advisory(**overrides):
-    defaults = dict(
-        advisory_id="FG-IR-24-001",
-        cve_ids=["CVE-2024-12345"],
-        cvss_score=8.1,
-        affected_ranges=[AffectedRange(product="FortiOS", min_version="", max_version="7.4.4",
-                                        fixed_version="7.4.5")],
-        workaround_text="",
-        exploited_in_wild_text="",
-    )
+    defaults = {
+        "advisory_id": "FG-IR-24-001",
+        "cve_ids": ["CVE-2024-12345"],
+        "cvss_score": 8.1,
+        "affected_ranges": [AffectedRange(product="FortiOS", min_version="", max_version="7.4.4",
+                                          fixed_version="7.4.5")],
+        "workaround_text": "",
+        "exploited_in_wild_text": "",
+    }
     defaults.update(overrides)
     return Advisory(**defaults)
 

@@ -1,5 +1,6 @@
 """Tests for app.psirt.extract — LLM-backed advisory field extraction + validation."""
 import pytest
+
 from app.llm.base import LLMError, LLMProvider
 from app.psirt.extract import ExtractionError, extract_advisory
 

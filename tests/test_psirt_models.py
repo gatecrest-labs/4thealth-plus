@@ -1,5 +1,5 @@
 """Tests for PSIRT dataclass models — construction and to_dict() shape."""
-from app.psirt.models import AffectedRange, Advisory, DeviceFinding, PsirtAssessment
+from app.psirt.models import Advisory, AffectedRange, DeviceFinding, PsirtAssessment
 
 
 def test_affected_range_to_dict():

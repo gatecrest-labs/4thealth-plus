@@ -1,5 +1,6 @@
 """Tests for LLMProvider.extract_json() — structured JSON extraction on top of narrate()."""
 import pytest
+
 from app.llm.base import LLMError, LLMProvider
 
 

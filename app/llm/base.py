@@ -40,8 +40,7 @@ class LLMProvider(ABC):
             text = text[3:]
             if text.lower().startswith("json"):
                 text = text[4:]
-            if text.endswith("```"):
-                text = text[:-3]
+            text = text.removesuffix("```")
             text = text.strip()
         try:
             parsed = json.loads(text)
