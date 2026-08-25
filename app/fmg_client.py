@@ -922,27 +922,101 @@ class FMGClient:
         except Exception:
             return []
 
+    def get_device_group_names(self, adom: str) -> set[str]:
+        """Return the set of device group names in an ADOM.
+
+        Single API call — does not fetch member lists.
+        Returns empty set on error.
+        """
+        try:
+            data = self._get(f"/dvmdb/adom/{adom}/group")
+            if not isinstance(data, list):
+                return set()
+            return {g["name"] for g in data if isinstance(g, dict) and g.get("name")}
+        except Exception:
+            return set()
+
+    def get_device_group_members(self, adom: str, group_name: str) -> list[str]:
+        """Return device names that belong to a FMG device group.
+
+        FMG requires option=['object member'] to include the sub-table inline;
+        the /object member path suffix does not work for dvmdb device groups.
+        Returns [] on error or when the name is not a group.
+        """
+        try:
+            url = f"/dvmdb/adom/{adom}/group/{group_name}"
+            body = {
+                "id": self._next_id(),
+                "method": "get",
+                "params": [{"url": url, "option": ["object member"]}],
+            }
+            if self.session:
+                body["session"] = self.session
+            resp = self._post(body)
+            data = resp.get("result", [{}])[0].get("data") or {}
+            if isinstance(data, list) and data:
+                data = data[0]
+            members = data.get("object member") or [] if isinstance(data, dict) else []
+            return [
+                m.get("name", "")
+                for m in members
+                if isinstance(m, dict) and m.get("name")
+            ]
+        except Exception:
+            return []
+
     def get_device_policy_package(self, adom: str, device_name: str) -> list[dict]:
         """Return policy packages installed on a device.
 
         Uses the scope member list already embedded in each package dict returned by
-        get_policy_packages() — no additional API calls are made.
-        Returns a list of {"name": pkg_name, "vdom": vdom} dicts (usually one entry);
-        [] if none found or on error.
+        get_policy_packages(). Scope members may be individual devices OR device groups.
+
+        Strategy (avoids O(N) per-scope-member API calls):
+        1. Collect unmatched scope member names — no API calls.
+        2. Fetch all group names in one call and intersect — isolates names that are
+           actual groups AND appear in scope members (typically 0-2).
+        3. Fetch member lists only for that small intersection.
+        Returns a list of {"name": pkg_name, "vdom": vdom} dicts; [] if none found.
         """
         try:
             packages = self.get_policy_packages(adom)
+            device_lower = device_name.lower()
+
+            # Pass 1 — collect scope member names that don't match the device directly.
+            unmatched: set[str] = set()
+            for pkg in packages:
+                scope = pkg.get("scope member") or pkg.get("scope_member") or []
+                for m in scope:
+                    if isinstance(m, dict):
+                        n = m.get("name", "")
+                        if n and n.lower() != device_lower:
+                            unmatched.add(n)
+
+            # Pass 2 — resolve members only for unmatched names that are real groups.
+            group_members: dict[str, list[str]] = {}
+            if unmatched:
+                known_groups = self.get_device_group_names(adom)  # 1 API call
+                for grp in unmatched & known_groups:  # typically 0-2 names
+                    group_members[grp] = self.get_device_group_members(adom, grp)
+
+            # Pass 3 — match packages.
             matched = []
             for pkg in packages:
                 scope = pkg.get("scope member") or pkg.get("scope_member") or []
                 if not isinstance(scope, list):
                     continue
                 for m in scope:
-                    if (
-                        isinstance(m, dict)
-                        and m.get("name", "").lower() == device_name.lower()
+                    if not isinstance(m, dict):
+                        continue
+                    name = m.get("name", "")
+                    if name.lower() == device_lower:
+                        matched.append({"name": pkg["name"], "vdom": m.get("vdom", "")})
+                        break
+                    if any(
+                        gm.lower() == device_lower for gm in group_members.get(name, [])
                     ):
                         matched.append({"name": pkg["name"], "vdom": m.get("vdom", "")})
+                        break
             return matched
         except Exception:
             return []
@@ -1192,6 +1266,19 @@ class FMGClient:
             except Exception:
                 pass
         return results
+
+    def get_device_vip_objects(self, device: str, vdom: str = "root") -> list:
+        """Return VIP objects from a specific device/vdom via the per-device DB path.
+
+        Used by NAT lookup to find VIPs that are installed on a device but are
+        not present in the ADOM shared-object database.
+        """
+        try:
+            return self._get_paged(
+                f"/pm/config/device/{device}/vdom/{vdom}/firewall/vip"
+            )
+        except Exception:
+            return []
 
     def get_audit_log(self, hours: int = 24) -> list:
         """Return FortiManager audit log entries from the last ``hours`` hours.

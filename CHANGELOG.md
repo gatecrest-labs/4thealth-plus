@@ -52,6 +52,28 @@ All notable changes to 4THealth+ are documented in this file.
   the existing deployment tooling.
 
 ### Fixed
+- NAT Lookup only searched ADOM-level shared VIP/IP-pool objects, missing
+  VIPs installed on an individual device but never promoted to the shared
+  object database. It now also sweeps every device's own VIP table (all
+  VDOMs, 10-worker parallel fetch via new `FMGClient.get_device_vip_objects()`)
+  and merges the results, tagging each hit with its source device (blank =
+  "shared"). Also fixes fragile field parsing that under-matched real FMG
+  data: `extip` returned as a list or as a range (`"1.2.3.4-1.2.3.9"`) instead
+  of a bare IP, and `mappedip`/`mapped-ip` returned as a plain string,
+  list-of-strings, or list-of-dicts depending on FMG version/context. The
+  response now includes an `objects_checked` summary (shared VIPs, device
+  VIPs, devices scanned, pools) shown in the UI results header; the results
+  table, filter, and CSV/JSON/PDF exports gained a Device column. Ported from
+  the sibling [4THealth](https://github.com/Alski-MPLS/4thealth) repo.
+- `FMGClient.get_device_policy_package()` only matched a policy package's
+  scope member when it named the device directly, so devices that receive a
+  package via device-group membership (not a direct scope entry) showed no
+  installed package. Now resolves device-group scope members too, in three
+  passes that avoid O(N) extra API calls: collect unmatched scope names,
+  intersect with a single device-group-name lookup, then fetch members only
+  for that small intersection. New `FMGClient.get_device_group_names()`/
+  `get_device_group_members()`. Ported from the sibling
+  [4THealth](https://github.com/Alski-MPLS/4thealth) repo.
 - CLI injection in generated FortiGate config: FQDN/vendor/category-derived
   object, group, and policy names/comments were interpolated into generated
   CLI without escaping. Closed with two defense layers — input sanitization

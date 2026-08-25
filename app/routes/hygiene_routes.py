@@ -11,6 +11,7 @@ API (JSON, all read-only):
 """
 
 import ipaddress
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Blueprint, jsonify, render_template, request, session
 
@@ -1030,64 +1031,150 @@ def hygiene_nat_lookup(adom: str):
 
     results = []
 
+    # ── Phase 1: fetch ADOM-level shared VIPs and IP pools ──────────────────────
     try:
         with make_client() as client:
-            vips = client.get_vip_objects(adom)
+            shared_vips = client.get_vip_objects(adom)
             pools = client.get_ippool_objects(adom)
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
         return internal_api_error("hygiene", exc)
 
-    for vip in vips:
+    # ── Phase 2: fetch per-device VIPs in parallel ───────────────────────────────
+    # ADOM shared-object VIPs (above) miss VIPs that are installed on individual
+    # devices but not promoted to the shared object database.  Query each device's
+    # own VIP table via the per-device DB path to catch them.
+    # VDOMs are queried explicitly per device (not from the dvmdb device list,
+    # which often omits the vdom field) so multi-VDOM devices are fully covered.
+    device_names: list[str] = []
+    try:
+        with make_client() as client:
+            devices = client.get_devices(adom)
+        for dev in devices:
+            if not isinstance(dev, dict):
+                continue
+            dev_name = dev.get("name", "")
+            if dev_name:
+                device_names.append(dev_name)
+    except Exception:
+        pass
+
+    def _fetch_dev_vips(dev_name: str) -> list:
+        try:
+            with make_client() as c:
+                vdoms_data = c.get_device_vdoms(adom, dev_name)
+                vdoms = (
+                    [
+                        v.get("name", "root")
+                        for v in vdoms_data
+                        if isinstance(v, dict) and v.get("name")
+                    ]
+                    if vdoms_data
+                    else ["root"]
+                )
+                all_entries: list = []
+                for vdom in vdoms:
+                    try:
+                        entries = c.get_device_vip_objects(dev_name, vdom)
+                        for e in entries:
+                            if isinstance(e, dict):
+                                e["_source_device"] = dev_name
+                        all_entries.extend(entries)
+                    except Exception:
+                        pass
+            return all_entries
+        except Exception:
+            return []
+
+    device_vips: list = []
+    if device_names:
+        with ThreadPoolExecutor(max_workers=10) as pool_ex:
+            for chunk in pool_ex.map(_fetch_dev_vips, device_names):
+                device_vips.extend(chunk)
+
+    # Tag ADOM-level VIPs with an empty source device marker before merging.
+    for v in shared_vips:
+        if isinstance(v, dict):
+            v.setdefault("_source_device", "")
+
+    all_vips = shared_vips + device_vips
+    shared_vips_count = len(shared_vips)
+    device_vips_count = len(device_vips)
+    devices_scanned = len(device_names)
+
+    # ── Phase 3: match VIPs ───────────────────────────────────────────────────────
+    for vip in all_vips:
         if not isinstance(vip, dict):
             continue
         name = vip.get("name", "")
         if not name:
             continue
-        ext_ip = vip.get("extip", "")
+        ext_ip_raw = vip.get("extip", "")
+        # FMG may return extip as a list (["1.2.3.4"]) or a plain string ("1.2.3.4").
+        if isinstance(ext_ip_raw, list):
+            ext_ip_raw = ext_ip_raw[0] if ext_ip_raw else ""
+        ext_ip = str(ext_ip_raw)
+        # Normalise extip for display; derive start/end for range matching.
+        # FMG may return a single IP ("1.2.3.4") or a range ("1.2.3.4-1.2.3.9").
         try:
             ext_ip = str(ipaddress.ip_address(ext_ip))
+            ext_ip_start = ext_ip_end = ext_ip
         except ValueError:
-            pass
-        mapped_ranges = vip.get("mappedip", []) or []
+            if "-" in ext_ip:
+                ext_ip_start, _, ext_ip_end = ext_ip.partition("-")
+                ext_ip_start = ext_ip_start.strip()
+                ext_ip_end = ext_ip_end.strip()
+            else:
+                ext_ip_start = ext_ip_end = ext_ip
+        # FMG may return the field as "mappedip" or "mapped-ip" depending on version/context.
+        # Normalise to a flat list of range strings: handles list-of-dicts, list-of-strings,
+        # and plain string (all observed FMG variants).
+        mapped_raw = vip.get("mappedip") or vip.get("mapped-ip") or []
+        if isinstance(mapped_raw, str):
+            mapped_ranges_strs = [mapped_raw] if mapped_raw else []
+        elif isinstance(mapped_raw, list):
+            mapped_ranges_strs = []
+            for _e in mapped_raw:
+                if isinstance(_e, dict):
+                    _r = _e.get("range", "")
+                    if _r:
+                        mapped_ranges_strs.append(_r)
+                elif isinstance(_e, str) and _e:
+                    mapped_ranges_strs.append(_e)
+        else:
+            mapped_ranges_strs = []
 
         matched = False
-        # Match on external IP (exact)
-        if ext_ip == searched_ip:
+        if _ip_in_range(searched_ip, ext_ip_start, ext_ip_end):
             matched = True
-        # Match on any mapped IP range
         if not matched:
-            for entry in mapped_ranges:
-                if not isinstance(entry, dict):
-                    continue
-                rng = entry.get("range", "")
+            for rng in mapped_ranges_strs:
                 if "-" in rng:
                     start, _, end = rng.partition("-")
-                    if _ip_in_range(searched_ip, start.strip(), end.strip()):
-                        matched = True
-                        break
+                else:
+                    start = end = rng
+                if _ip_in_range(searched_ip, start.strip(), end.strip()):
+                    matched = True
+                    break
 
         if not matched:
             continue
 
-        # Build human-readable mapped IP string
-        mapped_display = (
-            "; ".join(
-                e.get("range", "")
-                for e in mapped_ranges
-                if isinstance(e, dict) and e.get("range")
-            )
-            or "—"
-        )
+        mapped_display = "; ".join(mapped_ranges_strs) or "—"
+
+        ext_intf_raw = vip.get("extintf", "")
+        if isinstance(ext_intf_raw, list):
+            ext_intf_raw = ext_intf_raw[0] if ext_intf_raw else ""
 
         port_forward = vip.get("portforward", "disable") == "enable"
         results.append(
             {
                 "nat_type": "VIP",
                 "name": name,
+                "device": vip.get("_source_device", ""),
                 "ext_ip": ext_ip,
-                "ext_intf": vip.get("extintf", ""),
+                "ext_intf": ext_intf_raw,
                 "mapped_ip": mapped_display,
                 "port_forward": port_forward,
                 "protocol": vip.get("protocol", "") if port_forward else "",
@@ -1097,6 +1184,7 @@ def hygiene_nat_lookup(adom: str):
             }
         )
 
+    # ── Phase 4: match IP pools ───────────────────────────────────────────────────
     for pool in pools:
         if not isinstance(pool, dict):
             continue
@@ -1111,6 +1199,7 @@ def hygiene_nat_lookup(adom: str):
             {
                 "nat_type": "IP Pool",
                 "name": name,
+                "device": "",
                 "start_ip": start_ip,
                 "end_ip": end_ip,
                 "pool_type": pool.get("type", ""),
@@ -1123,6 +1212,12 @@ def hygiene_nat_lookup(adom: str):
             "results": results,
             "total": len(results),
             "searched_ip": searched_ip,
+            "objects_checked": {
+                "shared_vips": shared_vips_count,
+                "device_vips": device_vips_count,
+                "devices": devices_scanned,
+                "pools": len(pools),
+            },
         }
     )
 
