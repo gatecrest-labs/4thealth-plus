@@ -103,7 +103,9 @@ class Config:
     OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 
     # PSIRT Advisory Assessment enrichment (fortiguard.com + CISA KEV feed)
-    PSIRT_ENRICHMENT_ENABLED = os.environ.get("PSIRT_ENRICHMENT_ENABLED", "true").lower() == "true"
+    PSIRT_ENRICHMENT_ENABLED = (
+        os.environ.get("PSIRT_ENRICHMENT_ENABLED", "true").lower() == "true"
+    )
     PSIRT_KEV_URL = os.environ.get(
         "PSIRT_KEV_URL",
         "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",

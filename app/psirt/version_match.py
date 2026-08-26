@@ -45,4 +45,6 @@ def compare_versions(a: str, b: str) -> int:
 
 def version_in_range(version: str, rng: AffectedRange) -> bool:
     v = parse_version(version)
-    return (not rng.min_version or v >= parse_version(rng.min_version)) and (not rng.max_version or v <= parse_version(rng.max_version))
+    return (not rng.min_version or v >= parse_version(rng.min_version)) and (
+        not rng.max_version or v <= parse_version(rng.max_version)
+    )

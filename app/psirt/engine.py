@@ -73,9 +73,13 @@ def _evaluate_device(
 ) -> DeviceFinding:
     if not firmware:
         return DeviceFinding(
-            device=device_name, adom=adom, product=product_label,
-            current_version="", in_range=False,
-            workaround_status="not_applicable", verdict="unknown_needs_manual_check",
+            device=device_name,
+            adom=adom,
+            product=product_label,
+            current_version="",
+            in_range=False,
+            workaround_status="not_applicable",
+            verdict="unknown_needs_manual_check",
             reason="No firmware version reported by FortiManager for this device.",
         )
 
@@ -89,17 +93,25 @@ def _evaluate_device(
                 break
     except VersionMatchError as exc:
         return DeviceFinding(
-            device=device_name, adom=adom, product=product_label,
-            current_version=firmware, in_range=False,
-            workaround_status="not_applicable", verdict="unknown_needs_manual_check",
+            device=device_name,
+            adom=adom,
+            product=product_label,
+            current_version=firmware,
+            in_range=False,
+            workaround_status="not_applicable",
+            verdict="unknown_needs_manual_check",
             reason=f"Could not compare firmware version: {exc}",
         )
 
     if not in_range:
         return DeviceFinding(
-            device=device_name, adom=adom, product=product_label,
-            current_version=firmware, in_range=False,
-            workaround_status="not_applicable", verdict="no_action",
+            device=device_name,
+            adom=adom,
+            product=product_label,
+            current_version=firmware,
+            in_range=False,
+            workaround_status="not_applicable",
+            verdict="no_action",
             reason=f"Firmware {firmware} is outside the advisory's affected range(s).",
         )
 
@@ -107,8 +119,11 @@ def _evaluate_device(
     if pattern_key is None:
         if advisory.workaround_text.strip():
             return DeviceFinding(
-                device=device_name, adom=adom, product=product_label,
-                current_version=firmware, in_range=True,
+                device=device_name,
+                adom=adom,
+                product=product_label,
+                current_version=firmware,
+                in_range=True,
                 workaround_status="manual_verification_required",
                 verdict="config_change_required",
                 reason=(
@@ -119,9 +134,13 @@ def _evaluate_device(
                 ),
             )
         return DeviceFinding(
-            device=device_name, adom=adom, product=product_label,
-            current_version=firmware, in_range=True,
-            workaround_status="not_applicable", verdict="upgrade_required",
+            device=device_name,
+            adom=adom,
+            product=product_label,
+            current_version=firmware,
+            in_range=True,
+            workaround_status="not_applicable",
+            verdict="upgrade_required",
             reason=(
                 f"Firmware {firmware} is affected and no workaround is published. "
                 f"Upgrade to {matched_range.fixed_version or 'the fixed version'}."
@@ -132,17 +151,24 @@ def _evaluate_device(
         status = check_workaround(pattern_key, fmg_client, adom, device_name)
     except Exception as exc:
         return DeviceFinding(
-            device=device_name, adom=adom, product=product_label,
-            current_version=firmware, in_range=True,
+            device=device_name,
+            adom=adom,
+            product=product_label,
+            current_version=firmware,
+            in_range=True,
             workaround_status="manual_verification_required",
             verdict="config_change_required",
             reason=f"Firmware {firmware} is affected. Workaround check failed: {exc}. Manual verification required.",
         )
     if status == "in_place":
         return DeviceFinding(
-            device=device_name, adom=adom, product=product_label,
-            current_version=firmware, in_range=True,
-            workaround_status="in_place", verdict="no_action",
+            device=device_name,
+            adom=adom,
+            product=product_label,
+            current_version=firmware,
+            in_range=True,
+            workaround_status="in_place",
+            verdict="no_action",
             reason=(
                 f"Firmware {firmware} is affected, but the workaround is already "
                 f"in place: {advisory.workaround_text}"
@@ -150,8 +176,11 @@ def _evaluate_device(
         )
     elif status == "not_in_place":
         return DeviceFinding(
-            device=device_name, adom=adom, product=product_label,
-            current_version=firmware, in_range=True,
+            device=device_name,
+            adom=adom,
+            product=product_label,
+            current_version=firmware,
+            in_range=True,
             workaround_status="not_in_place",
             verdict="config_change_required",
             reason=(
@@ -161,8 +190,11 @@ def _evaluate_device(
         )
     else:
         return DeviceFinding(
-            device=device_name, adom=adom, product=product_label,
-            current_version=firmware, in_range=True,
+            device=device_name,
+            adom=adom,
+            product=product_label,
+            current_version=firmware,
+            in_range=True,
             workaround_status="manual_verification_required",
             verdict="config_change_required",
             reason=(
@@ -190,28 +222,38 @@ def assess(
     (Config.PSIRT_FETCH_TIMEOUT at the route layer).
     """
     advisory = enrich_advisory(
-        advisory, http_client, kev_url,
-        enrichment_enabled=enrichment_enabled, timeout=fetch_timeout,
+        advisory,
+        http_client,
+        kev_url,
+        enrichment_enabled=enrichment_enabled,
+        timeout=fetch_timeout,
     )
     kev_hit = getattr(advisory, "_kev_hit", False)
 
-    out_of_scope = sorted({
-        r.product for r in advisory.affected_ranges
-        if r.product.strip().lower() not in _SUPPORTED_PRODUCTS
-    })
+    out_of_scope = sorted(
+        {
+            r.product
+            for r in advisory.affected_ranges
+            if r.product.strip().lower() not in _SUPPORTED_PRODUCTS
+        }
+    )
 
     findings: list[DeviceFinding] = []
     warnings: list[str] = []
     degraded = advisory.enrichment_degraded
     if getattr(advisory, "_kev_fetch_failed", False):
-        warnings.append("CISA KEV catalog unreachable — exploitation status not corroborated.")
+        warnings.append(
+            "CISA KEV catalog unreachable — exploitation status not corroborated."
+        )
 
     fortios_ranges = [
-        r for r in advisory.affected_ranges
+        r
+        for r in advisory.affected_ranges
         if r.product.strip().lower() in ("fortios", "fortigate")
     ]
     fmg_ranges = [
-        r for r in advisory.affected_ranges
+        r
+        for r in advisory.affected_ranges
         if r.product.strip().lower() == "fortimanager"
     ]
 
@@ -219,10 +261,17 @@ def assess(
         try:
             status = fmg_client.get_system_status()
             fmg_version = _fmg_version(str(status.get("Version", "")))
-            findings.append(_evaluate_device(
-                advisory, fmg_ranges, "FortiManager (primary)", "-", "FortiManager",
-                fmg_version, fmg_client,
-            ))
+            findings.append(
+                _evaluate_device(
+                    advisory,
+                    fmg_ranges,
+                    "FortiManager (primary)",
+                    "-",
+                    "FortiManager",
+                    fmg_version,
+                    fmg_client,
+                )
+            )
         except Exception as exc:
             degraded = True
             warnings.append(f"Could not reach FortiManager (primary): {exc}")
@@ -234,8 +283,10 @@ def assess(
                 # Devices, etc.) — same forti-prefix convention as every other
                 # ADOM-returning endpoint in this repo (see CLAUDE.md).
                 adoms = [
-                    a.get("name", "") for a in fmg_client.get_adoms()
-                    if isinstance(a, dict) and not str(a.get("name", "")).lower().startswith("forti")
+                    a.get("name", "")
+                    for a in fmg_client.get_adoms()
+                    if isinstance(a, dict)
+                    and not str(a.get("name", "")).lower().startswith("forti")
                 ]
             except Exception as exc:
                 degraded = True
@@ -256,9 +307,17 @@ def assess(
                     continue
                 name = d.get("name", "")
                 firmware = _device_firmware(d)
-                findings.append(_evaluate_device(
-                    advisory, fortios_ranges, name, adom, "FortiOS", firmware, fmg_client,
-                ))
+                findings.append(
+                    _evaluate_device(
+                        advisory,
+                        fortios_ranges,
+                        name,
+                        adom,
+                        "FortiOS",
+                        firmware,
+                        fmg_client,
+                    )
+                )
 
     any_in_range = any(f.in_range for f in findings)
 

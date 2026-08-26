@@ -75,24 +75,31 @@ def extract_advisory(raw_text: str, provider: LLMProvider) -> Advisory:
         raise ExtractionError("cve_ids", "cve_ids must be a non-empty list")
     for cve in cve_ids:
         if not _CVE_RE.match(str(cve)):
-            raise ExtractionError("cve_ids", f"malformed CVE id: {cve!r} (expected CVE-YYYY-NNNN)")
+            raise ExtractionError(
+                "cve_ids", f"malformed CVE id: {cve!r} (expected CVE-YYYY-NNNN)"
+            )
 
     raw_ranges = extracted.get("affected_ranges", [])
     if not isinstance(raw_ranges, list) or not raw_ranges:
-        raise ExtractionError("affected_ranges", "affected_ranges must be a non-empty list")
+        raise ExtractionError(
+            "affected_ranges", "affected_ranges must be a non-empty list"
+        )
     ranges: list[AffectedRange] = []
     for r in raw_ranges:
         if not isinstance(r, dict) or not r.get("product"):
             raise ExtractionError(
-                "affected_ranges", f"malformed affected_ranges entry: {r!r} (product is required)",
+                "affected_ranges",
+                f"malformed affected_ranges entry: {r!r} (product is required)",
             )
-        ranges.append(AffectedRange(
-            product=str(r.get("product", "")),
-            min_version=str(r.get("min_version", "") or ""),
-            max_version=str(r.get("max_version", "") or ""),
-            fixed_version=str(r.get("fixed_version", "") or ""),
-            notes=str(r.get("notes", "") or ""),
-        ))
+        ranges.append(
+            AffectedRange(
+                product=str(r.get("product", "")),
+                min_version=str(r.get("min_version", "") or ""),
+                max_version=str(r.get("max_version", "") or ""),
+                fixed_version=str(r.get("fixed_version", "") or ""),
+                notes=str(r.get("notes", "") or ""),
+            )
+        )
 
     cvss_raw = extracted.get("cvss_score")
     cvss_score = float(cvss_raw) if isinstance(cvss_raw, (int, float)) else None

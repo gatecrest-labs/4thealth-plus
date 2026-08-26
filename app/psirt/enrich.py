@@ -50,20 +50,37 @@ def check_kev(
     return any(cve in known for cve in cve_ids), True
 
 
-def fetch_advisory_page(advisory_url: str, http_client: Any, timeout: float = 5.0) -> dict:
+def fetch_advisory_page(
+    advisory_url: str, http_client: Any, timeout: float = 5.0
+) -> dict:
     """Fetch the fortiguard.com advisory page and extract CVSS score and severity.
 
     Never raises — network failures or parse errors return fetched=False.
     """
     if not advisory_url:
-        return {"fetched": False, "cvss_score": None, "fortinet_severity": "", "raw_text": ""}
+        return {
+            "fetched": False,
+            "cvss_score": None,
+            "fortinet_severity": "",
+            "raw_text": "",
+        }
     try:
         resp = http_client.get(advisory_url, timeout=timeout)
         if resp.status_code != 200:
-            return {"fetched": False, "cvss_score": None, "fortinet_severity": "", "raw_text": ""}
+            return {
+                "fetched": False,
+                "cvss_score": None,
+                "fortinet_severity": "",
+                "raw_text": "",
+            }
         text = resp.text
     except Exception:
-        return {"fetched": False, "cvss_score": None, "fortinet_severity": "", "raw_text": ""}
+        return {
+            "fetched": False,
+            "cvss_score": None,
+            "fortinet_severity": "",
+            "raw_text": "",
+        }
 
     cvss_match = _CVSS_RE.search(text)
     severity_match = _SEVERITY_RE.search(text)
@@ -98,13 +115,19 @@ def enrich_advisory(
     """
     if not enrichment_enabled:
         already_enriched = hasattr(advisory, "_kev_hit")
-        enriched = replace(advisory) if already_enriched else replace(advisory, enrichment_degraded=True)
+        enriched = (
+            replace(advisory)
+            if already_enriched
+            else replace(advisory, enrichment_degraded=True)
+        )
         enriched._kev_hit = getattr(advisory, "_kev_hit", False)  # type: ignore[attr-defined]
         enriched._kev_fetch_failed = getattr(advisory, "_kev_fetch_failed", False)  # type: ignore[attr-defined]
         return enriched
 
     page = fetch_advisory_page(advisory.advisory_url, http_client, timeout=timeout)
-    kev_hit, kev_fetched_ok = check_kev(advisory.cve_ids, http_client, kev_url, timeout=timeout)
+    kev_hit, kev_fetched_ok = check_kev(
+        advisory.cve_ids, http_client, kev_url, timeout=timeout
+    )
 
     updates: dict = {}
     if page["fetched"]:

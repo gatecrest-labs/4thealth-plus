@@ -11,39 +11,53 @@ severity, since there is nothing to act on.
 
 from __future__ import annotations
 
-_PRIORITY_RANK = {"unknown": -1, "informational": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+_PRIORITY_RANK = {
+    "unknown": -1,
+    "informational": 0,
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
 _SEVERITY_FALLBACK = {
-    "critical": "critical", "high": "high", "medium": "medium", "low": "low",
+    "critical": "critical",
+    "high": "high",
+    "medium": "medium",
+    "low": "low",
 }
 
-_EXPLOITED_POSITIVE = frozenset({
-    "actively exploited",
-    "exploitation in the wild",
-    "exploited in the wild",
-    "being exploited",
-    "has been exploited",
-    "was exploited",
-    "exploitation has been detected",
-    "exploitation detected",
-    "confirmed exploitation",
-    "reported exploitation",
-    "exploitation observed",
-    "is being exploited",
-    "instance of exploitation",
-    "instances of exploitation",
-})
+_EXPLOITED_POSITIVE = frozenset(
+    {
+        "actively exploited",
+        "exploitation in the wild",
+        "exploited in the wild",
+        "being exploited",
+        "has been exploited",
+        "was exploited",
+        "exploitation has been detected",
+        "exploitation detected",
+        "confirmed exploitation",
+        "reported exploitation",
+        "exploitation observed",
+        "is being exploited",
+        "instance of exploitation",
+        "instances of exploitation",
+    }
+)
 
-_EXPLOITED_NEGATIVE = frozenset({
-    "not aware of",
-    "no known exploitation",
-    "not exploited",
-    "no exploitation",
-    "not been exploited",
-    "no active exploit",
-    "is not being exploited",
-    "not actively exploited",
-    "no reports of exploitation",
-})
+_EXPLOITED_NEGATIVE = frozenset(
+    {
+        "not aware of",
+        "no known exploitation",
+        "not exploited",
+        "no exploitation",
+        "not been exploited",
+        "no active exploit",
+        "is not being exploited",
+        "not actively exploited",
+        "no reports of exploitation",
+    }
+)
 
 
 def _indicates_exploitation(text: str) -> bool:
@@ -88,7 +102,9 @@ def compute_priority(
         base = _cvss_band(cvss_score)
         base_reason = f"CVSS base score {cvss_score}"
     else:
-        base = _SEVERITY_FALLBACK.get((fortinet_severity or "").strip().lower(), "medium")
+        base = _SEVERITY_FALLBACK.get(
+            (fortinet_severity or "").strip().lower(), "medium"
+        )
         base_reason = f"no CVSS score extracted; used Fortinet's own severity rating ({fortinet_severity or 'unspecified'})"
 
     exploited = _indicates_exploitation(exploited_in_wild_text)

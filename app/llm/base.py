@@ -32,7 +32,7 @@ class LLMProvider(ABC):
         strict_system_prompt = (
             system_prompt
             + "\n\nRespond with ONLY a single valid JSON object — no prose, "
-              "no markdown code fences, no explanation before or after."
+            "no markdown code fences, no explanation before or after."
         )
         raw = self.narrate(strict_system_prompt, user_prompt)
         text = raw.strip()

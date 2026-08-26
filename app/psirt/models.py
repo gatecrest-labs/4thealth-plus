@@ -75,7 +75,9 @@ class DeviceFinding:
     product: str
     current_version: str
     in_range: bool
-    workaround_status: str  # in_place | not_in_place | manual_verification_required | not_applicable
+    workaround_status: (
+        str  # in_place | not_in_place | manual_verification_required | not_applicable
+    )
     verdict: str  # no_action | config_change_required | upgrade_required | unknown_needs_manual_check
     reason: str
 

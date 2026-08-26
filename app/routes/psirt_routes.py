@@ -63,7 +63,8 @@ def _advisory_from_payload(data: dict) -> Advisory:
             fixed_version=str(r.get("fixed_version", "") or ""),
             notes=str(r.get("notes", "") or ""),
         )
-        for r in data.get("affected_ranges", []) if isinstance(r, dict)
+        for r in data.get("affected_ranges", [])
+        if isinstance(r, dict)
     ]
     return Advisory(
         advisory_id=str(data.get("advisory_id", "")),
@@ -114,7 +115,9 @@ def psirt_extract():
         if filename.endswith(".eml"):
             msg = email.message_from_bytes(raw, policy=email_policy.default)
             body = msg.get_body(preferencelist=("plain", "html"))
-            email_text = body.get_content() if body else raw.decode("utf-8", errors="replace")
+            email_text = (
+                body.get_content() if body else raw.decode("utf-8", errors="replace")
+            )
         else:
             email_text = raw.decode("utf-8", errors="replace")
     else:
@@ -161,7 +164,10 @@ def psirt_assess_device():
     try:
         with make_client() as client:
             result = psirt_assess(
-                advisory, client, adom, _http_client(),
+                advisory,
+                client,
+                adom,
+                _http_client(),
                 Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else "",
                 enrichment_enabled=Config.PSIRT_ENRICHMENT_ENABLED,
                 fetch_timeout=Config.PSIRT_FETCH_TIMEOUT,
@@ -173,12 +179,14 @@ def psirt_assess_device():
 
     matching = [f for f in result.findings if f.device == device]
     finding = matching[0] if matching else None
-    return jsonify({
-        "finding": finding.to_dict() if finding else None,
-        "priority": result.priority,
-        "priority_rationale": result.priority_rationale,
-        "kev_hit": result.kev_hit,
-    })
+    return jsonify(
+        {
+            "finding": finding.to_dict() if finding else None,
+            "priority": result.priority,
+            "priority_rationale": result.priority_rationale,
+            "kev_hit": result.kev_hit,
+        }
+    )
 
 
 # ── assess: bulk (adom="*" resolves to every accessible ADOM) ─────────────────
@@ -190,7 +198,9 @@ def psirt_assess_bulk():
     data = request.get_json(silent=True) or {}
     adom = (data.get("adom") or "").strip()
     if not adom:
-        return jsonify({"error": "adom is required (use \"*\" for all accessible ADOMs)"}), 400
+        return jsonify(
+            {"error": 'adom is required (use "*" for all accessible ADOMs)'}
+        ), 400
 
     if adom != "*":
         if err := check_adom_access(adom):
@@ -218,7 +228,10 @@ def psirt_assess_bulk():
         with make_client() as client:
             if adom_scope is not None:
                 result = psirt_assess(
-                    advisory, client, adom_scope, _http_client(),
+                    advisory,
+                    client,
+                    adom_scope,
+                    _http_client(),
                     Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else "",
                     enrichment_enabled=Config.PSIRT_ENRICHMENT_ENABLED,
                     fetch_timeout=Config.PSIRT_FETCH_TIMEOUT,
@@ -230,7 +243,9 @@ def psirt_assess_bulk():
                 from app.psirt.enrich import enrich_advisory
                 from app.psirt.scoring import compute_priority
 
-                kev_url = Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else ""
+                kev_url = (
+                    Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else ""
+                )
                 # Enrich exactly once here (fortiguard.com page fetch + CISA
                 # KEV download) rather than once per ADOM — with N allowed
                 # ADOMs that would otherwise be 2*N external fetches inside a
@@ -240,7 +255,9 @@ def psirt_assess_bulk():
                 # attribute) and passes its enrichment signal through
                 # unchanged rather than re-stomping it.
                 advisory = enrich_advisory(
-                    advisory, _http_client(), kev_url,
+                    advisory,
+                    _http_client(),
+                    kev_url,
                     enrichment_enabled=Config.PSIRT_ENRICHMENT_ENABLED,
                     timeout=Config.PSIRT_FETCH_TIMEOUT,
                 )
@@ -248,7 +265,10 @@ def psirt_assess_bulk():
                 merged = None
                 for one_adom in allowed:
                     partial = psirt_assess(
-                        advisory, client, one_adom, _http_client(),
+                        advisory,
+                        client,
+                        one_adom,
+                        _http_client(),
                         kev_url,
                         enrichment_enabled=False,
                         fetch_timeout=Config.PSIRT_FETCH_TIMEOUT,
@@ -262,8 +282,11 @@ def psirt_assess_bulk():
                         # per-ADOM call, so only keep it from the first
                         # iteration to avoid N duplicate rows in the merge.
                         new_findings = [
-                            f for f in partial.findings
-                            if not (f.device == "FortiManager (primary)" and f.adom == "-")
+                            f
+                            for f in partial.findings
+                            if not (
+                                f.device == "FortiManager (primary)" and f.adom == "-"
+                            )
                         ]
                         merged.findings.extend(new_findings)
                         merged.warnings.extend(partial.warnings)

@@ -29,9 +29,9 @@ _RFC1918_NETS = [
     _ipaddress.ip_network("10.0.0.0/8"),
     _ipaddress.ip_network("172.16.0.0/12"),
     _ipaddress.ip_network("192.168.0.0/16"),
-    _ipaddress.ip_network("100.64.0.0/10"),   # shared address space (RFC 6598)
+    _ipaddress.ip_network("100.64.0.0/10"),  # shared address space (RFC 6598)
     _ipaddress.ip_network("169.254.0.0/16"),  # link-local
-    _ipaddress.ip_network("127.0.0.0/8"),     # loopback
+    _ipaddress.ip_network("127.0.0.0/8"),  # loopback
 ]
 
 # Same unrestricted-trusthost values app.device_review._run_trusted_hosts uses.
@@ -119,22 +119,41 @@ def _check_trusted_hosts(client: Any, adom: str, device: str) -> str:
 
 
 # pattern key -> (substrings that identify this workaround in advisory text, check function)
-WORKAROUND_REGISTRY: dict[str, tuple[tuple[str, ...], Callable[[Any, str, str], str]]] = {
+WORKAROUND_REGISTRY: dict[
+    str, tuple[tuple[str, ...], Callable[[Any, str, str], str]]
+] = {
     "disable_http_https_admin_access": (
-        ("http/https admin", "https admin access", "http admin access",
-         "disable http", "disable https"),
+        (
+            "http/https admin",
+            "https admin access",
+            "http admin access",
+            "disable http",
+            "disable https",
+        ),
         _check_disable_http_https_admin_access,
     ),
     "disable_gui_internet_facing": (
-        ("internet-facing", "internet facing", "external interface",
-         "wan interface", "disable gui on", "gui on internet",
-         "internet exposed", "publicly accessible"),
+        (
+            "internet-facing",
+            "internet facing",
+            "external interface",
+            "wan interface",
+            "disable gui on",
+            "gui on internet",
+            "internet exposed",
+            "publicly accessible",
+        ),
         _check_disable_gui_internet_facing,
     ),
     "configure_trusted_hosts": (
-        ("trusted host", "trusthost", "restrict management access",
-         "limit management access", "management access restriction",
-         "allowed management ip"),
+        (
+            "trusted host",
+            "trusthost",
+            "restrict management access",
+            "limit management access",
+            "management access restriction",
+            "allowed management ip",
+        ),
         _check_trusted_hosts,
     ),
 }
