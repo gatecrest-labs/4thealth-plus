@@ -221,6 +221,8 @@ def psirt_assess_bulk():
             adom_scope = "*"
         else:
             adom_scope = None  # signal: iterate `allowed` below
+            if not allowed:
+                return jsonify({"error": "You have no accessible ADOMs"}), 403
 
     advisory = _advisory_from_payload(data.get("advisory") or {})
 
@@ -237,9 +239,6 @@ def psirt_assess_bulk():
                     fetch_timeout=Config.PSIRT_FETCH_TIMEOUT,
                 )
             else:
-                if not allowed:
-                    return jsonify({"error": "You have no accessible ADOMs"}), 403
-
                 from app.psirt.enrich import enrich_advisory
                 from app.psirt.scoring import compute_priority
 
