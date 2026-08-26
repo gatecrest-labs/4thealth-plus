@@ -293,6 +293,48 @@ Assist (Admin → AI Assist) — there is no separate Device Review toggle.
 4. Append an entry to `CHECKS` with the appropriate `data_keys` and empty `params_schema`.
 No template or frontend JS changes are needed for binary checks.
 
+#### PSIRT Advisory Assessment
+
+New section on the same `/device-review` page (below the CIS checks table),
+not a separate nav tab. Paste or upload (`.eml`/`.txt`) a Fortinet PSIRT
+advisory email; an LLM extracts structured fields (advisory ID, CVE IDs,
+affected version ranges, workaround text, severity, exploitation wording)
+into an editable review form — the only LLM touchpoint in this feature.
+Everything downstream is deterministic: `app/psirt/engine.py::assess()`
+scans the selected ADOM (or every ADOM the user can access, via `"*"`)
+for affected firmware and whether any documented workaround is already
+applied, then `app/psirt/scoring.py` computes priority from CVSS band,
+Fortinet's exploitation wording, and CISA KEV catalog membership. Ported
+from `~/code/github/ai/4tanalyst`'s `psirt/` package — see
+`app/psirt/VENDORED_FROM.md` for provenance and the sync workflow.
+
+**Workaround checks** (`app/psirt/workaround_checks.py`) — a registry
+matching recognized workaround phrasing to real FortiManager config
+checks via `app/fmg_client.py`: disabling HTTP/HTTPS admin access,
+disabling GUI on internet-facing interfaces, and trusted-hosts
+restriction (the last one reuses the same logic as Device Review's
+`trusted_hosts` CIS check). Unrecognized workaround text always yields
+`manual_verification_required` — never guessed.
+
+**Enrichment** — best-effort fetches against the fortiguard.com advisory
+page and the CISA KEV feed, gated by `PSIRT_ENRICHMENT_ENABLED` (default
+`true`; set `false` for air-gapped deployments). Failures degrade
+gracefully — the assessment proceeds on email-derived data alone.
+
+**Feature gate:** reuses the same `ai_assist_enabled` app-settings flag as
+every other AI-Assist feature in this repo (Admin → AI Assist) — no
+separate PSIRT toggle.
+
+**API endpoints:**
+- `GET  /api/device-review/psirt/extract-status`
+- `POST /api/device-review/psirt/extract` — body `{ email_text }` or multipart file upload
+- `POST /api/device-review/psirt/assess/device` — body `{ adom, device, advisory }`
+- `POST /api/device-review/psirt/assess` — body `{ adom: "<name>" | "*", advisory }`
+- `POST /api/device-review/psirt/report` — body `{ assessment }`, returns HTML
+
+No persistence — each assessment is a one-off analysis, same as NAT Lookup
+and Rule Validation's AI Assist.
+
 ### Rule Validation tab
 
 `GET /rule-review` → `rule_review.html` + `rule_review.js`
