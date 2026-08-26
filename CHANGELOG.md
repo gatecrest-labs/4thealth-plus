@@ -5,6 +5,18 @@ All notable changes to 4THealth+ are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **PSIRT Advisory Assessment (Device Review tab):** New section — paste or
+  upload a Fortinet PSIRT advisory email, get an LLM-assisted structured
+  extraction (editable before running), then a deterministic per-device
+  fleet scan across one ADOM or all accessible ADOMs: firmware version vs.
+  the advisory's affected ranges, workaround-in-place verification against
+  live FortiManager config, and exploit-aware priority scoring (CVSS band,
+  Fortinet's own exploitation wording, CISA KEV catalog). Renders a
+  self-contained HTML report. Ported from the sibling
+  [4tanalyst](https://github.com/gatecrest-labs) `psirt/` package — see
+  `app/psirt/VENDORED_FROM.md`. Enrichment against fortiguard.com/CISA KEV
+  is opt-out via `PSIRT_ENRICHMENT_ENABLED` for air-gapped deployments. No
+  disposition persistence in v1 — one-off analysis, same as NAT Lookup.
 - 8 new Device Review CIS checks, ported from the sibling
   [4THealth](https://github.com/Alski-MPLS/4thealth) repo (18 -> 26 total
   checks): `admin_mfa`, `hostname_changed`, `admin_port_nondefault`,
