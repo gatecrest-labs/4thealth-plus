@@ -317,6 +317,18 @@ def _plan_firewall(
                     pair_covered[p].append(pol.get("policyid", 0))
                 if len(full_pairs) < len(pairs):
                     summary["covered_pairs"] = [f"{s} -> {d}" for s, d in full_pairs]
+                broad_pairs = [p for p in full_pairs if results[p].broad_cover]
+                if broad_pairs:
+                    pol_id = pol.get("policyid", 0)
+                    summary["broad_cover"] = True
+                    summary["suggestion"] = (
+                        f"Rule {pol_id} covers "
+                        f"{', '.join(f'{s} -> {d}' for s, d in broad_pairs)} only via a "
+                        "subnet broader than /24 — verify the host is intentionally in "
+                        "scope, then add it explicitly to the address group or create a "
+                        "new rule."
+                    )
+                    fw.warnings.append(summary["suggestion"])
                 fw.covering_rules.append(summary)
             else:
                 # Skip disabled rules — they have no effect on traffic.

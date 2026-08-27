@@ -110,6 +110,19 @@ def _addr_matches(query: str, net_str: str) -> bool:
     return _ip_in_network(query, net_str)
 
 
+def _is_broad_match(query: str, net_str: str) -> bool:
+    """True if a single-host query is covered only via a subnet broader
+    than /24 — the match is valid but may be incidental; callers should warn."""
+    if "/" in query:
+        return False
+    try:
+        ip = ipaddress.ip_address(query.strip())
+        net = ipaddress.ip_network(net_str, strict=False)
+        return ip in net and 0 < net.prefixlen < 24
+    except ValueError:
+        return False
+
+
 # ── Address object resolution ─────────────────────────────────────────────────
 
 
@@ -722,11 +735,19 @@ def analyze_flows(
                 )
                 svc_any = any((p == "any" or port == 0) for p, port in rule_ports)
 
-                src_match = src_any or any(
-                    _addr_matches(src_raw, net) for net in src_nets if net
+                src_matched_nets = [
+                    net for net in src_nets if net and _addr_matches(src_raw, net)
+                ]
+                dst_matched_nets = [
+                    net for net in dst_nets if net and _addr_matches(dst_raw, net)
+                ]
+                src_match = src_any or bool(src_matched_nets)
+                dst_match = dst_any or bool(dst_matched_nets)
+                src_broad = not src_any and any(
+                    _is_broad_match(src_raw, net) for net in src_matched_nets
                 )
-                dst_match = dst_any or any(
-                    _addr_matches(dst_raw, net) for net in dst_nets if net
+                dst_broad = not dst_any and any(
+                    _is_broad_match(dst_raw, net) for net in dst_matched_nets
                 )
                 svc_match = (
                     svc_any or not svc_tokens or _port_covered(svc_tokens, rule_ports)
@@ -737,14 +758,20 @@ def analyze_flows(
 
                 if src_match and dst_match:
                     if svc_match:
-                        matching.append(
-                            {
-                                "id": pol_id,
-                                "name": pol_name,
-                                "action": action,
-                                "seq": idx + 1,
-                            }
-                        )
+                        entry = {
+                            "id": pol_id,
+                            "name": pol_name,
+                            "action": action,
+                            "seq": idx + 1,
+                        }
+                        if src_broad or dst_broad:
+                            entry["broad_cover"] = True
+                            result["notes"].append(
+                                f"⚠ Rule ID {pol_id} ({pol_name or 'unnamed'}) covers "
+                                "this flow only via a subnet broader than /24 — verify "
+                                "the host is intentionally in scope."
+                            )
+                        matching.append(entry)
                     elif action == "accept":
                         modifiable.append(
                             {
