@@ -1064,7 +1064,9 @@ function renderOlTable() {
           : `<span class="obj-type-badge obj-type-group">Addr Group</span>`)
       : (o.category === 'service'
           ? `<span class="obj-type-badge obj-type-svc">Service</span>`
-          : `<span class="obj-type-badge obj-type-object">Address</span>`);
+          : o.subtype === 'vip'
+            ? `<span class="obj-type-badge obj-type-object">VIP</span>`
+            : `<span class="obj-type-badge obj-type-object">Address</span>`);
     const catLabel = o.category === 'service' ? 'Service' : 'Address';
 
     let detailHtml = esc(o.detail || '—');
