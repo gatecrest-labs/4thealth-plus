@@ -177,12 +177,13 @@ Two-section layout (tab displays as "Rule Review" in the nav; internal key remai
    - Independent ADOM/package selectors from the Hygiene Analysis section below
    - Full-text regex search across name, ID, comment, source, destination, service, interfaces
    - Field-scoped filter dropdown (search within a single column)
-   - Address groups and service groups expand inline (click the triangle) to show member objects
+   - Address groups and service groups expand inline (click the triangle) to show member objects; group member lists over 10 entries paginate (10/25/50/100 per page)
    - Address objects show subnet detail when available
    - Interface badges (source = blue, destination = green)
    - Page size 10/25/50/100 with `<< < … > >>` pagination
    - Export (CSV/JSON/PDF) — each export includes a filter header block at the top (package, ADOM, timestamp, search terms, total/filtered counts)
 2. **Hygiene Analysis** (below) — select ADOM + package, run 6 checks, filter/export findings (CSV/JSON/PDF).
+   - **Find Unused Objects** button (next to Run Analysis) scans the selected package and lists address/address-group/service/service-group objects not referenced by any policy rule (BFS group-member expansion catches indirect references; FortiGuard/built-in objects like `all`/`ANY`/`g-*`/`ISDB-*` are excluded). A scope selector (All / Local only / Global only) controls whether the shared Global-ADOM object pool is included — services and service groups have no global pool, so `scope=global` always returns empty for those. Results are filterable/paginated (10/25/50/100) with CSV/JSON export. Backend: `GET /api/hygiene/unused-objects?adom=&pkg=&scope=`, logic in `app/hygiene.py::find_unused_objects()`.
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
 

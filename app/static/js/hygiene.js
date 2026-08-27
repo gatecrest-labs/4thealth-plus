@@ -331,6 +331,173 @@ function renderPagination(total) {
   pg.innerHTML = html;
 }
 
+/* ── Find Unused Objects ────────────────────────────────────────────────────── */
+async function runFindUnused() {
+    const adom = document.getElementById('hygieneAdom').value;
+    const pkg  = document.getElementById('hygienePackage').value;
+    if (!adom || !pkg) return;
+
+    const btn     = document.getElementById('findUnusedBtn');
+    const spinner = document.getElementById('unusedSpinner');
+    const panel   = document.getElementById('unusedObjectsPanel');
+    const content = document.getElementById('unusedObjectsContent');
+
+    btn.disabled = true;
+    spinner.style.display = '';
+    panel.style.display = '';
+    content.innerHTML = '<div class="text-muted py-3 text-center">Scanning objects…</div>';
+
+    try {
+        const path   = pkgPaths[pkg] || pkg;
+        const scope  = document.getElementById('unusedScope')?.value || 'all';
+        const params = new URLSearchParams({ adom, pkg: path, scope });
+        const resp = await fetch(`/api/hygiene/unused-objects?${params}`);
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            content.innerHTML = `<div class="alert alert-danger mb-0">${esc(err.error || 'Failed to check unused objects.')}</div>`;
+            return;
+        }
+        const data = await resp.json();
+        renderUnusedObjects(data);
+    } catch (err) {
+        content.innerHTML = `<div class="alert alert-danger mb-0">${esc(err.message)}</div>`;
+    } finally {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+    }
+}
+
+/* ── Unused Objects state ────────────────────────────────────────────────── */
+let unusedAllRows  = [];
+let unusedFiltered = [];
+let unusedPage     = 1;
+let unusedPageSize = 25;
+let unusedFilter   = '';
+
+function renderUnusedObjects(data) {
+    window._unusedObjectsData = data;
+    const totalUnused = data.unused_addresses.length + data.unused_services.length;
+
+    document.getElementById('unusedCsvBtn').style.display = totalUnused ? '' : 'none';
+    document.getElementById('unusedJsonBtn').style.display = totalUnused ? '' : 'none';
+
+    if (totalUnused === 0) {
+        unusedAllRows = [];
+        document.getElementById('unusedObjectsContent').innerHTML =
+            '<div class="alert alert-success mb-0">No unused objects found in this package.</div>';
+        return;
+    }
+
+    unusedAllRows = [
+        ...data.unused_addresses.map(o => ({ name: o.name, category: 'address', type: o.type, detail: o.detail || '' })),
+        ...data.unused_services.map(o  => ({ name: o.name, category: 'service', type: o.type, detail: o.detail || '' })),
+    ];
+    unusedPage   = 1;
+    unusedFilter = '';
+    renderUnusedTable();
+}
+
+function renderUnusedTable() {
+    const content = document.getElementById('unusedObjectsContent');
+    const data    = window._unusedObjectsData;
+    if (!data) return;
+
+    const q = unusedFilter.toLowerCase();
+    unusedFiltered = q
+        ? unusedAllRows.filter(r => r.name.toLowerCase().includes(q) || r.detail.toLowerCase().includes(q))
+        : unusedAllRows.slice();
+
+    const total = Math.ceil(unusedFiltered.length / unusedPageSize) || 1;
+    unusedPage  = Math.min(Math.max(1, unusedPage), total);
+    const slice = unusedFiltered.slice((unusedPage - 1) * unusedPageSize, unusedPage * unusedPageSize);
+
+    const psOpts = [10, 25, 50, 100].map(n =>
+        `<option value="${n}"${n === unusedPageSize ? ' selected' : ''}>${n}</option>`).join('');
+
+    function pgb(lbl, pg, dis, act) {
+        return `<button class="pg-btn${act ? ' active' : ''}" data-uopage="${pg}"${dis ? ' disabled' : ''}>${lbl}</button>`;
+    }
+    const s = Math.max(1, unusedPage - 2), e = Math.min(total, s + 4);
+    let pgHtml = pgb('&laquo;&laquo;', 1, unusedPage === 1, false);
+    pgHtml += pgb('&lsaquo;', unusedPage - 1, unusedPage === 1, false);
+    for (let i = s; i <= e; i++) pgHtml += pgb(i, i, false, i === unusedPage);
+    pgHtml += pgb('&rsaquo;', unusedPage + 1, unusedPage === total, false);
+    pgHtml += pgb('&raquo;&raquo;', total, unusedPage === total, false);
+
+    const rows = slice.map(o => {
+        const bc  = o.category === 'address' ? 'bg-primary' : 'bg-secondary';
+        const lbl = o.type === 'group' ? (o.category === 'address' ? 'address group' : 'service group') : o.category;
+        return `<tr><td>${esc(o.name)}</td><td><span class="badge ${bc}">${esc(lbl)}</span></td></tr>`;
+    }).join('');
+
+    const showPag = unusedFiltered.length > 10;
+    content.innerHTML = `
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <input type="text" id="unusedFilterInput" class="form-control form-control-sm" style="max-width:260px"
+                placeholder="Filter by name or IP…" value="${esc(unusedFilter)}">
+            <span class="text-muted small ms-auto">
+                ${unusedFiltered.length} of ${unusedAllRows.length} object(s) &mdash; ${esc(data.checked_at)}
+            </span>
+        </div>
+        <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Object Name</th><th>Type</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+        ${showPag ? `<div class="d-flex align-items-center justify-content-between mt-2 flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-1">
+                <label class="text-muted small me-1">Per page:</label>
+                <select id="unusedPageSizeSelect" class="form-select form-select-sm" style="width:auto">${psOpts}</select>
+            </div>
+            <div class="pg-bar">${pgHtml}</div>
+            <div class="text-muted small">Page ${unusedPage} of ${total}</div>
+        </div>` : ''}`;
+
+    const fi = document.getElementById('unusedFilterInput');
+    fi.addEventListener('input', function() {
+        unusedFilter = this.value;
+        unusedPage   = 1;
+        renderUnusedTable();
+    });
+    if (unusedFilter) { fi.focus(); fi.setSelectionRange(fi.value.length, fi.value.length); }
+    const psSel = document.getElementById('unusedPageSizeSelect');
+    if (psSel) psSel.addEventListener('change', function() {
+        unusedPageSize = parseInt(this.value, 10);
+        unusedPage     = 1;
+        renderUnusedTable();
+    });
+}
+
+function exportUnusedCsv() {
+    const data = window._unusedObjectsData;
+    if (!data || !unusedAllRows.length) return;
+    const rows = unusedFiltered.length ? unusedFiltered : unusedAllRows;
+    const csvRows = [['Name', 'Category', 'Type'], ...rows.map(o => [o.name, o.category, o.type])];
+    const csv = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const pkg = (data.pkg || 'pkg').replace(/\//g, '_');
+    download(`unused-objects-${data.adom}-${pkg}.csv`, csv, 'text/csv');
+}
+
+function exportUnusedJson() {
+    const data = window._unusedObjectsData;
+    if (!data || !unusedAllRows.length) return;
+    const rows    = unusedFiltered.length ? unusedFiltered : unusedAllRows;
+    const payload = { adom: data.adom, pkg: data.pkg, checked_at: data.checked_at,
+                      filter: unusedFilter || null, objects: rows };
+    download(`unused-objects-${data.adom}.json`, JSON.stringify(payload, null, 2), 'application/json');
+}
+
+document.getElementById('findUnusedBtn')?.addEventListener('click', runFindUnused);
+document.getElementById('unusedCsvBtn')?.addEventListener('click', exportUnusedCsv);
+document.getElementById('unusedJsonBtn')?.addEventListener('click', exportUnusedJson);
+
+/* ── Unused Objects pagination delegation ───────────────────────────────────── */
+document.getElementById('unusedObjectsContent')?.addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-uopage]');
+    if (!btn || btn.disabled) return;
+    unusedPage = parseInt(btn.dataset.uopage, 10);
+    renderUnusedTable();
+});
+
 /* ── Hygiene exports ────────────────────────────────────────────────────────── */
 function exportCsv() {
   const rows = filtered();
@@ -663,16 +830,47 @@ function _pvSvcText(items) {
   return String(items);
 }
 
+/* ── Group member pagination state (Policy Viewer) ──────────────────────────── */
+let _grpMemCounter = 0;
+const _grpMemData  = {};
+
+function _grpMembersHtml(cid) {
+  const d = _grpMemData[cid];
+  if (!d) return '';
+  const total = Math.ceil(d.members.length / d.pageSize) || 1;
+  d.page      = Math.min(Math.max(1, d.page), total);
+  const slice = d.members.slice((d.page - 1) * d.pageSize, d.page * d.pageSize);
+  const items = slice.map(m => `<div class="pv-member">↳ ${esc(m)}</div>`).join('');
+  if (d.members.length <= 10) return items;
+
+  const opts = [10, 25, 50, 100].map(n =>
+    `<option value="${n}"${n === d.pageSize ? ' selected' : ''}>${n}</option>`).join('');
+  function pgb(lbl, pg, dis) {
+    return `<button class="pv-mem-btn btn btn-sm btn-outline-secondary py-0 px-1"
+      data-grpcid="${esc(cid)}" data-grppg="${pg}"${dis ? ' disabled' : ''}>${lbl}</button>`;
+  }
+  const nav = `<div class="pv-mem-nav d-flex align-items-center gap-1 mt-1 flex-wrap" style="font-size:.75rem">
+    <select class="pv-mem-psize form-select form-select-sm py-0" style="width:4.5rem" data-grpcid="${esc(cid)}">${opts}</select>
+    ${pgb('&laquo;', 1, d.page === 1)}
+    ${pgb('&lsaquo;', d.page - 1, d.page === 1)}
+    <span class="text-muted">${d.page}/${total}</span>
+    ${pgb('&rsaquo;', d.page + 1, d.page === total)}
+    ${pgb('&raquo;', total, d.page === total)}
+  </div>`;
+  return items + nav;
+}
+
 /* ── Object expansion HTML helpers ─────────────────────────────────────────── */
 function _addrCellHtml(items) {
   if (!items || !items.length) return '<span style="color:var(--text-muted)">—</span>';
   return items.map(item => {
     if (typeof item === 'string') return `<div class="pv-obj">${esc(item)}</div>`;
     if (item.type === 'group') {
-      const members = (item.members || []).map(m => `<div class="pv-member">↳ ${esc(m)}</div>`).join('');
+      const cid = `grp${_grpMemCounter++}`;
+      _grpMemData[cid] = { members: item.members || [], page: 1, pageSize: 25 };
       return `<div class="pv-obj pv-group" title="Address group">
         <span class="pv-group-icon">&#9650;</span>${esc(item.name)}
-        <div class="pv-members">${members}</div>
+        <div class="pv-members" id="pv-mem-${cid}">${_grpMembersHtml(cid)}</div>
       </div>`;
     }
     const detail = item.detail ? `<span class="pv-detail">${esc(item.detail)}</span>` : '';
@@ -690,10 +888,11 @@ function _svcCellHtml(items) {
   return items.map(item => {
     if (typeof item === 'string') return `<div class="pv-obj">${esc(item)}</div>`;
     if (item.type === 'group') {
-      const members = (item.members || []).map(m => `<div class="pv-member">↳ ${esc(m)}</div>`).join('');
+      const cid = `grp${_grpMemCounter++}`;
+      _grpMemData[cid] = { members: item.members || [], page: 1, pageSize: 25 };
       return `<div class="pv-obj pv-group" title="Service group">
         <span class="pv-group-icon">&#9650;</span>${esc(item.name)}
-        <div class="pv-members">${members}</div>
+        <div class="pv-members" id="pv-mem-${cid}">${_grpMembersHtml(cid)}</div>
       </div>`;
     }
     return `<div class="pv-obj">${esc(item.name)}</div>`;
@@ -757,6 +956,7 @@ function _pvRuleRow(p) {
 }
 
 function renderPolicyTable() {
+  _grpMemCounter = 0;
   const flat  = _pvFlattenForPage(pvFiltered);
   const filteredRuleCount = _pvRuleCount(pvFiltered);
   const totalRuleCount    = _pvRuleCount(allPolicies);
@@ -1040,7 +1240,41 @@ function applyOlFilter() {
   );
 }
 
+/* ── Group member pagination state (Object Lookup) ───────────────────────────── */
+let _olGrpCounter = 0;
+const _olGrpData  = {};
+
+function _olMembersHtml(cid) {
+  const d = _olGrpData[cid];
+  if (!d) return '';
+  const total = Math.ceil(d.members.length / d.pageSize) || 1;
+  d.page      = Math.min(Math.max(1, d.page), total);
+  const slice = d.members.slice((d.page - 1) * d.pageSize, d.page * d.pageSize);
+  const items = slice.map(m => {
+    const mname   = typeof m === 'string' ? m : (m.name || '');
+    const mdetail = typeof m === 'string' ? '' : (m.detail || '');
+    return `<div class="obj-lookup-member">↳ ${esc(mname)}${mdetail ? `<span style="color:var(--text-muted);margin-left:.4rem">${esc(mdetail)}</span>` : ''}</div>`;
+  }).join('');
+  if (d.members.length <= 10) return items;
+  const opts = [10, 25, 50, 100].map(n =>
+    `<option value="${n}"${n === d.pageSize ? ' selected' : ''}>${n}</option>`).join('');
+  function pgb(lbl, pg, dis) {
+    return `<button class="ol-mem-btn btn btn-sm btn-outline-secondary py-0 px-1"
+      data-olcid="${esc(cid)}" data-olpg="${pg}"${dis ? ' disabled' : ''}>${lbl}</button>`;
+  }
+  const nav = `<div class="ol-mem-nav d-flex align-items-center gap-1 mt-1 flex-wrap" style="font-size:.75rem">
+    <select class="ol-mem-psize form-select form-select-sm py-0" style="width:4.5rem" data-olcid="${esc(cid)}">${opts}</select>
+    ${pgb('&laquo;', 1, d.page === 1)}
+    ${pgb('&lsaquo;', d.page - 1, d.page === 1)}
+    <span class="text-muted">${d.page}/${total}</span>
+    ${pgb('&rsaquo;', d.page + 1, d.page === total)}
+    ${pgb('&raquo;', total, d.page === total)}
+  </div>`;
+  return items + nav;
+}
+
 function renderOlTable() {
+  _olGrpCounter = 0;
   const rows  = olFiltered;
   const total = Math.ceil(rows.length / olPageSize) || 1;
   olPage      = Math.min(olPage, total);
@@ -1071,13 +1305,9 @@ function renderOlTable() {
 
     let detailHtml = esc(o.detail || '—');
     if (o.members && o.members.length) {
-      detailHtml += `<div class="obj-lookup-members">` +
-        o.members.map(m => {
-          const mname   = typeof m === 'string' ? m : (m.name || '');
-          const mdetail = typeof m === 'string' ? '' : (m.detail || '');
-          return `<div class="obj-lookup-member">↳ ${esc(mname)}${mdetail ? `<span style="color:var(--text-muted);margin-left:.4rem">${esc(mdetail)}</span>` : ''}</div>`;
-        }).join('') +
-        `</div>`;
+      const cid = `olgr${_olGrpCounter++}`;
+      _olGrpData[cid] = { members: o.members, page: 1, pageSize: 25 };
+      detailHtml += `<div class="obj-lookup-members" id="ol-mem-${cid}">${_olMembersHtml(cid)}</div>`;
     }
     const adom = (olMeta || {}).adom || '';
     return `<tr>
@@ -1941,11 +2171,13 @@ document.getElementById('hygieneAdom').addEventListener('change', function () {
     sel.innerHTML = '<option value="">— select package —</option>';
     sel.disabled = true;
     document.getElementById('hygieneRunBtn').disabled = true;
+    document.getElementById('findUnusedBtn').disabled = true;
   }
 });
 
 document.getElementById('hygienePackage').addEventListener('change', function () {
   document.getElementById('hygieneRunBtn').disabled = !this.value;
+  document.getElementById('findUnusedBtn').disabled = !this.value;
 });
 
 document.getElementById('hygieneRunBtn').addEventListener('click', runAnalysis);
@@ -2068,6 +2300,46 @@ document.getElementById('policyTbody').addEventListener('click', e => {
   const grp = e.target.closest('.pv-group');
   if (!grp) return;
   grp.classList.toggle('pv-open');
+});
+
+/* ── Group member pagination delegation (Policy Viewer) ──────────────────────── */
+document.getElementById('policyTbody').addEventListener('click', function(e) {
+  const btn = e.target.closest('.pv-mem-btn');
+  if (!btn || btn.disabled) return;
+  const cid = btn.dataset.grpcid;
+  if (!_grpMemData[cid]) return;
+  _grpMemData[cid].page = parseInt(btn.dataset.grppg, 10);
+  document.getElementById(`pv-mem-${cid}`).innerHTML = _grpMembersHtml(cid);
+});
+
+document.getElementById('policyTbody').addEventListener('change', function(e) {
+  const sel = e.target.closest('.pv-mem-psize');
+  if (!sel) return;
+  const cid = sel.dataset.grpcid;
+  if (!_grpMemData[cid]) return;
+  _grpMemData[cid].pageSize = parseInt(sel.value, 10);
+  _grpMemData[cid].page     = 1;
+  document.getElementById(`pv-mem-${cid}`).innerHTML = _grpMembersHtml(cid);
+});
+
+/* ── Group member pagination delegation (Object Lookup) ──────────────────────── */
+document.getElementById('olResults')?.addEventListener('click', function(e) {
+  const btn = e.target.closest('.ol-mem-btn');
+  if (!btn || btn.disabled) return;
+  const cid = btn.dataset.olcid;
+  if (!_olGrpData[cid]) return;
+  _olGrpData[cid].page = parseInt(btn.dataset.olpg, 10);
+  document.getElementById(`ol-mem-${cid}`).innerHTML = _olMembersHtml(cid);
+});
+
+document.getElementById('olResults')?.addEventListener('change', function(e) {
+  const sel = e.target.closest('.ol-mem-psize');
+  if (!sel) return;
+  const cid = sel.dataset.olcid;
+  if (!_olGrpData[cid]) return;
+  _olGrpData[cid].pageSize = parseInt(sel.value, 10);
+  _olGrpData[cid].page     = 1;
+  document.getElementById(`ol-mem-${cid}`).innerHTML = _olMembersHtml(cid);
 });
 
 /* ── Close buttons ──────────────────────────────────────────────────────────── */
