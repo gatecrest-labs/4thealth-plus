@@ -177,7 +177,43 @@ def _parse_subnet_to_networks(subnet_str: str) -> frozenset | None:
     return None
 
 
-def build_addr_resolver(addr_objects: list, addr_groups: list) -> dict:
+def _vip_addr_and_detail(vip: dict) -> tuple[str, str]:
+    """Return (extip_str, 'extip -> mappedip' detail) for a VIP object.
+
+    VIPs are a distinct FMG object class from firewall/address (see
+    FMGClient.get_vip_objects) but FortiGate allows them to be selected as a
+    policy dstaddr exactly like a normal address object, so callers that
+    resolve address names need to fold VIPs in alongside addr_objects.
+    """
+    ext_ip_raw = vip.get("extip", "")
+    if isinstance(ext_ip_raw, list):
+        ext_ip_raw = ext_ip_raw[0] if ext_ip_raw else ""
+    ext_ip = str(ext_ip_raw).strip()
+
+    mapped_raw = vip.get("mappedip") or vip.get("mapped-ip") or []
+    if isinstance(mapped_raw, str):
+        mapped_ranges = [mapped_raw] if mapped_raw else []
+    elif isinstance(mapped_raw, list):
+        mapped_ranges = []
+        for entry in mapped_raw:
+            if isinstance(entry, dict):
+                r = entry.get("range", "")
+                if r:
+                    mapped_ranges.append(r)
+            elif isinstance(entry, str) and entry:
+                mapped_ranges.append(entry)
+    else:
+        mapped_ranges = []
+    mapped = "; ".join(mapped_ranges)
+
+    if ext_ip and mapped:
+        return ext_ip, f"{ext_ip} → {mapped}"
+    return ext_ip, ext_ip or mapped or ""
+
+
+def build_addr_resolver(
+    addr_objects: list, addr_groups: list, vip_objects: list | None = None
+) -> dict:
     """Build a name→frozenset[ip_network] resolver for address objects and groups.
 
     Values are frozenset of ip_network objects, or None for FQDN/geography/
@@ -197,6 +233,15 @@ def build_addr_resolver(addr_objects: list, addr_groups: list) -> dict:
             continue
         nets = _parse_subnet_to_networks(subnet_str)
         raw[name] = nets  # may be None if parse failed
+
+    for vip in vip_objects or []:
+        if not isinstance(vip, dict):
+            continue
+        name = vip.get("name", "")
+        if not name:
+            continue
+        ext_ip, _detail = _vip_addr_and_detail(vip)
+        raw[name] = _parse_subnet_to_networks(ext_ip) if ext_ip else None
 
     # Build a flat membership map first: group_name → [member_names]
     grp_members: dict[str, list[str]] = {}
@@ -576,6 +621,7 @@ def hygiene_policy_objects():
         with make_client() as client:
             addr_objects = client.get_address_objects(adom)
             addr_groups = client.get_address_groups(adom)
+            vip_objects = client.get_vip_objects(adom)
             svc_groups = client.get_service_groups(adom)
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
@@ -612,6 +658,15 @@ def hygiene_policy_objects():
         subnet = _addr_subnet(ao)
         if n and subnet:
             addr_detail_map[n] = subnet
+    # VIPs are a distinct FMG object class from firewall/address but can be
+    # selected as a policy dstaddr exactly like a normal address object.
+    for vip in vip_objects:
+        if not isinstance(vip, dict):
+            continue
+        n = vip.get("name", "")
+        _ext_ip, detail = _vip_addr_and_detail(vip)
+        if n and detail:
+            addr_detail_map[n] = detail
 
     return jsonify(
         {
@@ -628,7 +683,7 @@ def hygiene_policy_objects():
 @bp.route("/api/hygiene/adoms/<adom>/objects/lookup", methods=["POST"])
 @tab_required("rule_hygiene")
 def hygiene_object_lookup(adom: str):
-    """Search address objects, address groups, service objects, and service groups.
+    """Search address objects, address groups, VIPs, service objects, and service groups.
 
     Body: { "query": "search string" }
     Returns: { "objects": [ { name, type, category, detail, members } ] }
@@ -645,6 +700,7 @@ def hygiene_object_lookup(adom: str):
         with make_client() as client:
             addr_objects = client.get_address_objects(adom)
             addr_groups = client.get_address_groups(adom)
+            vip_objects = client.get_vip_objects(adom)
             svc_objects = client.get_service_objects(adom)
             svc_groups = client.get_service_groups(adom)
     except FMGError as exc:
@@ -661,6 +717,17 @@ def hygiene_object_lookup(adom: str):
         subnet = _addr_subnet(ao)
         if n and subnet:
             addr_detail_map[n] = subnet
+    # VIPs are a distinct FMG object class from firewall/address (see
+    # FMGClient.get_vip_objects) but FortiGate allows them to be selected as
+    # a policy dstaddr exactly like a normal address object, so group members
+    # that are actually VIPs still need a detail string.
+    for vip in vip_objects:
+        if not isinstance(vip, dict):
+            continue
+        n = vip.get("name", "")
+        _ext_ip, detail = _vip_addr_and_detail(vip)
+        if n and detail:
+            addr_detail_map[n] = detail
 
     # Build service detail map so service-group members can show port info
     svc_detail_map: dict[str, str] = {}
@@ -698,6 +765,24 @@ def hygiene_object_lookup(adom: str):
                 "category": "address",
                 "detail": subnet,
                 "subtype": str(obj_type),
+                "members": [],
+            }
+        )
+
+    for vip in vip_objects:
+        if not isinstance(vip, dict):
+            continue
+        name = vip.get("name", "")
+        if not name or query not in name.lower():
+            continue
+        _ext_ip, detail = _vip_addr_and_detail(vip)
+        results.append(
+            {
+                "name": name,
+                "type": "object",
+                "category": "address",
+                "detail": detail,
+                "subtype": "vip",
                 "members": [],
             }
         )
@@ -1330,9 +1415,12 @@ def hygiene_run():
                 try:
                     addr_objects = client.get_address_objects(adom)
                     addr_groups = client.get_address_groups(adom)
+                    vip_objects = client.get_vip_objects(adom)
                     svc_objects = client.get_service_objects(adom)
                     svc_groups = client.get_service_groups(adom)
-                    addr_resolver = build_addr_resolver(addr_objects, addr_groups)
+                    addr_resolver = build_addr_resolver(
+                        addr_objects, addr_groups, vip_objects
+                    )
                     svc_resolver = build_svc_resolver(svc_objects, svc_groups)
                 except Exception:
                     # Object fetch failure is non-fatal — fall back to name-only matching.
