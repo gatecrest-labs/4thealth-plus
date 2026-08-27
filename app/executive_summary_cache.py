@@ -12,6 +12,8 @@ into the same in-memory _store:
       - pending_config_diff_count                (aggregated from the
                                                     existing
                                                     pending_status_cache)
+      - adom_count                                (len of the target ADOM
+                                                    list itself)
     Cheap — one lightweight call per ADOM.
 
   - Hygiene sweep (default every EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES=60
@@ -53,6 +55,7 @@ _store: dict = {
     "pending_config_diff_count": None,
     "firewall_online_count": None,
     "firewalls_total": None,
+    "adom_count": None,
     "status": "pending",  # pending | running | ok | error
     "error": None,
     "last_updated": None,
@@ -216,6 +219,7 @@ def _run_device_sweep(app) -> bool:
                     "pending_config_diff_count": pending_count,
                     "firewall_online_count": online,
                     "firewalls_total": total,
+                    "adom_count": len(adom_names),
                     "status": "ok",
                     "error": None,
                     "last_updated": datetime.now(UTC).isoformat(),
