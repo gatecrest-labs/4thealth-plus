@@ -12,6 +12,7 @@ API (JSON, all read-only):
 
 import ipaddress
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 
 from flask import Blueprint, jsonify, render_template, request, session
 
@@ -19,7 +20,7 @@ from app import registry
 from app.decorators import check_adom_access, tab_required
 from app.fmg_client import FMGError
 from app.fmg_helpers import make_client
-from app.hygiene import CHECKS, _action, _status, run_checks
+from app.hygiene import CHECKS, _action, _status, find_unused_objects, run_checks
 from app.security import internal_api_error, upstream_api_error
 
 bp = Blueprint("hygiene", __name__)
@@ -1485,5 +1486,44 @@ def hygiene_run():
             "policy_count": len(policies),
             "total": len(findings),
             "findings": findings,
+        }
+    )
+
+
+@bp.route("/api/hygiene/unused-objects")
+@tab_required("rule_hygiene")
+def hygiene_unused_objects():
+    """Return address/service objects not referenced by any rule in the given package."""
+    adom = (request.args.get("adom") or "").strip()
+    path = (request.args.get("pkg") or "").strip()
+    scope = (request.args.get("scope") or "all").strip()
+    if scope not in ("all", "local", "global"):
+        scope = "all"
+    if not adom or not path:
+        return jsonify({"error": "adom and pkg are required"}), 400
+    if err := check_adom_access(adom):
+        return err
+    try:
+        with make_client() as client:
+            policies = client.get_policies(adom, path) or []
+            addresses = client.get_address_objects(adom, scope=scope) or []
+            addr_groups = client.get_address_groups(adom, scope=scope) or []
+            services = client.get_service_objects(adom, scope=scope) or []
+            svc_groups = client.get_service_groups(adom, scope=scope) or []
+    except FMGError as exc:
+        return upstream_api_error("hygiene", exc)
+    except Exception as exc:
+        return internal_api_error("hygiene", exc)
+
+    result = find_unused_objects(policies, addresses, addr_groups, services, svc_groups)
+    return jsonify(
+        {
+            "adom": adom,
+            "pkg": path,
+            "unused_addresses": result["unused_addresses"],
+            "unused_services": result["unused_services"],
+            "total_addresses": len(addresses) + len(addr_groups),
+            "total_services": len(services) + len(svc_groups),
+            "checked_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
         }
     )

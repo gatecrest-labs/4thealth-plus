@@ -1193,48 +1193,50 @@ class FMGClient:
             offset += page_size
         return all_items
 
-    def get_address_objects(self, adom: str) -> list:
-        """Return all firewall address objects in an ADOM plus the global database.
-
-        FMG stores shared objects under /pm/config/global/obj when they are
-        defined in the Global ADOM.  We fetch both and merge so the caller always
-        gets the full resolved set regardless of where objects live.
-        Paginates to avoid the 30 s timeout on large ADOM object lists.
-        """
+    def get_address_objects(self, adom: str, scope: str = "all") -> list:
+        """Return firewall address objects filtered by scope: 'local', 'global', or 'all'."""
+        urls = []
+        if scope in ("all", "local"):
+            urls.append(f"/pm/config/adom/{adom}/obj/firewall/address")
+        if scope in ("all", "global"):
+            urls.append("/pm/config/global/obj/firewall/address")
         results: list = []
-        for url in (
-            f"/pm/config/adom/{adom}/obj/firewall/address",
-            "/pm/config/global/obj/firewall/address",
-        ):
+        for url in urls:
             try:
                 results.extend(self._get_paged(url))
             except Exception:
                 pass
         return results
 
-    def get_address_groups(self, adom: str) -> list:
-        """Return all firewall address groups in an ADOM plus the global database."""
+    def get_address_groups(self, adom: str, scope: str = "all") -> list:
+        """Return firewall address groups filtered by scope: 'local', 'global', or 'all'."""
+        urls = []
+        if scope in ("all", "local"):
+            urls.append(f"/pm/config/adom/{adom}/obj/firewall/addrgrp")
+        if scope in ("all", "global"):
+            urls.append("/pm/config/global/obj/firewall/addrgrp")
         results: list = []
-        for url in (
-            f"/pm/config/adom/{adom}/obj/firewall/addrgrp",
-            "/pm/config/global/obj/firewall/addrgrp",
-        ):
+        for url in urls:
             try:
                 results.extend(self._get_paged(url))
             except Exception:
                 pass
         return results
 
-    def get_service_objects(self, adom: str) -> list:
-        """Return all custom service objects in an ADOM."""
+    def get_service_objects(self, adom: str, scope: str = "all") -> list:
+        """Return all custom service objects in an ADOM (services have no global pool)."""
+        if scope == "global":
+            return []
         try:
             data = self._get(f"/pm/config/adom/{adom}/obj/firewall/service/custom")
             return data if isinstance(data, list) else []
         except Exception:
             return []
 
-    def get_service_groups(self, adom: str) -> list:
-        """Return all service groups in an ADOM."""
+    def get_service_groups(self, adom: str, scope: str = "all") -> list:
+        """Return all service groups in an ADOM (service groups have no global pool)."""
+        if scope == "global":
+            return []
         try:
             data = self._get(f"/pm/config/adom/{adom}/obj/firewall/service/group")
             return data if isinstance(data, list) else []
