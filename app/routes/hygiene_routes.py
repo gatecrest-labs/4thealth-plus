@@ -12,6 +12,7 @@ API (JSON, all read-only):
 
 import ipaddress
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 
 from flask import Blueprint, jsonify, render_template, request, session
 
@@ -19,7 +20,7 @@ from app import registry
 from app.decorators import check_adom_access, tab_required
 from app.fmg_client import FMGError
 from app.fmg_helpers import make_client
-from app.hygiene import CHECKS, _action, _status, run_checks
+from app.hygiene import CHECKS, _action, _status, find_unused_objects, run_checks
 from app.security import internal_api_error, upstream_api_error
 
 bp = Blueprint("hygiene", __name__)
@@ -1514,9 +1515,6 @@ def hygiene_unused_objects():
     except Exception as exc:
         return internal_api_error("hygiene", exc)
 
-    from app.hygiene import find_unused_objects
-    import datetime
-
     result = find_unused_objects(policies, addresses, addr_groups, services, svc_groups)
     return jsonify(
         {
@@ -1526,6 +1524,6 @@ def hygiene_unused_objects():
             "unused_services": result["unused_services"],
             "total_addresses": len(addresses) + len(addr_groups),
             "total_services": len(services) + len(svc_groups),
-            "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "checked_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
         }
     )
