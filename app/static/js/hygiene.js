@@ -1850,7 +1850,7 @@ function nlExportPdf() {
 /* ── Debounce helper ────────────────────────────────────────────────────────── */
 function debounce(fn, ms) {
   let t;
-  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  return function(...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
 }
 
 /* ── Capture check labels from the rendered checkboxes ─────────────────────── */
