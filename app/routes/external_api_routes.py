@@ -65,6 +65,47 @@ def _parse_endpoints(raw: str) -> list:
     return [i.strip() for i in items if i.strip()]
 
 
+def _version_breakdown() -> dict:
+    """Firmware version -> device count, from the all-ADOM versions cache."""
+    from collections import Counter
+
+    from app import versions_cache
+
+    devices = versions_cache.get_cached().get("devices") or []
+    return dict(Counter(d.get("version", "n/a") for d in devices))
+
+
+def _last_backup_status() -> str | None:
+    """Status of the most recently completed scheduled backup run, across all jobs."""
+    from app import backup_scheduler
+
+    latest_run = None
+    for job in backup_scheduler.get_all_jobs():
+        runs = job.get("runs") or []
+        if runs and (
+            latest_run is None or runs[0]["started_at"] > latest_run["started_at"]
+        ):
+            latest_run = runs[0]
+    if latest_run is None:
+        return None
+    status = latest_run.get("status")
+    return "ok" if status == "success" else status
+
+
+def _ai_usage_24h() -> dict:
+    """AI Assist connection count and estimated cost over the trailing 24h."""
+    import datetime as dt
+
+    from app.ai_usage import usage_summary
+
+    now = dt.datetime.now(dt.UTC)
+    usage = usage_summary(now - dt.timedelta(hours=24), now, num_buckets=1)
+    return {
+        "ai_connection_count_24h": usage["total_calls"],
+        "ai_estimated_cost_24h_usd": round(usage["total_cost_usd"], 2),
+    }
+
+
 # ── Zone query ────────────────────────────────────────────────────────────────
 
 
@@ -168,16 +209,27 @@ def ext_executive_summary():
         return err
 
     from app.executive_summary_cache import get_summary
+    from app.summary_job import get_summary as get_rule_summary
 
     summary = get_summary()
-    return jsonify(
-        {
-            "hygiene_score": summary.get("hygiene_score"),
-            "version_compliance_pct": summary.get("version_compliance_pct"),
-            "pending_config_diff_count": summary.get("pending_config_diff_count"),
-            "firewall_online_count": summary.get("firewall_online_count"),
-            "firewalls_total": summary.get("firewalls_total"),
-            "status": summary.get("status"),
-            "last_updated": summary.get("last_updated"),
-        }
-    )
+    payload = {
+        "hygiene_score": summary.get("hygiene_score"),
+        "version_compliance_pct": summary.get("version_compliance_pct"),
+        "pending_config_diff_count": summary.get("pending_config_diff_count"),
+        "firewall_online_count": summary.get("firewall_online_count"),
+        "firewalls_total": summary.get("firewalls_total"),
+        "firewall_managed_count": summary.get("firewalls_total"),
+        "adom_count": summary.get("adom_count"),
+        "rule_count_total": get_rule_summary().get("rules_total"),
+        "version_breakdown": _version_breakdown(),
+        "last_backup_status": _last_backup_status(),
+        "status": summary.get("status"),
+        "last_updated": summary.get("last_updated"),
+    }
+
+    ai_enabled = get_setting("ai_assist_enabled", False)
+    payload["ai_enabled"] = ai_enabled
+    if ai_enabled:
+        payload["ai_usage_24h"] = _ai_usage_24h()
+
+    return jsonify(payload)
