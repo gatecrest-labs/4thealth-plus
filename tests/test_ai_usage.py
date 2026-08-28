@@ -193,3 +193,44 @@ def test_claude_provider_narrate_records_feature_on_failure(usage_db, monkeypatc
     rows = ai_usage.query_usage(_dt(1), _dt(-1))
     assert rows[-1]["feature"] == "psirt_extract"
     assert rows[-1]["success"] is False
+
+
+def test_usage_summary_by_feature(usage_db):
+    ai_usage.record_usage(
+        provider="claude", model="m", input_tokens=10, output_tokens=5, cost_usd=0.01,
+        success=True, feature="device_review_summary",
+    )
+    ai_usage.record_usage(
+        provider="claude", model="m", input_tokens=20, output_tokens=10, cost_usd=0.02,
+        success=False, feature="psirt_extract",
+    )
+
+    result = ai_usage.usage_summary(_dt(1), _dt(-1), by_feature=True)
+
+    assert result["by_feature"]["device_review_summary"] == {
+        "calls": 1, "cost_usd": pytest.approx(0.01), "failures": 0,
+    }
+    assert result["by_feature"]["psirt_extract"] == {
+        "calls": 1, "cost_usd": pytest.approx(0.02), "failures": 1,
+    }
+
+
+def test_usage_summary_by_feature_buckets_unattributed_rows_as_unknown(usage_db):
+    import sqlite3
+
+    conn = sqlite3.connect(usage_db)
+    conn.execute(
+        "INSERT INTO ai_usage (timestamp, provider, model, input_tokens, output_tokens, "
+        "cost_usd, success, error) VALUES (?, 'claude', 'm', 1, 1, 0.5, 1, NULL)",
+        (_dt(0).isoformat(),),
+    )
+    conn.commit()
+    conn.close()
+
+    result = ai_usage.usage_summary(_dt(1), _dt(-1), by_feature=True)
+    assert result["by_feature"]["unknown"]["calls"] == 1
+
+
+def test_usage_summary_omits_by_feature_key_by_default(usage_db):
+    result = ai_usage.usage_summary(_dt(1), _dt(-1))
+    assert "by_feature" not in result

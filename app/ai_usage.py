@@ -118,9 +118,20 @@ def query_usage(start: dt.datetime, end: dt.datetime) -> list[dict]:
     ]
 
 
-def usage_summary(start: dt.datetime, end: dt.datetime, num_buckets: int = 24) -> dict:
+def usage_summary(
+    start: dt.datetime,
+    end: dt.datetime,
+    num_buckets: int = 24,
+    *,
+    by_feature: bool = False,
+) -> dict:
     """Bucket the [start, end] range into num_buckets equal time slices,
-    plus running totals for the whole range."""
+    plus running totals for the whole range.
+
+    With by_feature=True, also adds a "by_feature" key mapping each feature
+    label (rows predating attribution count as "unknown") to its own
+    calls/cost_usd/failures totals.
+    """
     rows = query_usage(start, end)
 
     span = (end - start).total_seconds()
@@ -165,7 +176,7 @@ def usage_summary(start: dt.datetime, end: dt.datetime, num_buckets: int = 24) -
         buckets[idx]["input_tokens"] += row["input_tokens"]
         buckets[idx]["output_tokens"] += row["output_tokens"]
 
-    return {
+    result = {
         "buckets": buckets,
         "total_calls": total_calls,
         "total_cost_usd": total_cost,
@@ -173,3 +184,16 @@ def usage_summary(start: dt.datetime, end: dt.datetime, num_buckets: int = 24) -
         "total_input_tokens": total_input,
         "total_output_tokens": total_output,
     }
+    if by_feature:
+        by_feature_totals: dict[str, dict] = {}
+        for row in rows:
+            key = row["feature"] or "unknown"
+            entry = by_feature_totals.setdefault(
+                key, {"calls": 0, "cost_usd": 0.0, "failures": 0}
+            )
+            entry["calls"] += 1
+            entry["cost_usd"] += row["cost_usd"]
+            if not row["success"]:
+                entry["failures"] += 1
+        result["by_feature"] = by_feature_totals
+    return result
