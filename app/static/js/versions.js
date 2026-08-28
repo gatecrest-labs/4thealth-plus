@@ -55,11 +55,13 @@ function normalizeVersions(devices) {
 
 /* ── Build a version chart block (shared by global and per-ADOM) ────────── */
 function buildVersionChart(devices, label, chartId) {
-  const total = devices.length;
+  const online  = devices.filter(d => d.status !== 'offline');
+  const total   = online.length;
+  const nOffline = devices.length - total;
   if (total === 0) return '';
 
   const counts = {};
-  for (const d of devices) {
+  for (const d of online) {
     const v = d.version || 'unknown';
     counts[v] = (counts[v] || 0) + 1;
   }
@@ -79,11 +81,15 @@ function buildVersionChart(devices, label, chartId) {
 </div>`;
   }).join('');
 
+  const offlineNote = nOffline > 0
+    ? ` <span style="font-size:.8em;color:var(--text-muted)">(${nOffline} offline hidden)</span>`
+    : '';
+
   return `
 <div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
   <div class="version-summary">
     <span class="version-total">${total}</span>
-    <span class="version-total-label">total device${total !== 1 ? 's' : ''} — <strong>${escHtml(label)}</strong></span>
+    <span class="version-total-label">online device${total !== 1 ? 's' : ''} — <strong>${escHtml(label)}</strong>${offlineNote}</span>
   </div>
   <div class="version-chart" id="${escHtml(chartId)}">${chartRows}</div>
 </div>`;
@@ -198,7 +204,7 @@ function _clearGlobalDetail() {
 }
 
 function _renderGlobalDetail(ver) {
-  const matched   = globalDevices.filter(d => (d.version || 'unknown') === ver);
+  const matched   = globalDevices.filter(d => (d.version || 'unknown') === ver && d.status !== 'offline');
   const panel     = document.getElementById('globalVersionDetail');
   const pageTotal = Math.ceil(matched.length / globalDetSize) || 1;
   globalDetPage   = Math.min(globalDetPage, pageTotal);
@@ -405,12 +411,14 @@ function renderPagination(current, total) {
 
 /* ── Per-ADOM full page render ─────────────────────────────────────────── */
 function renderPage() {
-  const container = document.getElementById('versionsContent');
-  const total     = allDevices.length;
+  const container  = document.getElementById('versionsContent');
+  const online     = allDevices.filter(d => d.status !== 'offline');
+  const nOffline   = allDevices.length - online.length;
+  const chartTotal = online.length;
 
-  // Tally versions
+  // Tally versions — online only for chart
   const counts = {};
-  for (const d of allDevices) {
+  for (const d of online) {
     const v = d.version || 'unknown';
     counts[v] = (counts[v] || 0) + 1;
   }
@@ -418,8 +426,8 @@ function renderPage() {
 
   // Chart rows
   const chartRows = sorted.map(([ver, count]) => {
-    const pct    = ((count / total) * 100).toFixed(1);
-    const barPct = Math.round((count / total) * 100);
+    const pct    = ((count / chartTotal) * 100).toFixed(1);
+    const barPct = Math.round((count / chartTotal) * 100);
     const active = selectedVer === ver ? ' ver-row-active' : '';
     return `
 <div class="version-row${active}" data-ver="${escHtml(ver)}" title="Click to filter devices by ${escHtml(ver)}">
@@ -432,7 +440,11 @@ function renderPage() {
 </div>`;
   }).join('');
 
-  // Filter devices for detail table
+  const offlineNote = nOffline > 0
+    ? ` <span style="font-size:.8em;color:var(--text-muted)">(${nOffline} offline hidden)</span>`
+    : '';
+
+  // Detail table shows all devices (online + offline); version filter applies to both
   const filtered  = selectedVer
     ? allDevices.filter(d => (d.version || 'unknown') === selectedVer)
     : allDevices;
@@ -442,16 +454,21 @@ function renderPage() {
 
   const filterLabel = selectedVer
     ? `${escHtml(selectedVer)} — ${filtered.length} device${filtered.length !== 1 ? 's' : ''}`
-    : `All versions — ${total} device${total !== 1 ? 's' : ''}`;
+    : `All versions — ${allDevices.length} device${allDevices.length !== 1 ? 's' : ''}`;
 
-  const tableRows = slice.map(d => `
-<tr>
-  <td>${escHtml(d.name)}</td>
+  const offlineBadge = `<span style="display:inline-block;font-size:.7em;padding:1px 5px;border-radius:3px;background:#fee2e2;color:#991b1b;font-weight:600;vertical-align:middle;margin-left:4px">OFFLINE</span>`;
+
+  const tableRows = slice.map(d => {
+    const isOffline = d.status === 'offline';
+    return `
+<tr${isOffline ? ' style="opacity:0.6"' : ''}>
+  <td>${escHtml(d.name)}${isOffline ? offlineBadge : ''}</td>
   <td><code>${escHtml(d.ip)}</code></td>
   <td>${escHtml(d.platform)}</td>
   <td>${escHtml(d.version || 'unknown')}</td>
   <td>${escHtml(d.serial)}</td>
-</tr>`).join('');
+</tr>`;
+  }).join('');
 
   const sizeOpts = [10, 20, 50].map(n =>
     `<option value="${n}" ${detailSize === n ? 'selected' : ''}>${n}</option>`).join('');
@@ -459,8 +476,8 @@ function renderPage() {
   container.innerHTML = `
 <div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
   <div class="version-summary">
-    <span class="version-total">${total}</span>
-    <span class="version-total-label">total device${total !== 1 ? 's' : ''} in <strong>${escHtml(currentAdom)}</strong></span>
+    <span class="version-total">${chartTotal}</span>
+    <span class="version-total-label">online device${chartTotal !== 1 ? 's' : ''} in <strong>${escHtml(currentAdom)}</strong>${offlineNote}</span>
     ${selectedVer ? `<button class="btn btn-sm" id="clearFilter" style="margin-left:1rem;background:var(--surface-alt);border:1px solid var(--border);color:var(--text)">&#10005; Clear filter</button>` : ''}
   </div>
   <div class="version-chart" id="versionChart">${chartRows}</div>
