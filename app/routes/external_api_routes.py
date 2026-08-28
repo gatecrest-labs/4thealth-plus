@@ -229,6 +229,12 @@ def ext_executive_summary():
         "last_backup_status": _last_backup_status(),
         "status": summary.get("status"),
         "last_updated": summary.get("last_updated"),
+        "schema_version": 1,
+        "device_sweep_status": summary.get("device_sweep_status"),
+        "hygiene_sweep_status": summary.get("hygiene_sweep_status"),
+        "device_sweep_collected_at": summary.get("device_sweep_collected_at"),
+        "hygiene_sweep_collected_at": summary.get("hygiene_sweep_collected_at"),
+        "rule_count_collected_at": summary.get("hygiene_sweep_collected_at"),
     }
 
     ai_enabled = get_setting("ai_assist_enabled", False)

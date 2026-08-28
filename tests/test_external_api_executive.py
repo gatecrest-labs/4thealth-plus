@@ -180,3 +180,35 @@ def test_version_breakdown_annotates_eol_versions(client):
         "v7.4.5": {"count": 1, "eol": False},
         "v6.4.2": {"count": 1, "eol": True},
     }
+
+
+def test_payload_includes_schema_version_and_split_freshness(client):
+    fake_summary = {
+        "status": "ok", "last_updated": "2026-08-28T09:45:00Z",
+        "device_sweep_status": "ok", "hygiene_sweep_status": "ok",
+        "device_sweep_collected_at": "2026-08-28T09:45:00Z",
+        "hygiene_sweep_collected_at": "2026-08-28T09:00:00Z",
+        "rule_count_total": 14203,
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["schema_version"] == 1
+    assert data["device_sweep_status"] == "ok"
+    assert data["hygiene_sweep_status"] == "ok"
+    assert data["device_sweep_collected_at"] == "2026-08-28T09:45:00Z"
+    assert data["hygiene_sweep_collected_at"] == "2026-08-28T09:00:00Z"
+    assert data["rule_count_collected_at"] == "2026-08-28T09:00:00Z"
+    assert data["status"] == "ok"  # deprecated alias, still present
