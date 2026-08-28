@@ -88,11 +88,15 @@ def _run_job(app):
                             version = f"v{major}.{mr}"
                         else:
                             version = "n/a"
+                        conn_status = d.get(
+                            "conn_status", d.get("connection_status", -1)
+                        )
                         result.append(
                             {
                                 "name": d.get("name", ""),
                                 "version": version,
                                 "adom": adom,
+                                "status": "green" if conn_status == 1 else "offline",
                             }
                         )
                 except Exception as exc:
