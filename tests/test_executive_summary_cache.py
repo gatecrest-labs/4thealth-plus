@@ -435,6 +435,66 @@ def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tm
     assert hygiene_rollup.get_latest()["rule_findings_total"] == summary["rule_hygiene"]["rule_findings_total"]
 
 
+def _multi_package_client(policies_by_pkg, addresses):
+    """Client whose single ADOM has two packages with distinct policies."""
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.get_adoms.return_value = [{"name": "Customer1"}]
+    client.get_policy_packages.return_value = [
+        {"name": "pkgA", "path": "pkgA"},
+        {"name": "pkgB", "path": "pkgB"},
+    ]
+    client.get_policies.side_effect = lambda adom, pkg: policies_by_pkg[pkg]
+    client.get_address_objects.return_value = addresses
+    client.get_address_groups.return_value = []
+    client.get_service_objects.return_value = []
+    client.get_service_groups.return_value = []
+    return client
+
+
+def test_hygiene_sweep_fetches_object_lists_once_per_adom_not_per_package(app_ctx):
+    """ADOM-scoped object fetches must not be repeated for every package."""
+    client = _multi_package_client(
+        {
+            "pkgA": [{"policyid": 1, "name": "a", "srcaddr": ["addr-a"]}],
+            "pkgB": [{"policyid": 2, "name": "b", "srcaddr": ["addr-b"]}],
+        },
+        addresses=[{"name": "addr-a"}, {"name": "addr-b"}, {"name": "addr-orphan"}],
+    )
+
+    with patch("app.fmg_helpers.make_client", return_value=client):
+        cache_mod._run_hygiene_sweep(app_ctx)
+
+    assert client.get_address_objects.call_count == 1
+    assert client.get_address_groups.call_count == 1
+    assert client.get_service_objects.call_count == 1
+    assert client.get_service_groups.call_count == 1
+    # Both packages' policies were still read.
+    assert client.get_policies.call_count == 2
+
+
+def test_hygiene_sweep_unused_objects_is_fleet_wide_not_summed_per_package(app_ctx):
+    """addr-a/addr-b are each used by one package; only addr-orphan is unused.
+
+    Per-package accounting would count addr-b unused in pkgA and addr-a unused
+    in pkgB, plus addr-orphan twice — 4 instead of 1.
+    """
+    client = _multi_package_client(
+        {
+            "pkgA": [{"policyid": 1, "name": "a", "srcaddr": ["addr-a"]}],
+            "pkgB": [{"policyid": 2, "name": "b", "srcaddr": ["addr-b"]}],
+        },
+        addresses=[{"name": "addr-a"}, {"name": "addr-b"}, {"name": "addr-orphan"}],
+    )
+
+    with patch("app.fmg_helpers.make_client", return_value=client):
+        cache_mod._run_hygiene_sweep(app_ctx)
+
+    by_type = cache_mod.get_summary()["rule_hygiene"]["rule_findings_by_type"]
+    assert by_type["unused_objects"] == 1
+
+
 def test_device_sweep_error_does_not_affect_hygiene_sweep_status(app_ctx):
     import app.executive_summary_cache as cache_mod
 

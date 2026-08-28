@@ -296,6 +296,13 @@ def _run_hygiene_sweep(app) -> bool:
                         exc,
                     )
                     continue
+
+                # Per-package findings (unnamed/unlogged/shadow/disabled/
+                # expired/unhit) genuinely are per-package, but the object
+                # lists — and therefore unused-object detection — are
+                # ADOM-scoped, so accumulate the ADOM's policies and run that
+                # check once, below, over the union.
+                all_adom_policies: list = []
                 for pkg in packages:
                     pkg_path = pkg.get("path", pkg.get("name", ""))
                     if not pkg_path:
@@ -317,25 +324,28 @@ def _run_hygiene_sweep(app) -> bool:
                     for f in all_findings:
                         by_type[f["check"]] = by_type.get(f["check"], 0) + 1
 
-                    try:
-                        addresses = client.get_address_objects(adom)
-                        addr_groups = client.get_address_groups(adom)
-                        services = client.get_service_objects(adom)
-                        svc_groups = client.get_service_groups(adom)
-                        unused = find_unused_objects(
-                            policies, addresses, addr_groups, services, svc_groups
-                        )
-                        by_type["unused_objects"] += len(
-                            unused["unused_addresses"]
-                        ) + len(unused["unused_services"])
-                    except Exception as exc:
-                        logger.warning(
-                            "executive_summary_cache: unused-object detection for "
-                            "%s/%s failed: %s",
-                            adom,
-                            pkg_path,
-                            exc,
-                        )
+                    all_adom_policies.extend(policies)
+
+                if not all_adom_policies:
+                    continue
+                try:
+                    addresses = client.get_address_objects(adom)
+                    addr_groups = client.get_address_groups(adom)
+                    services = client.get_service_objects(adom)
+                    svc_groups = client.get_service_groups(adom)
+                    unused = find_unused_objects(
+                        all_adom_policies, addresses, addr_groups, services, svc_groups
+                    )
+                    by_type["unused_objects"] += len(unused["unused_addresses"]) + len(
+                        unused["unused_services"]
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "executive_summary_cache: unused-object detection for "
+                        "%s failed: %s",
+                        adom,
+                        exc,
+                    )
 
         hygiene_score = _hygiene_score(total_findings, total_policies)
 
