@@ -35,6 +35,12 @@ def _init_db() -> None:
     conn = sqlite3.connect(_DB_PATH)
     try:
         conn.executescript(_SCHEMA)
+        # Idempotent migration for databases created before attribution existed.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(ai_usage)")}
+        if "feature" not in columns:
+            conn.execute("ALTER TABLE ai_usage ADD COLUMN feature TEXT")
+        if "user" not in columns:
+            conn.execute("ALTER TABLE ai_usage ADD COLUMN user TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -48,6 +54,8 @@ def record_usage(
     output_tokens: int,
     cost_usd: float,
     success: bool,
+    feature: str,
+    user: str | None = None,
     error: str | None = None,
 ) -> None:
     """Record one AI Assist LLM call. Never raises — a tracking failure
@@ -58,7 +66,8 @@ def record_usage(
         try:
             conn.execute(
                 "INSERT INTO ai_usage (timestamp, provider, model, input_tokens, "
-                "output_tokens, cost_usd, success, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "output_tokens, cost_usd, success, error, feature, user) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     dt.datetime.now(dt.UTC).isoformat(),
                     provider,
@@ -68,6 +77,8 @@ def record_usage(
                     cost_usd,
                     1 if success else 0,
                     error,
+                    feature,
+                    user,
                 ),
             )
             conn.commit()
@@ -100,6 +111,8 @@ def query_usage(start: dt.datetime, end: dt.datetime) -> list[dict]:
             "cost_usd": r["cost_usd"],
             "success": bool(r["success"]),
             "error": r["error"],
+            "feature": r["feature"],
+            "user": r["user"],
         }
         for r in rows
     ]
