@@ -58,7 +58,9 @@ def build_rollup(results: list[dict]) -> dict:
 
     top_failing_checks = [
         {"check": key, "count": count}
-        for key, count in sorted(failing_check_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+        for key, count in sorted(
+            failing_check_counts.items(), key=lambda kv: kv[1], reverse=True
+        )[:3]
     ]
 
     return {

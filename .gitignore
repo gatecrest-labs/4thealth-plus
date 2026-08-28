@@ -15,6 +15,7 @@ summary_history.json
 smtp_config.json
 config_diff_jobs.json
 device_review_jobs.json
+device_review_rollup.json
 backup_config.json
 protocol_severity.json
 naming.yaml

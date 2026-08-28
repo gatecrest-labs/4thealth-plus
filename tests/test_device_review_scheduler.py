@@ -234,6 +234,47 @@ def test_execute_job_check_summary_in_email_body(jobs_path, monkeypatch):
     assert "Check trusted hosts" in sent["body"]
 
 
+def test_execute_job_persists_device_review_rollup(jobs_path, monkeypatch, tmp_path):
+    from app import device_review_scheduler as sched
+    import app.device_review_rollup as dr_rollup
+
+    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+
+    fake_meta = [
+        {"key": "default_admin", "name": "Default 'admin' Account (CIS)",
+         "description": "Check default admin account"},
+    ]
+    monkeypatch.setattr("app.device_review_scheduler._CHECKS_META", fake_meta)
+
+    job = sched.create_job({
+        "name": "T", "adom": "Customer1", "days_of_week": ["MON"], "time": "06:00",
+        "checks": [], "check_params": {},
+        "format": "pdf", "email": "test@corp.com", "enabled": True,
+    })
+    fake_results = [
+        {"device": "fw-01", "ip": "10.0.0.1", "error": None, "rows": [
+            {"device": "fw-01", "interface": "", "vdom": "root", "ip": "10.0.0.1",
+             "type": "system", "status": "", "check": "Default 'admin' Account (CIS)",
+             "result": "FAIL", "detail": "", "protocols": [], "has_insecure": False, "has_secure": False},
+        ]},
+    ]
+    monkeypatch.setattr(
+        "app.device_review_scheduler._bulk_device_review_adom",
+        lambda adom, checks, check_params, max_workers=4: fake_results,
+    )
+    monkeypatch.setattr(
+        "app.device_review_scheduler._send_email",
+        lambda to, subject, body_html, attachments: None,
+    )
+
+    sched._execute_job(job["id"])
+
+    latest = dr_rollup.get_latest()
+    assert latest is not None
+    assert latest["devices_reviewed"] == 1
+    assert latest["devices_with_failures"] == 1
+
+
 def test_execute_job_appends_run_record(jobs_path, monkeypatch):
     from app import device_review_scheduler as sched
 
