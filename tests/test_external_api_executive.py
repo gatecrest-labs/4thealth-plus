@@ -51,6 +51,7 @@ def test_returns_summary_payload_when_authorized(client):
         "firewall_online_count": 212,
         "firewalls_total": 218,
         "adom_count": 3,
+        "rule_count_total": 5120,
         "status": "ok",
         "error": None,
         "last_updated": "2026-08-24T15:00:00+00:00",
@@ -62,9 +63,6 @@ def test_returns_summary_payload_when_authorized(client):
             return_value={"id": "tok1", "name": "4tExecutive"},
         ),
         patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
-        patch(
-            "app.summary_job.get_summary", return_value={"rules_total": 5120}
-        ),
         patch(
             "app.versions_cache.get_cached",
             return_value={
@@ -134,3 +132,23 @@ def test_ai_usage_omitted_when_ai_assist_disabled(client):
     assert "ai_usage_24h" not in data
     assert data["last_backup_status"] is None
     assert data["version_breakdown"] == {}
+
+
+def test_rule_count_total_sourced_from_executive_summary_cache_not_summary_job(client):
+    fake_summary = {"status": "ok", "last_updated": None, "rule_count_total": 14203}
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    assert resp.status_code == 200
+    assert resp.get_json()["rule_count_total"] == 14203

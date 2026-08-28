@@ -209,7 +209,6 @@ def ext_executive_summary():
         return err
 
     from app.executive_summary_cache import get_summary
-    from app.summary_job import get_summary as get_rule_summary
 
     summary = get_summary()
     payload = {
@@ -220,7 +219,7 @@ def ext_executive_summary():
         "firewalls_total": summary.get("firewalls_total"),
         "firewall_managed_count": summary.get("firewalls_total"),
         "adom_count": summary.get("adom_count"),
-        "rule_count_total": get_rule_summary().get("rules_total"),
+        "rule_count_total": summary.get("rule_count_total"),
         "version_breakdown": _version_breakdown(),
         "last_backup_status": _last_backup_status(),
         "status": summary.get("status"),

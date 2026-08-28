@@ -149,6 +149,8 @@ def _reset_store():
             "pending_config_diff_count": None,
             "firewall_online_count": None,
             "firewalls_total": None,
+            "adom_count": None,
+            "rule_count_total": None,
             "status": "pending",
             "error": None,
             "last_updated": None,
@@ -368,3 +370,18 @@ def test_run_hygiene_sweep_skips_when_already_running():
     finally:
         cache_mod._hygiene_running.clear()
     assert result is False
+
+
+def test_run_hygiene_sweep_stores_rule_count_total(app_ctx):
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.get_adoms.return_value = [{"name": "Customer1"}]
+    client.get_devices.return_value = [{"name": "fw1"}]
+    client.get_policy_packages.return_value = [{"name": "default", "path": "default"}]
+    client.get_policies.return_value = [{"policyid": 1}, {"policyid": 2}, {"policyid": 3}]
+
+    with patch("app.fmg_helpers.make_client", return_value=client):
+        cache_mod._run_hygiene_sweep(app_ctx)
+
+    assert cache_mod.get_summary()["rule_count_total"] == 3

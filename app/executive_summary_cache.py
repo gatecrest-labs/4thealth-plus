@@ -56,6 +56,7 @@ _store: dict = {
     "firewall_online_count": None,
     "firewalls_total": None,
     "adom_count": None,
+    "rule_count_total": None,
     "status": "pending",  # pending | running | ok | error
     "error": None,
     "last_updated": None,
@@ -312,6 +313,7 @@ def _run_hygiene_sweep(app) -> bool:
             _store.update(
                 {
                     "hygiene_score": hygiene_score,
+                    "rule_count_total": total_policies,
                     "status": "ok",
                     "error": None,
                     "last_updated": datetime.now(UTC).isoformat(),
