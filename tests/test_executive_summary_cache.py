@@ -141,7 +141,14 @@ import app.executive_summary_cache as cache_mod
 
 
 @pytest.fixture(autouse=True)
-def _reset_store():
+def _reset_store(tmp_path, monkeypatch):
+    # Redirect the hygiene rollup file into tmp_path so sweeps triggered by any
+    # test in this module never write hygiene_rollup.json into the project root.
+    import app.hygiene_rollup as hygiene_rollup_mod
+
+    monkeypatch.setattr(
+        hygiene_rollup_mod, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json"
+    )
     with cache_mod._lock:
         cache_mod._store.update({
             "hygiene_score": None,

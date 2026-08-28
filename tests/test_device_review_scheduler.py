@@ -10,6 +10,10 @@ from unittest.mock import patch, MagicMock
 def jobs_path(tmp_path, monkeypatch):
     p = tmp_path / "device_review_jobs.json"
     monkeypatch.setattr("app.device_review_scheduler._JOBS_PATH", p)
+    # Keep _execute_job's rollup persistence out of the project root too.
+    monkeypatch.setattr(
+        "app.device_review_rollup._ROLLUP_PATH", tmp_path / "device_review_rollup.json"
+    )
     return p
 
 
