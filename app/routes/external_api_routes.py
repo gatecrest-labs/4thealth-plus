@@ -97,18 +97,25 @@ def _last_backup_status() -> str | None:
     return "ok" if status == "success" else status
 
 
-def _ai_usage_24h() -> dict:
-    """AI Assist connection count and estimated cost over the trailing 24h."""
+def _ai_usage_24h() -> tuple[dict, dict]:
+    """AI Assist totals and the per-feature breakdown over the trailing 24h.
+
+    Both come from one usage_summary() call so the payload costs a single
+    query rather than two scans of the same 24h window.
+    """
     import datetime as dt
 
     from app.ai_usage import usage_summary
 
     now = dt.datetime.now(dt.UTC)
-    usage = usage_summary(now - dt.timedelta(hours=24), now, num_buckets=1)
-    return {
+    usage = usage_summary(
+        now - dt.timedelta(hours=24), now, num_buckets=1, by_feature=True
+    )
+    totals = {
         "ai_connection_count_24h": usage["total_calls"],
         "ai_estimated_cost_24h_usd": round(usage["total_cost_usd"], 2),
     }
+    return totals, usage.get("by_feature", {})
 
 
 def _device_review_rollup() -> dict | None:
@@ -258,6 +265,8 @@ def ext_executive_summary():
     ai_enabled = get_setting("ai_assist_enabled", False)
     payload["ai_enabled"] = ai_enabled
     if ai_enabled:
-        payload["ai_usage_24h"] = _ai_usage_24h()
+        usage_24h, usage_by_feature = _ai_usage_24h()
+        payload["ai_usage_24h"] = usage_24h
+        payload["ai_usage_by_feature"] = usage_by_feature
 
     return jsonify(payload)

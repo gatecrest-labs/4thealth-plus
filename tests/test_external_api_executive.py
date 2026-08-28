@@ -270,3 +270,60 @@ def test_payload_device_review_none_when_no_rollup_yet(client):
     data = resp.get_json()
     assert data["device_review"] is None
     assert data["rule_hygiene"] is None
+
+
+def test_payload_includes_ai_usage_by_feature_when_ai_enabled(client):
+    fake_summary = {"status": "ok"}
+    fake_usage = {
+        "buckets": [], "total_calls": 2, "total_cost_usd": 0.03, "total_failures": 0,
+        "total_input_tokens": 0, "total_output_tokens": 0,
+        "by_feature": {"device_review_summary": {"calls": 1, "cost_usd": 0.01, "failures": 0}},
+    }
+    with (
+        patch(
+            "app.routes.external_api_routes.get_setting",
+            side_effect=lambda k, default=None: {
+                "external_api_enabled": True,
+                "ai_assist_enabled": True,
+            }.get(k, default),
+        ),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.ai_usage.usage_summary", return_value=fake_usage),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["ai_usage_by_feature"] == fake_usage["by_feature"]
+    assert data["ai_usage_24h"]["ai_connection_count_24h"] == 2
+
+
+def test_ai_usage_by_feature_omitted_when_ai_assist_disabled(client):
+    with (
+        patch(
+            "app.routes.external_api_routes.get_setting",
+            side_effect=lambda k, default=None: {
+                "external_api_enabled": True,
+                "ai_assist_enabled": False,
+            }.get(k, default),
+        ),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    assert "ai_usage_by_feature" not in resp.get_json()
