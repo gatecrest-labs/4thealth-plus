@@ -147,3 +147,49 @@ def test_record_usage_user_defaults_to_none(usage_db):
     )
     rows = ai_usage.query_usage(_dt(1), _dt(-1))
     assert rows[0]["user"] is None
+
+
+def test_claude_provider_narrate_records_feature_and_user(usage_db, monkeypatch):
+    """narrate() takes a required feature label and attributes the row to it."""
+    from unittest.mock import MagicMock, patch
+
+    monkeypatch.setattr("app.config.Config.ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr("app.config.Config.ANTHROPIC_MODEL", "claude-sonnet-4-5")
+    from app.llm.claude_provider import ClaudeProvider
+
+    fake_block = MagicMock(type="text", text="narrated")
+    fake_response = MagicMock(content=[fake_block])
+    fake_response.usage.input_tokens = 10
+    fake_response.usage.output_tokens = 5
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = fake_response
+
+    with patch("anthropic.Anthropic", return_value=fake_client):
+        provider = ClaudeProvider()
+        provider.narrate("system", "user", feature="device_review_summary", user="alice")
+
+    rows = ai_usage.query_usage(_dt(1), _dt(-1))
+    assert rows[-1]["feature"] == "device_review_summary"
+    assert rows[-1]["user"] == "alice"
+
+
+def test_claude_provider_narrate_records_feature_on_failure(usage_db, monkeypatch):
+    from unittest.mock import MagicMock, patch
+
+    from app.llm.base import LLMError
+
+    monkeypatch.setattr("app.config.Config.ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr("app.config.Config.ANTHROPIC_MODEL", "claude-sonnet-4-5")
+    from app.llm.claude_provider import ClaudeProvider
+
+    fake_client = MagicMock()
+    fake_client.messages.create.side_effect = RuntimeError("rate limited")
+
+    with patch("anthropic.Anthropic", return_value=fake_client):
+        provider = ClaudeProvider()
+        with pytest.raises(LLMError):
+            provider.narrate("system", "user", feature="psirt_extract")
+
+    rows = ai_usage.query_usage(_dt(1), _dt(-1))
+    assert rows[-1]["feature"] == "psirt_extract"
+    assert rows[-1]["success"] is False
