@@ -66,13 +66,18 @@ def _parse_endpoints(raw: str) -> list:
 
 
 def _version_breakdown() -> dict:
-    """Firmware version -> device count, from the all-ADOM versions cache."""
+    """Firmware version -> {count, eol}, from the all-ADOM versions cache."""
     from collections import Counter
 
     from app import versions_cache
+    from app.version_eol import is_eol
 
     devices = versions_cache.get_cached().get("devices") or []
-    return dict(Counter(d.get("version", "n/a") for d in devices))
+    counts = Counter(d.get("version", "n/a") for d in devices)
+    return {
+        version: {"count": count, "eol": is_eol(version)}
+        for version, count in counts.items()
+    }
 
 
 def _last_backup_status() -> str | None:

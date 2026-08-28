@@ -94,7 +94,7 @@ def test_returns_summary_payload_when_authorized(client):
     assert data["firewall_managed_count"] == 218
     assert data["adom_count"] == 3
     assert data["rule_count_total"] == 5120
-    assert data["version_breakdown"] == {"v7.4.5": 2, "v7.2.9": 1}
+    assert data["version_breakdown"] == {"v7.4.5": {"count": 2, "eol": False}, "v7.2.9": {"count": 1, "eol": False}}
     assert data["last_backup_status"] == "ok"
     assert data["ai_enabled"] is True
     assert "ai_usage_24h" in data
@@ -152,3 +152,31 @@ def test_rule_count_total_sourced_from_executive_summary_cache_not_summary_job(c
         )
     assert resp.status_code == 200
     assert resp.get_json()["rule_count_total"] == 14203
+
+
+def test_version_breakdown_annotates_eol_versions(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch(
+            "app.versions_cache.get_cached",
+            return_value={"devices": [
+                {"name": "fw1", "version": "v7.4.5"},
+                {"name": "fw2", "version": "v6.4.2"},
+            ]},
+        ),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["version_breakdown"] == {
+        "v7.4.5": {"count": 1, "eol": False},
+        "v6.4.2": {"count": 1, "eol": True},
+    }
