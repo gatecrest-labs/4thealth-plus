@@ -134,6 +134,26 @@ def _device_review_rollup() -> dict | None:
     }
 
 
+def _hygiene_rollup() -> dict | None:
+    """Latest persisted rule-hygiene rollup, in the in-memory field shape.
+
+    Used as a cold-start fallback: the in-memory cache is empty after a
+    restart until the next hourly hygiene sweep completes, but the persisted
+    rollup survives.  Translates the record's ``ran_at`` to ``collected_at``,
+    the same way _device_review_rollup() does.
+    """
+    from app.hygiene_rollup import get_latest
+
+    latest = get_latest()
+    if latest is None:
+        return None
+    return {
+        "rule_findings_total": latest["rule_findings_total"],
+        "rule_findings_by_type": latest["rule_findings_by_type"],
+        "collected_at": latest["ran_at"],
+    }
+
+
 # ── Zone query ────────────────────────────────────────────────────────────────
 
 
@@ -259,7 +279,7 @@ def ext_executive_summary():
         "hygiene_sweep_collected_at": summary.get("hygiene_sweep_collected_at"),
         "rule_count_collected_at": summary.get("hygiene_sweep_collected_at"),
         "device_review": _device_review_rollup(),
-        "rule_hygiene": summary.get("rule_hygiene"),
+        "rule_hygiene": summary.get("rule_hygiene") or _hygiene_rollup(),
     }
 
     ai_enabled = get_setting("ai_assist_enabled", False)

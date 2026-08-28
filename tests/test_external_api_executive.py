@@ -262,6 +262,7 @@ def test_payload_device_review_none_when_no_rollup_yet(client):
         patch("app.versions_cache.get_cached", return_value={"devices": []}),
         patch("app.backup_scheduler.get_all_jobs", return_value=[]),
         patch("app.device_review_rollup.get_latest", return_value=None),
+        patch("app.hygiene_rollup.get_latest", return_value=None),
     ):
         resp = client.get(
             "/external/api/executive/summary",
@@ -270,6 +271,72 @@ def test_payload_device_review_none_when_no_rollup_yet(client):
     data = resp.get_json()
     assert data["device_review"] is None
     assert data["rule_hygiene"] is None
+
+
+def test_rule_hygiene_falls_back_to_persisted_rollup_on_cold_start(client):
+    """After a restart the in-memory cache is empty; the persisted rollup fills in."""
+    fake_hygiene_rollup = {
+        "ran_at": "2026-08-28T09:00:00Z",
+        "rule_findings_total": 118,
+        "rule_findings_by_type": {"shadow": 4, "unhit": 60},
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        # No "rule_hygiene" key at all — cold start before the first sweep.
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "pending"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.device_review_rollup.get_latest", return_value=None),
+        patch("app.hygiene_rollup.get_latest", return_value=fake_hygiene_rollup),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["rule_hygiene"] == {
+        "rule_findings_total": 118,
+        "rule_findings_by_type": {"shadow": 4, "unhit": 60},
+        "collected_at": "2026-08-28T09:00:00Z",
+    }
+
+
+def test_rule_hygiene_prefers_in_memory_over_persisted_rollup(client):
+    fake_summary = {
+        "status": "ok",
+        "rule_hygiene": {
+            "rule_findings_total": 5,
+            "rule_findings_by_type": {"unhit": 5},
+            "collected_at": "2026-08-28T10:00:00Z",
+        },
+    }
+    stale = {
+        "ran_at": "2026-08-27T09:00:00Z",
+        "rule_findings_total": 999,
+        "rule_findings_by_type": {"unhit": 999},
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.device_review_rollup.get_latest", return_value=None),
+        patch("app.hygiene_rollup.get_latest", return_value=stale),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["rule_hygiene"]["rule_findings_total"] == 5
 
 
 def test_payload_includes_ai_usage_by_feature_when_ai_enabled(client):
