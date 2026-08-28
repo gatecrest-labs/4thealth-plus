@@ -58,9 +58,13 @@ _store: dict = {
     "adom_count": None,
     "rule_count_total": None,
     "rule_hygiene": None,
-    "status": "pending",  # pending | running | ok | error
+    "status": "pending",  # pending | running | ok | error — deprecated alias
     "error": None,
-    "last_updated": None,
+    "last_updated": None,  # deprecated alias
+    "device_sweep_status": "pending",
+    "hygiene_sweep_status": "pending",
+    "device_sweep_collected_at": None,
+    "hygiene_sweep_collected_at": None,
 }
 
 _lock = threading.Lock()
@@ -159,6 +163,7 @@ def _run_device_sweep(app) -> bool:
     _device_running.set()
     with _lock:
         _store["status"] = "running"
+        _store["device_sweep_status"] = "running"
         _store["error"] = None
 
     logger.info("executive_summary_cache: starting device sweep")
@@ -225,6 +230,8 @@ def _run_device_sweep(app) -> bool:
                     "status": "ok",
                     "error": None,
                     "last_updated": datetime.now(UTC).isoformat(),
+                    "device_sweep_status": "ok",
+                    "device_sweep_collected_at": datetime.now(UTC).isoformat(),
                 }
             )
         return True
@@ -233,6 +240,7 @@ def _run_device_sweep(app) -> bool:
         logger.exception("executive_summary_cache: device sweep unhandled error")
         with _lock:
             _store["status"] = "error"
+            _store["device_sweep_status"] = "error"
             _store["error"] = str(exc)
         return False
     finally:
@@ -259,6 +267,7 @@ def _run_hygiene_sweep(app) -> bool:
     _hygiene_running.set()
     with _lock:
         _store["status"] = "running"
+        _store["hygiene_sweep_status"] = "running"
         _store["error"] = None
 
     logger.info("executive_summary_cache: starting hygiene sweep")
@@ -361,6 +370,8 @@ def _run_hygiene_sweep(app) -> bool:
                     "status": "ok",
                     "error": None,
                     "last_updated": datetime.now(UTC).isoformat(),
+                    "hygiene_sweep_status": "ok",
+                    "hygiene_sweep_collected_at": datetime.now(UTC).isoformat(),
                 }
             )
         return True
@@ -369,6 +380,7 @@ def _run_hygiene_sweep(app) -> bool:
         logger.exception("executive_summary_cache: hygiene sweep unhandled error")
         with _lock:
             _store["status"] = "error"
+            _store["hygiene_sweep_status"] = "error"
             _store["error"] = str(exc)
         return False
     finally:

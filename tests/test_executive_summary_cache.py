@@ -426,3 +426,34 @@ def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tm
     }
     assert summary["rule_hygiene"]["collected_at"] is not None
     assert hygiene_rollup.get_latest()["rule_findings_total"] == summary["rule_hygiene"]["rule_findings_total"]
+
+
+def test_device_sweep_error_does_not_affect_hygiene_sweep_status(app_ctx):
+    import app.executive_summary_cache as cache_mod
+
+    # A prior successful hygiene sweep already set hygiene_sweep_status ok.
+    with cache_mod._lock:
+        cache_mod._store["hygiene_sweep_status"] = "ok"
+        cache_mod._store["hygiene_sweep_collected_at"] = "2026-08-28T09:00:00Z"
+
+    with patch("app.fmg_helpers.make_client", side_effect=RuntimeError("FMG down")):
+        cache_mod._run_device_sweep(app_ctx)
+
+    summary = cache_mod.get_summary()
+    assert summary["device_sweep_status"] == "error"
+    assert summary["hygiene_sweep_status"] == "ok"
+
+
+def test_run_device_sweep_sets_device_sweep_collected_at(app_ctx):
+    import app.executive_summary_cache as cache_mod
+
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.get_adoms.return_value = [{"name": "Customer1"}]
+    client.get_devices.return_value = [{"name": "fw1", "conn_status": "up"}]
+
+    with patch("app.fmg_helpers.make_client", return_value=client):
+        cache_mod._run_device_sweep(app_ctx)
+
+    assert cache_mod.get_summary()["device_sweep_collected_at"] is not None
