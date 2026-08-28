@@ -234,3 +234,27 @@ def test_usage_summary_by_feature_buckets_unattributed_rows_as_unknown(usage_db)
 def test_usage_summary_omits_by_feature_key_by_default(usage_db):
     result = ai_usage.usage_summary(_dt(1), _dt(-1))
     assert "by_feature" not in result
+
+
+def test_prune_old_data_deletes_rows_older_than_90_days(usage_db):
+    import sqlite3
+
+    conn = sqlite3.connect(usage_db)
+    old_ts = (_dt(90 * 24 + 1)).isoformat()
+    conn.execute(
+        "INSERT INTO ai_usage (timestamp, provider, model, input_tokens, output_tokens, "
+        "cost_usd, success, error, feature, user) VALUES (?, 'claude', 'm', 1, 1, 0.0, 1, NULL, 'x', NULL)",
+        (old_ts,),
+    )
+    conn.commit()
+    conn.close()
+
+    ai_usage.record_usage(
+        provider="claude", model="m", input_tokens=1, output_tokens=1, cost_usd=0.0,
+        success=True, feature="x",
+    )
+
+    ai_usage.prune_old_data()
+
+    rows = ai_usage.query_usage(_dt(200 * 24), _dt(-1))
+    assert len(rows) == 1

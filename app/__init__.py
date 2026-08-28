@@ -130,6 +130,12 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         init_host_metrics_scheduler(app)
 
+    if not app.config.get("TESTING") and not app.config.get("_AI_USAGE_PRUNE_STARTED"):
+        app.config["_AI_USAGE_PRUNE_STARTED"] = True
+        from app.ai_usage import init_scheduler as init_ai_usage_scheduler
+
+        init_ai_usage_scheduler(app)
+
     if not app.config.get("TESTING") and not app.config.get(
         "_PENDING_STATUS_CACHE_STARTED"
     ):

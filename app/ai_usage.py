@@ -13,7 +13,11 @@ import datetime as dt
 import sqlite3
 from pathlib import Path
 
+from flask import Flask
+
 _DB_PATH = Path(__file__).parent.parent / "ai_usage.db"
+
+_RETENTION_DAYS = 90
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_usage (
@@ -197,3 +201,37 @@ def usage_summary(
                 entry["failures"] += 1
         result["by_feature"] = by_feature_totals
     return result
+
+
+def prune_old_data() -> None:
+    """Delete rows older than _RETENTION_DAYS. Never raises."""
+    try:
+        cutoff = (
+            dt.datetime.now(dt.UTC) - dt.timedelta(days=_RETENTION_DAYS)
+        ).isoformat()
+        _init_db()
+        conn = sqlite3.connect(_DB_PATH)
+        try:
+            conn.execute("DELETE FROM ai_usage WHERE timestamp < ?", (cutoff,))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def init_scheduler(app: Flask) -> None:
+    """Register the daily prune job (one scheduler per module, as elsewhere)."""
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(
+        func=prune_old_data,
+        trigger="cron",
+        hour=3,
+        minute=10,
+        id="ai_usage_prune",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.start()
