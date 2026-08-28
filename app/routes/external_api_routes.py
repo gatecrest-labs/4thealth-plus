@@ -111,6 +111,22 @@ def _ai_usage_24h() -> dict:
     }
 
 
+def _device_review_rollup() -> dict | None:
+    """Latest device review rollup, or None if no rollup has run yet."""
+    from app.device_review_rollup import get_latest
+
+    latest = get_latest()
+    if latest is None:
+        return None
+    return {
+        "devices_reviewed": latest["devices_reviewed"],
+        "devices_with_failures": latest["devices_with_failures"],
+        "findings_by_severity": latest["findings_by_severity"],
+        "top_failing_checks": latest["top_failing_checks"],
+        "collected_at": latest["ran_at"],
+    }
+
+
 # ── Zone query ────────────────────────────────────────────────────────────────
 
 
@@ -235,6 +251,8 @@ def ext_executive_summary():
         "device_sweep_collected_at": summary.get("device_sweep_collected_at"),
         "hygiene_sweep_collected_at": summary.get("hygiene_sweep_collected_at"),
         "rule_count_collected_at": summary.get("hygiene_sweep_collected_at"),
+        "device_review": _device_review_rollup(),
+        "rule_hygiene": summary.get("rule_hygiene"),
     }
 
     ai_enabled = get_setting("ai_assist_enabled", False)
