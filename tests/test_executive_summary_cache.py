@@ -162,6 +162,10 @@ def _reset_store(tmp_path, monkeypatch):
             "status": "pending",
             "error": None,
             "last_updated": None,
+            "device_sweep_status": "pending",
+            "hygiene_sweep_status": "pending",
+            "device_sweep_collected_at": None,
+            "hygiene_sweep_collected_at": None,
         })
     cache_mod._device_running.clear()
     cache_mod._hygiene_running.clear()
