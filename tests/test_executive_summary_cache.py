@@ -151,6 +151,7 @@ def _reset_store():
             "firewalls_total": None,
             "adom_count": None,
             "rule_count_total": None,
+            "rule_hygiene": None,
             "status": "pending",
             "error": None,
             "last_updated": None,
@@ -176,6 +177,10 @@ def _fake_client():
         {"policyid": 1, "name": "", "status": 1, "logtraffic": 0},  # unnamed + unlogged
         {"policyid": 2, "name": "allow-web", "status": 1, "logtraffic": 2},
     ]
+    client.get_address_objects.return_value = []
+    client.get_address_groups.return_value = []
+    client.get_service_objects.return_value = []
+    client.get_service_groups.return_value = []
     return client
 
 
@@ -380,8 +385,44 @@ def test_run_hygiene_sweep_stores_rule_count_total(app_ctx):
     client.get_devices.return_value = [{"name": "fw1"}]
     client.get_policy_packages.return_value = [{"name": "default", "path": "default"}]
     client.get_policies.return_value = [{"policyid": 1}, {"policyid": 2}, {"policyid": 3}]
+    client.get_address_objects.return_value = []
+    client.get_address_groups.return_value = []
+    client.get_service_objects.return_value = []
+    client.get_service_groups.return_value = []
 
     with patch("app.fmg_helpers.make_client", return_value=client):
         cache_mod._run_hygiene_sweep(app_ctx)
 
     assert cache_mod.get_summary()["rule_count_total"] == 3
+
+
+def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tmp_path, monkeypatch):
+    import app.hygiene_rollup as hygiene_rollup
+
+    monkeypatch.setattr(hygiene_rollup, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json")
+
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.get_adoms.return_value = [{"name": "Customer1"}]
+    client.get_devices.return_value = [{"name": "fw1"}]
+    client.get_policy_packages.return_value = [{"name": "default", "path": "default"}]
+    client.get_policies.return_value = [
+        {"policyid": 1, "name": "", "logtraffic": "disable"},
+        {"policyid": 2, "name": "rule2"},
+    ]
+    client.get_address_objects.return_value = []
+    client.get_address_groups.return_value = []
+    client.get_service_objects.return_value = []
+    client.get_service_groups.return_value = []
+
+    with patch("app.fmg_helpers.make_client", return_value=client):
+        cache_mod._run_hygiene_sweep(app_ctx)
+
+    summary = cache_mod.get_summary()
+    assert summary["rule_hygiene"]["rule_findings_total"] >= 0
+    assert set(summary["rule_hygiene"]["rule_findings_by_type"]) == {
+        "shadow", "unhit", "unlogged", "expired", "disabled", "unnamed", "unused_objects",
+    }
+    assert summary["rule_hygiene"]["collected_at"] is not None
+    assert hygiene_rollup.get_latest()["rule_findings_total"] == summary["rule_hygiene"]["rule_findings_total"]

@@ -57,6 +57,7 @@ _store: dict = {
     "firewalls_total": None,
     "adom_count": None,
     "rule_count_total": None,
+    "rule_hygiene": None,
     "status": "pending",  # pending | running | ok | error
     "error": None,
     "last_updated": None,
@@ -265,10 +266,13 @@ def _run_hygiene_sweep(app) -> bool:
 
     try:
         from app.fmg_helpers import make_client
-        from app.hygiene import run_checks
+        from app.hygiene import CHECKS as HYGIENE_CHECK_TYPES
+        from app.hygiene import find_unused_objects, run_checks
 
         total_findings = 0
         total_policies = 0
+        by_type: dict[str, int] = dict.fromkeys(HYGIENE_CHECK_TYPES, 0)
+        by_type["unused_objects"] = 0
 
         with make_client() as client:
             adom_names = _list_target_adoms(client)
@@ -300,7 +304,40 @@ def _run_hygiene_sweep(app) -> bool:
                     total_policies += len(policies)
                     total_findings += len(run_checks(policies, _HYGIENE_CHECKS))
 
+                    all_findings = run_checks(policies, list(HYGIENE_CHECK_TYPES))
+                    for f in all_findings:
+                        by_type[f["check"]] = by_type.get(f["check"], 0) + 1
+
+                    try:
+                        addresses = client.get_address_objects(adom)
+                        addr_groups = client.get_address_groups(adom)
+                        services = client.get_service_objects(adom)
+                        svc_groups = client.get_service_groups(adom)
+                        unused = find_unused_objects(
+                            policies, addresses, addr_groups, services, svc_groups
+                        )
+                        by_type["unused_objects"] += len(
+                            unused["unused_addresses"]
+                        ) + len(unused["unused_services"])
+                    except Exception as exc:
+                        logger.warning(
+                            "executive_summary_cache: unused-object detection for "
+                            "%s/%s failed: %s",
+                            adom,
+                            pkg_path,
+                            exc,
+                        )
+
         hygiene_score = _hygiene_score(total_findings, total_policies)
+
+        rule_hygiene_record = {
+            "ran_at": datetime.now(UTC).isoformat(),
+            "rule_findings_total": sum(by_type.values()),
+            "rule_findings_by_type": by_type,
+        }
+        from app.hygiene_rollup import append_run as _append_hygiene_rollup
+
+        _append_hygiene_rollup(rule_hygiene_record)
 
         elapsed = round(_time.monotonic() - t0, 1)
         logger.info(
@@ -314,6 +351,13 @@ def _run_hygiene_sweep(app) -> bool:
                 {
                     "hygiene_score": hygiene_score,
                     "rule_count_total": total_policies,
+                    "rule_hygiene": {
+                        "rule_findings_total": rule_hygiene_record[
+                            "rule_findings_total"
+                        ],
+                        "rule_findings_by_type": by_type,
+                        "collected_at": datetime.now(UTC).isoformat(),
+                    },
                     "status": "ok",
                     "error": None,
                     "last_updated": datetime.now(UTC).isoformat(),
