@@ -55,9 +55,13 @@ class ExtractionError(Exception):
         super().__init__(f"[{field}] {detail}")
 
 
-def extract_advisory(raw_text: str, provider: LLMProvider) -> Advisory:
+def extract_advisory(
+    raw_text: str, provider: LLMProvider, user: str | None = None
+) -> Advisory:
     try:
-        extracted = provider.extract_json(_SYSTEM_PROMPT, raw_text)
+        extracted = provider.extract_json(
+            _SYSTEM_PROMPT, raw_text, feature="psirt_extract", user=user
+        )
     except LLMError as exc:
         raise ExtractionError("llm", str(exc)) from exc
 

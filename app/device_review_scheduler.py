@@ -242,6 +242,22 @@ def _execute_job(job_id: str) -> None:
 
         results = _bulk_device_review_adom(adom, checks, check_params, max_workers=4)
 
+        from app.device_review_rollup import (
+            append_run as _append_dr_rollup,
+        )
+        from app.device_review_rollup import (
+            build_rollup as _build_dr_rollup,
+        )
+
+        dr_rollup_record = {
+            "ran_at": datetime.datetime.now(datetime.UTC)
+            .replace(tzinfo=None)
+            .isoformat()
+            + "Z",
+            **_build_dr_rollup(results),
+        }
+        _append_dr_rollup(dr_rollup_record)
+
         all_rows = [r for dev in results for r in dev.get("rows", [])]
         fail_count = sum(1 for r in all_rows if r.get("result") in ("FAIL", "INSECURE"))
 

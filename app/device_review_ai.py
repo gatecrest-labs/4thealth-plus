@@ -34,7 +34,12 @@ def _fail_rows(results: list[dict]) -> list[dict]:
     return out
 
 
-def build_narrative(adom: str, check_summary: list[dict], results: list[dict]) -> str:
+def build_narrative(
+    adom: str,
+    check_summary: list[dict],
+    results: list[dict],
+    user: str | None = None,
+) -> str:
     """Return an AI-written narrative summary for one Device Review run.
 
     Raises whatever the configured provider's narrate() raises — callers
@@ -64,4 +69,6 @@ def build_narrative(adom: str, check_summary: list[dict], results: list[dict]) -
             "any count or value — only explain what is already there."
         ),
         user_prompt=json.dumps(payload, default=str),
+        feature="device_review_summary",
+        user=user,
     )
