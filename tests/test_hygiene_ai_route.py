@@ -67,7 +67,7 @@ def test_explain_success(client):
     data = resp.get_json()
     assert data["narrative"] == "Explanation text."
     assert data["narrative_error"] is None
-    mock_explain.assert_called_once_with(finding)
+    mock_explain.assert_called_once_with(finding, user="admin")
 
 
 def test_explain_failure_returns_200_with_error(client):

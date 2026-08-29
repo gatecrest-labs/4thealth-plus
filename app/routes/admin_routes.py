@@ -394,7 +394,7 @@ def api_host_metrics_ai_summary():
     narrative = None
     narrative_error = None
     try:
-        narrative = build_trend_narrative(trends, ai_usage)
+        narrative = build_trend_narrative(trends, ai_usage, user=session.get("user"))
     except Exception as exc:
         narrative_error = str(exc)
 

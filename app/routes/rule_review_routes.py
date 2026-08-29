@@ -539,6 +539,8 @@ def rr_ai_assist():
                 "only explain it in prose."
             ),
             user_prompt=_json.dumps(plan_dict, default=str),
+            feature="rule_review_ai_assist",
+            user=session.get("user"),
         )
     except Exception as exc:
         narrative_error = str(exc)
@@ -746,6 +748,8 @@ def rr_ai_assist_fqdn():
                 "value in the plan — only explain it in prose."
             ),
             user_prompt=_json.dumps(plan_dict, default=str),
+            feature="rule_review_ai_assist_fqdn",
+            user=session.get("user"),
         )
     except Exception as exc:
         narrative_error = str(exc)

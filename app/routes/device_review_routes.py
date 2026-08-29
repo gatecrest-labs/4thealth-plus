@@ -443,7 +443,9 @@ def dr_ai_summary():
     narrative = None
     narrative_error = None
     try:
-        narrative = build_narrative(adom, check_summary, results)
+        narrative = build_narrative(
+            adom, check_summary, results, user=session.get("user")
+        )
     except Exception as exc:
         narrative_error = str(exc)
 

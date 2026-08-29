@@ -1342,7 +1342,7 @@ def hygiene_explain_finding():
     narrative = None
     narrative_error = None
     try:
-        narrative = explain_finding(finding)
+        narrative = explain_finding(finding, user=session.get("user"))
     except Exception as exc:
         narrative_error = str(exc)
 
