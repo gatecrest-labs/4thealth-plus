@@ -9,7 +9,14 @@ class _FakeProvider(LLMProvider):
     def __init__(self, response: dict):
         self._response = response
 
-    def narrate(self, system_prompt: str, user_prompt: str) -> str:
+    def narrate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        feature: str,
+        user: str | None = None,
+    ) -> str:
         import json
         return json.dumps(self._response)
 
@@ -97,7 +104,14 @@ def test_extract_advisory_affected_range_missing_product_raises():
 
 def test_extract_advisory_llm_failure_propagates_as_extraction_error():
     class _FailingProvider(LLMProvider):
-        def narrate(self, system_prompt: str, user_prompt: str) -> str:
+        def narrate(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            *,
+            feature: str,
+            user: str | None = None,
+        ) -> str:
             raise LLMError("API unreachable")
 
     with pytest.raises(ExtractionError) as exc_info:

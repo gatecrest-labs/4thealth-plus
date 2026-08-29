@@ -8,47 +8,61 @@ class _FakeProvider(LLMProvider):
     def __init__(self, response: str):
         self._response = response
 
-    def narrate(self, system_prompt: str, user_prompt: str) -> str:
+    def narrate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        feature: str,
+        user: str | None = None,
+    ) -> str:
         return self._response
 
 
 def test_extract_json_parses_plain_json():
     provider = _FakeProvider('{"advisory_id": "FG-IR-24-001", "cve_ids": ["CVE-2024-12345"]}')
-    result = provider.extract_json("system", "user")
+    result = provider.extract_json("system", "user", feature="psirt_extract")
     assert result == {"advisory_id": "FG-IR-24-001", "cve_ids": ["CVE-2024-12345"]}
 
 
 def test_extract_json_strips_markdown_fences():
     provider = _FakeProvider('```json\n{"advisory_id": "FG-IR-24-001"}\n```')
-    result = provider.extract_json("system", "user")
+    result = provider.extract_json("system", "user", feature="psirt_extract")
     assert result == {"advisory_id": "FG-IR-24-001"}
 
 
 def test_extract_json_strips_bare_fences_no_language_tag():
     provider = _FakeProvider('```\n{"advisory_id": "FG-IR-24-001"}\n```')
-    result = provider.extract_json("system", "user")
+    result = provider.extract_json("system", "user", feature="psirt_extract")
     assert result == {"advisory_id": "FG-IR-24-001"}
 
 
 def test_extract_json_malformed_raises_llm_error():
     provider = _FakeProvider("this is not json at all")
     with pytest.raises(LLMError):
-        provider.extract_json("system", "user")
+        provider.extract_json("system", "user", feature="psirt_extract")
 
 
 def test_extract_json_non_object_json_raises():
     provider = _FakeProvider('["just", "a", "list"]')
     with pytest.raises(LLMError):
-        provider.extract_json("system", "user")
+        provider.extract_json("system", "user", feature="psirt_extract")
 
 
 def test_extract_json_narrate_failure_propagates():
     class _FailingProvider(LLMProvider):
-        def narrate(self, system_prompt: str, user_prompt: str) -> str:
+        def narrate(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            *,
+            feature: str,
+            user: str | None = None,
+        ) -> str:
             raise LLMError("API call failed")
 
     with pytest.raises(LLMError):
-        _FailingProvider().extract_json("system", "user")
+        _FailingProvider().extract_json("system", "user", feature="psirt_extract")
 
 
 def test_extract_json_appends_json_only_instruction_to_system_prompt():
@@ -56,10 +70,17 @@ def test_extract_json_appends_json_only_instruction_to_system_prompt():
     captured = {}
 
     class _CapturingProvider(LLMProvider):
-        def narrate(self, system_prompt: str, user_prompt: str) -> str:
+        def narrate(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            *,
+            feature: str,
+            user: str | None = None,
+        ) -> str:
             captured["system_prompt"] = system_prompt
             return "{}"
 
-    _CapturingProvider().extract_json("Extract PSIRT fields.", "email text")
+    _CapturingProvider().extract_json("Extract PSIRT fields.", "email text", feature="psirt_extract")
     assert "Extract PSIRT fields." in captured["system_prompt"]
     assert "json" in captured["system_prompt"].lower()

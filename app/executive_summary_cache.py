@@ -56,9 +56,15 @@ _store: dict = {
     "firewall_online_count": None,
     "firewalls_total": None,
     "adom_count": None,
-    "status": "pending",  # pending | running | ok | error
+    "rule_count_total": None,
+    "rule_hygiene": None,
+    "status": "pending",  # pending | running | ok | error — deprecated alias
     "error": None,
-    "last_updated": None,
+    "last_updated": None,  # deprecated alias
+    "device_sweep_status": "pending",
+    "hygiene_sweep_status": "pending",
+    "device_sweep_collected_at": None,
+    "hygiene_sweep_collected_at": None,
 }
 
 _lock = threading.Lock()
@@ -157,6 +163,7 @@ def _run_device_sweep(app) -> bool:
     _device_running.set()
     with _lock:
         _store["status"] = "running"
+        _store["device_sweep_status"] = "running"
         _store["error"] = None
 
     logger.info("executive_summary_cache: starting device sweep")
@@ -223,6 +230,8 @@ def _run_device_sweep(app) -> bool:
                     "status": "ok",
                     "error": None,
                     "last_updated": datetime.now(UTC).isoformat(),
+                    "device_sweep_status": "ok",
+                    "device_sweep_collected_at": datetime.now(UTC).isoformat(),
                 }
             )
         return True
@@ -231,6 +240,7 @@ def _run_device_sweep(app) -> bool:
         logger.exception("executive_summary_cache: device sweep unhandled error")
         with _lock:
             _store["status"] = "error"
+            _store["device_sweep_status"] = "error"
             _store["error"] = str(exc)
         return False
     finally:
@@ -257,6 +267,7 @@ def _run_hygiene_sweep(app) -> bool:
     _hygiene_running.set()
     with _lock:
         _store["status"] = "running"
+        _store["hygiene_sweep_status"] = "running"
         _store["error"] = None
 
     logger.info("executive_summary_cache: starting hygiene sweep")
@@ -264,10 +275,13 @@ def _run_hygiene_sweep(app) -> bool:
 
     try:
         from app.fmg_helpers import make_client
-        from app.hygiene import run_checks
+        from app.hygiene import CHECKS as HYGIENE_CHECK_TYPES
+        from app.hygiene import find_unused_objects, run_checks
 
         total_findings = 0
         total_policies = 0
+        by_type: dict[str, int] = dict.fromkeys(HYGIENE_CHECK_TYPES, 0)
+        by_type["unused_objects"] = 0
 
         with make_client() as client:
             adom_names = _list_target_adoms(client)
@@ -282,6 +296,13 @@ def _run_hygiene_sweep(app) -> bool:
                         exc,
                     )
                     continue
+
+                # Per-package findings (unnamed/unlogged/shadow/disabled/
+                # expired/unhit) genuinely are per-package, but the object
+                # lists — and therefore unused-object detection — are
+                # ADOM-scoped, so accumulate the ADOM's policies and run that
+                # check once, below, over the union.
+                all_adom_policies: list = []
                 for pkg in packages:
                     pkg_path = pkg.get("path", pkg.get("name", ""))
                     if not pkg_path:
@@ -299,7 +320,43 @@ def _run_hygiene_sweep(app) -> bool:
                     total_policies += len(policies)
                     total_findings += len(run_checks(policies, _HYGIENE_CHECKS))
 
+                    all_findings = run_checks(policies, list(HYGIENE_CHECK_TYPES))
+                    for f in all_findings:
+                        by_type[f["check"]] = by_type.get(f["check"], 0) + 1
+
+                    all_adom_policies.extend(policies)
+
+                if not all_adom_policies:
+                    continue
+                try:
+                    addresses = client.get_address_objects(adom)
+                    addr_groups = client.get_address_groups(adom)
+                    services = client.get_service_objects(adom)
+                    svc_groups = client.get_service_groups(adom)
+                    unused = find_unused_objects(
+                        all_adom_policies, addresses, addr_groups, services, svc_groups
+                    )
+                    by_type["unused_objects"] += len(unused["unused_addresses"]) + len(
+                        unused["unused_services"]
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "executive_summary_cache: unused-object detection for "
+                        "%s failed: %s",
+                        adom,
+                        exc,
+                    )
+
         hygiene_score = _hygiene_score(total_findings, total_policies)
+
+        rule_hygiene_record = {
+            "ran_at": datetime.now(UTC).isoformat(),
+            "rule_findings_total": sum(by_type.values()),
+            "rule_findings_by_type": by_type,
+        }
+        from app.hygiene_rollup import append_run as _append_hygiene_rollup
+
+        _append_hygiene_rollup(rule_hygiene_record)
 
         elapsed = round(_time.monotonic() - t0, 1)
         logger.info(
@@ -312,9 +369,19 @@ def _run_hygiene_sweep(app) -> bool:
             _store.update(
                 {
                     "hygiene_score": hygiene_score,
+                    "rule_count_total": total_policies,
+                    "rule_hygiene": {
+                        "rule_findings_total": rule_hygiene_record[
+                            "rule_findings_total"
+                        ],
+                        "rule_findings_by_type": by_type,
+                        "collected_at": datetime.now(UTC).isoformat(),
+                    },
                     "status": "ok",
                     "error": None,
                     "last_updated": datetime.now(UTC).isoformat(),
+                    "hygiene_sweep_status": "ok",
+                    "hygiene_sweep_collected_at": datetime.now(UTC).isoformat(),
                 }
             )
         return True
@@ -323,6 +390,7 @@ def _run_hygiene_sweep(app) -> bool:
         logger.exception("executive_summary_cache: hygiene sweep unhandled error")
         with _lock:
             _store["status"] = "error"
+            _store["hygiene_sweep_status"] = "error"
             _store["error"] = str(exc)
         return False
     finally:
@@ -389,6 +457,24 @@ def init_scheduler(app):
         if not _run_device_sweep(app):
             logger.info(
                 "executive_summary_cache: device startup run failed, retrying in 15s"
+            )
+            _time.sleep(15)
+            _run_device_sweep(app)
+            return
+
+        # pending_status_cache's own startup refresh runs concurrently in a
+        # separate background thread and can still be "pending" or "running"
+        # (not yet "ok") by the time this sweep reads it, since both fire at
+        # app boot with no ordering guarantee between them -- leaving
+        # pending_config_diff_count stuck at null until the next scheduled
+        # sweep, up to device_interval_min later. One retry, same pattern
+        # as the failure-retry above, gives the other cache time to warm up.
+        from app.pending_status_cache import get_cache_status as _pending_status
+
+        if _pending_status()["status"] in ("pending", "running"):
+            logger.info(
+                "executive_summary_cache: pending_status_cache not warm yet, "
+                "retrying device sweep in 15s"
             )
             _time.sleep(15)
             _run_device_sweep(app)

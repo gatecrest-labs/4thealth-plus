@@ -55,7 +55,9 @@ def compute_trend(series: list[dict], threshold: float = 90.0) -> dict:
     }
 
 
-def build_trend_narrative(trends: dict, ai_usage_summary: dict) -> str:
+def build_trend_narrative(
+    trends: dict, ai_usage_summary: dict, user: str | None = None
+) -> str:
     """Return an AI-written trend summary for the Admin page's host-metrics
     and AI-usage graphs.
 
@@ -89,4 +91,6 @@ def build_trend_narrative(trends: dict, ai_usage_summary: dict) -> str:
             "present in the JSON."
         ),
         user_prompt=json.dumps(payload, default=str),
+        feature="host_metrics_ai_summary",
+        user=user,
     )

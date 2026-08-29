@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 
 
-def explain_finding(finding: dict) -> str:
+def explain_finding(finding: dict, user: str | None = None) -> str:
     """Return an AI-written explanation + suggested remediation for one
     Rule Hygiene finding.
 
@@ -53,4 +53,6 @@ def explain_finding(finding: dict) -> str:
             "applied — the snippet is a suggestion for a human reviewer."
         ),
         user_prompt=payload_json,
+        feature="hygiene_explain_finding",
+        user=user,
     )
