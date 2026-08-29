@@ -129,7 +129,7 @@ def psirt_extract():
 
     try:
         provider = get_provider()
-        advisory = extract_advisory(email_text, provider)
+        advisory = extract_advisory(email_text, provider, user=session.get("user"))
     except ExtractionError as exc:
         return jsonify({"field": exc.field, "error": exc.detail}), 422
     except LLMError as exc:

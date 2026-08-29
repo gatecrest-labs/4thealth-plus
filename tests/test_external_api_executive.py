@@ -51,6 +51,7 @@ def test_returns_summary_payload_when_authorized(client):
         "firewall_online_count": 212,
         "firewalls_total": 218,
         "adom_count": 3,
+        "rule_count_total": 5120,
         "status": "ok",
         "error": None,
         "last_updated": "2026-08-24T15:00:00+00:00",
@@ -62,9 +63,6 @@ def test_returns_summary_payload_when_authorized(client):
             return_value={"id": "tok1", "name": "4tExecutive"},
         ),
         patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
-        patch(
-            "app.summary_job.get_summary", return_value={"rules_total": 5120}
-        ),
         patch(
             "app.versions_cache.get_cached",
             return_value={
@@ -96,7 +94,7 @@ def test_returns_summary_payload_when_authorized(client):
     assert data["firewall_managed_count"] == 218
     assert data["adom_count"] == 3
     assert data["rule_count_total"] == 5120
-    assert data["version_breakdown"] == {"v7.4.5": 2, "v7.2.9": 1}
+    assert data["version_breakdown"] == {"v7.4.5": {"count": 2, "eol": False}, "v7.2.9": {"count": 1, "eol": False}}
     assert data["last_backup_status"] == "ok"
     assert data["ai_enabled"] is True
     assert "ai_usage_24h" in data
@@ -134,3 +132,265 @@ def test_ai_usage_omitted_when_ai_assist_disabled(client):
     assert "ai_usage_24h" not in data
     assert data["last_backup_status"] is None
     assert data["version_breakdown"] == {}
+
+
+def test_rule_count_total_sourced_from_executive_summary_cache_not_summary_job(client):
+    fake_summary = {"status": "ok", "last_updated": None, "rule_count_total": 14203}
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    assert resp.status_code == 200
+    assert resp.get_json()["rule_count_total"] == 14203
+
+
+def test_version_breakdown_annotates_eol_versions(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch(
+            "app.versions_cache.get_cached",
+            return_value={"devices": [
+                {"name": "fw1", "version": "v7.4.5"},
+                {"name": "fw2", "version": "v6.4.2"},
+            ]},
+        ),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["version_breakdown"] == {
+        "v7.4.5": {"count": 1, "eol": False},
+        "v6.4.2": {"count": 1, "eol": True},
+    }
+
+
+def test_payload_includes_schema_version_and_split_freshness(client):
+    fake_summary = {
+        "status": "ok", "last_updated": "2026-08-28T09:45:00Z",
+        "device_sweep_status": "ok", "hygiene_sweep_status": "ok",
+        "device_sweep_collected_at": "2026-08-28T09:45:00Z",
+        "hygiene_sweep_collected_at": "2026-08-28T09:00:00Z",
+        "rule_count_total": 14203,
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["schema_version"] == 1
+    assert data["device_sweep_status"] == "ok"
+    assert data["hygiene_sweep_status"] == "ok"
+    assert data["device_sweep_collected_at"] == "2026-08-28T09:45:00Z"
+    assert data["hygiene_sweep_collected_at"] == "2026-08-28T09:00:00Z"
+    assert data["rule_count_collected_at"] == "2026-08-28T09:00:00Z"
+    assert data["status"] == "ok"  # deprecated alias, still present
+
+
+def test_payload_includes_device_review_and_rule_hygiene_rollups(client):
+    fake_summary = {
+        "status": "ok",
+        "rule_hygiene": {
+            "rule_findings_total": 118,
+            "rule_findings_by_type": {"shadow": 4, "unhit": 60},
+            "collected_at": "2026-08-28T09:00:00Z",
+        },
+    }
+    fake_dr_rollup = {
+        "ran_at": "2026-08-28T06:00:00Z",
+        "devices_reviewed": 42,
+        "devices_with_failures": 7,
+        "findings_by_severity": {"critical": 1, "high": 3, "medium": 9, "low": 4},
+        "top_failing_checks": [{"check": "default_admin", "count": 5}],
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.device_review_rollup.get_latest", return_value=fake_dr_rollup),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["rule_hygiene"]["rule_findings_total"] == 118
+    assert data["device_review"]["devices_reviewed"] == 42
+    assert data["device_review"]["collected_at"] == "2026-08-28T06:00:00Z"
+
+
+def test_payload_device_review_none_when_no_rollup_yet(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.device_review_rollup.get_latest", return_value=None),
+        patch("app.hygiene_rollup.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["device_review"] is None
+    assert data["rule_hygiene"] is None
+
+
+def test_rule_hygiene_falls_back_to_persisted_rollup_on_cold_start(client):
+    """After a restart the in-memory cache is empty; the persisted rollup fills in."""
+    fake_hygiene_rollup = {
+        "ran_at": "2026-08-28T09:00:00Z",
+        "rule_findings_total": 118,
+        "rule_findings_by_type": {"shadow": 4, "unhit": 60},
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        # No "rule_hygiene" key at all — cold start before the first sweep.
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "pending"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.device_review_rollup.get_latest", return_value=None),
+        patch("app.hygiene_rollup.get_latest", return_value=fake_hygiene_rollup),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["rule_hygiene"] == {
+        "rule_findings_total": 118,
+        "rule_findings_by_type": {"shadow": 4, "unhit": 60},
+        "collected_at": "2026-08-28T09:00:00Z",
+    }
+
+
+def test_rule_hygiene_prefers_in_memory_over_persisted_rollup(client):
+    fake_summary = {
+        "status": "ok",
+        "rule_hygiene": {
+            "rule_findings_total": 5,
+            "rule_findings_by_type": {"unhit": 5},
+            "collected_at": "2026-08-28T10:00:00Z",
+        },
+    }
+    stale = {
+        "ran_at": "2026-08-27T09:00:00Z",
+        "rule_findings_total": 999,
+        "rule_findings_by_type": {"unhit": 999},
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.device_review_rollup.get_latest", return_value=None),
+        patch("app.hygiene_rollup.get_latest", return_value=stale),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["rule_hygiene"]["rule_findings_total"] == 5
+
+
+def test_payload_includes_ai_usage_by_feature_when_ai_enabled(client):
+    fake_summary = {"status": "ok"}
+    fake_usage = {
+        "buckets": [], "total_calls": 2, "total_cost_usd": 0.03, "total_failures": 0,
+        "total_input_tokens": 0, "total_output_tokens": 0,
+        "by_feature": {"device_review_summary": {"calls": 1, "cost_usd": 0.01, "failures": 0}},
+    }
+    with (
+        patch(
+            "app.routes.external_api_routes.get_setting",
+            side_effect=lambda k, default=None: {
+                "external_api_enabled": True,
+                "ai_assist_enabled": True,
+            }.get(k, default),
+        ),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.ai_usage.usage_summary", return_value=fake_usage),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["ai_usage_by_feature"] == fake_usage["by_feature"]
+    assert data["ai_usage_24h"]["ai_connection_count_24h"] == 2
+
+
+def test_ai_usage_by_feature_omitted_when_ai_assist_disabled(client):
+    with (
+        patch(
+            "app.routes.external_api_routes.get_setting",
+            side_effect=lambda k, default=None: {
+                "external_api_enabled": True,
+                "ai_assist_enabled": False,
+            }.get(k, default),
+        ),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    assert "ai_usage_by_feature" not in resp.get_json()

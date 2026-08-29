@@ -12,7 +12,14 @@ class ClaudeProvider(LLMProvider):
             raise LLMError("ANTHROPIC_API_KEY is not set in .env")
         self._model = Config.ANTHROPIC_MODEL
 
-    def narrate(self, system_prompt: str, user_prompt: str) -> str:
+    def narrate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        feature: str,
+        user: str | None = None,
+    ) -> str:
         from app.ai_usage import record_usage
         from app.llm.pricing import estimate_cost
 
@@ -39,6 +46,8 @@ class ClaudeProvider(LLMProvider):
                 output_tokens=0,
                 cost_usd=0.0,
                 success=False,
+                feature=feature,
+                user=user,
                 error=str(exc),
             )
             raise LLMError("the 'anthropic' package is not installed") from exc
@@ -50,6 +59,8 @@ class ClaudeProvider(LLMProvider):
                 output_tokens=0,
                 cost_usd=0.0,
                 success=False,
+                feature=feature,
+                user=user,
                 error=str(exc),
             )
             raise LLMError(f"Claude API call failed: {exc}") from exc
@@ -69,5 +80,7 @@ class ClaudeProvider(LLMProvider):
             output_tokens=output_tokens,
             cost_usd=estimate_cost("claude", self._model, input_tokens, output_tokens),
             success=True,
+            feature=feature,
+            user=user,
         )
         return text
