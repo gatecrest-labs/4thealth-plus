@@ -33,7 +33,9 @@ def _trim_device(dev: dict) -> dict:
     }
 
 
-def build_diff_narrative(adom: str, devices: list[dict]) -> str:
+def build_diff_narrative(
+    adom: str, devices: list[dict], user: str | None = None
+) -> str:
     """Return an AI-written narrative summary of one or more device diffs.
 
     Raises whatever the configured provider's narrate() raises — callers
@@ -70,4 +72,6 @@ def build_diff_narrative(adom: str, devices: list[dict]) -> str:
             "the JSON."
         ),
         user_prompt=json.dumps(payload, default=str),
+        feature="pending_changes_diff_summary",
+        user=user,
     )

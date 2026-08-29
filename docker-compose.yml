@@ -4,6 +4,15 @@ services:
     image: 4thealth-plus:latest
     container_name: 4thealth-plus
     restart: unless-stopped
+    # Local-testing override: single worker so in-memory caches (executive
+    # summary, pending-status, etc.) stay consistent across requests instead
+    # of being split across N independent per-worker copies. Revert to the
+    # Dockerfile's default (--workers 2) before any real deployment.
+    command: >
+      gunicorn --workers 1 --threads 4 --worker-class gthread
+      --bind 0.0.0.0:8100 --timeout 120 --worker-tmp-dir /dev/shm
+      --certfile certs/cert.pem --keyfile certs/key.pem
+      --access-logfile - --error-logfile - wsgi:app
     ports:
       - "8100:8100"
     env_file:
@@ -22,6 +31,8 @@ services:
       - ./smtp_config.json:/app/smtp_config.json:rw
       - ./config_diff_jobs.json:/app/config_diff_jobs.json:rw
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
+      - ./device_review_rollup.json:/app/device_review_rollup.json:rw
+      - ./hygiene_rollup.json:/app/hygiene_rollup.json:rw
       - ./summary_history.json:/app/summary_history.json:rw
       - ./certs:/app/certs:ro
     healthcheck:

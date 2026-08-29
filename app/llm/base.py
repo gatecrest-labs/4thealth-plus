@@ -12,7 +12,14 @@ class LLMError(Exception):
 
 class LLMProvider(ABC):
     @abstractmethod
-    def narrate(self, system_prompt: str, user_prompt: str) -> str:
+    def narrate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        feature: str,
+        user: str | None = None,
+    ) -> str:
         """Return the model's text completion for one single-shot prompt.
 
         Raises LLMError on any failure (missing key, network error, non-2xx
@@ -20,7 +27,14 @@ class LLMProvider(ABC):
         than let it propagate to the user as a raw exception.
         """
 
-    def extract_json(self, system_prompt: str, user_prompt: str) -> dict:
+    def extract_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        feature: str,
+        user: str | None = None,
+    ) -> dict:
         """Call narrate() with a JSON-only instruction and parse the result.
 
         Used for structured extraction (e.g. pulling PSIRT advisory fields
@@ -34,7 +48,9 @@ class LLMProvider(ABC):
             + "\n\nRespond with ONLY a single valid JSON object — no prose, "
             "no markdown code fences, no explanation before or after."
         )
-        raw = self.narrate(strict_system_prompt, user_prompt)
+        raw = self.narrate(
+            strict_system_prompt, user_prompt, feature=feature, user=user
+        )
         text = raw.strip()
         if text.startswith("```"):
             text = text[3:]
