@@ -61,7 +61,8 @@ _VALID_EXTRACTION_JSON = json.dumps({
 
 
 def test_extract_status_reports_disabled_by_default(client):
-    resp = client.get("/api/device-review/psirt/extract-status")
+    with patch("app.routes.psirt_routes.get_setting", return_value=False):
+        resp = client.get("/api/device-review/psirt/extract-status")
     assert resp.status_code == 200
     assert resp.get_json()["available"] is False
 
@@ -73,7 +74,8 @@ def test_extract_status_reports_enabled(client):
 
 
 def test_extract_returns_503_when_disabled(client):
-    resp = _post(client, "/api/device-review/psirt/extract", {"email_text": "some advisory"})
+    with patch("app.routes.psirt_routes.get_setting", return_value=False):
+        resp = _post(client, "/api/device-review/psirt/extract", {"email_text": "some advisory"})
     assert resp.status_code == 503
 
 
