@@ -15,7 +15,14 @@ class OllamaProvider(LLMProvider):
         self._host = Config.OLLAMA_HOST.rstrip("/")
         self._model = Config.OLLAMA_MODEL
 
-    def narrate(self, system_prompt: str, user_prompt: str) -> str:
+    def narrate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        feature: str,
+        user: str | None = None,
+    ) -> str:
         from app.ai_usage import record_usage
         from app.llm.pricing import estimate_cost
 
@@ -47,6 +54,8 @@ class OllamaProvider(LLMProvider):
                 output_tokens=0,
                 cost_usd=0.0,
                 success=False,
+                feature=feature,
+                user=user,
                 error=str(exc),
             )
             raise LLMError(f"Ollama API call failed: {exc}") from exc
@@ -63,5 +72,7 @@ class OllamaProvider(LLMProvider):
             output_tokens=output_tokens,
             cost_usd=estimate_cost("ollama", self._model, input_tokens, output_tokens),
             success=True,
+            feature=feature,
+            user=user,
         )
         return text
