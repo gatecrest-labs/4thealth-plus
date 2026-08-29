@@ -38,5 +38,5 @@ ignore = ["BLE001", "S110", "S112"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "ruff>=0.16.3",
+    "ruff>=0.16.4",
 ]
