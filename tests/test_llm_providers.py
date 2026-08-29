@@ -41,7 +41,7 @@ def test_claude_provider_narrate_calls_anthropic_sdk(monkeypatch):
 
     with patch("anthropic.Anthropic", return_value=fake_client):
         provider = ClaudeProvider()
-        result = provider.narrate("system prompt", "user prompt")
+        result = provider.narrate("system prompt", "user prompt", feature="rule_review_ai_assist")
     assert result == "Here is the report."
     fake_client.messages.create.assert_called_once()
 
@@ -54,7 +54,7 @@ def test_claude_provider_narrate_wraps_sdk_errors(monkeypatch):
     with patch("anthropic.Anthropic", return_value=fake_client):
         provider = ClaudeProvider()
         with pytest.raises(LLMError):
-            provider.narrate("system", "user")
+            provider.narrate("system", "user", feature="rule_review_ai_assist")
 
 
 def test_codex_provider_requires_api_key(monkeypatch):
@@ -77,7 +77,7 @@ def test_codex_provider_narrate_calls_openai_sdk(monkeypatch):
 
     with patch("openai.OpenAI", return_value=fake_client):
         provider = CodexProvider()
-        result = provider.narrate("system prompt", "user prompt")
+        result = provider.narrate("system prompt", "user prompt", feature="rule_review_ai_assist")
     assert result == "Here is the report."
 
 
@@ -89,7 +89,7 @@ def test_codex_provider_narrate_wraps_sdk_errors(monkeypatch):
     with patch("openai.OpenAI", return_value=fake_client):
         provider = CodexProvider()
         with pytest.raises(LLMError):
-            provider.narrate("system", "user")
+            provider.narrate("system", "user", feature="rule_review_ai_assist")
 
 
 def test_ollama_provider_requires_host(monkeypatch):
@@ -111,7 +111,7 @@ def test_ollama_provider_narrate_calls_http_api(monkeypatch):
 
     with patch("requests.post", return_value=fake_response) as mock_post:
         provider = OllamaProvider()
-        result = provider.narrate("system prompt", "user prompt")
+        result = provider.narrate("system prompt", "user prompt", feature="rule_review_ai_assist")
     assert result == "Here is the report."
     call_kwargs = mock_post.call_args
     assert call_kwargs.args[0] == "http://localhost:11434/api/chat"
@@ -123,7 +123,7 @@ def test_ollama_provider_narrate_wraps_http_errors(monkeypatch):
     with patch("requests.post", side_effect=ConnectionError("refused")):
         provider = OllamaProvider()
         with pytest.raises(LLMError):
-            provider.narrate("system", "user")
+            provider.narrate("system", "user", feature="rule_review_ai_assist")
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +144,7 @@ def test_claude_provider_narrate_records_usage_on_success(monkeypatch):
     with patch("anthropic.Anthropic", return_value=fake_client), \
          patch("app.ai_usage.record_usage") as mock_record:
         provider = ClaudeProvider()
-        provider.narrate("system", "user")
+        provider.narrate("system", "user", feature="rule_review_ai_assist")
 
     mock_record.assert_called_once()
     kwargs = mock_record.call_args.kwargs
@@ -165,7 +165,7 @@ def test_claude_provider_narrate_records_usage_on_failure(monkeypatch):
          patch("app.ai_usage.record_usage") as mock_record:
         provider = ClaudeProvider()
         with pytest.raises(LLMError):
-            provider.narrate("system", "user")
+            provider.narrate("system", "user", feature="rule_review_ai_assist")
 
     mock_record.assert_called_once()
     kwargs = mock_record.call_args.kwargs
@@ -187,7 +187,7 @@ def test_claude_provider_narrate_survives_malformed_usage_object(monkeypatch):
 
     with patch("anthropic.Anthropic", return_value=fake_client):
         provider = ClaudeProvider()
-        result = provider.narrate("system", "user")
+        result = provider.narrate("system", "user", feature="rule_review_ai_assist")
     assert result == "Report text."
 
 
@@ -206,10 +206,11 @@ def test_codex_provider_narrate_records_usage_on_success(monkeypatch):
     with patch("openai.OpenAI", return_value=fake_client), \
          patch("app.ai_usage.record_usage") as mock_record:
         provider = CodexProvider()
-        provider.narrate("system", "user")
+        provider.narrate("system", "user", feature="rule_review_ai_assist")
 
     kwargs = mock_record.call_args.kwargs
     assert kwargs["provider"] == "codex"
+    assert kwargs["feature"] == "rule_review_ai_assist"
     assert kwargs["input_tokens"] == 200
     assert kwargs["output_tokens"] == 100
     assert kwargs["success"] is True
@@ -230,10 +231,11 @@ def test_ollama_provider_narrate_records_usage_on_success(monkeypatch):
     with patch("requests.post", return_value=fake_response), \
          patch("app.ai_usage.record_usage") as mock_record:
         provider = OllamaProvider()
-        provider.narrate("system", "user")
+        provider.narrate("system", "user", feature="rule_review_ai_assist")
 
     kwargs = mock_record.call_args.kwargs
     assert kwargs["provider"] == "ollama"
+    assert kwargs["feature"] == "rule_review_ai_assist"
     assert kwargs["input_tokens"] == 300
     assert kwargs["output_tokens"] == 150
     assert kwargs["cost_usd"] == 0.0

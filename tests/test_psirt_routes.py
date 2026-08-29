@@ -17,7 +17,7 @@ class _FakeProvider(LLMProvider):
     def __init__(self, narrate_return):
         self._narrate_return = narrate_return
 
-    def narrate(self, system_prompt, user_prompt):
+    def narrate(self, system_prompt, user_prompt, *, feature, user=None):
         return self._narrate_return
 
 

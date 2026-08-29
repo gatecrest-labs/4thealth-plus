@@ -13,7 +13,11 @@ import datetime as dt
 import sqlite3
 from pathlib import Path
 
+from flask import Flask
+
 _DB_PATH = Path(__file__).parent.parent / "ai_usage.db"
+
+_RETENTION_DAYS = 90
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_usage (
@@ -35,6 +39,12 @@ def _init_db() -> None:
     conn = sqlite3.connect(_DB_PATH)
     try:
         conn.executescript(_SCHEMA)
+        # Idempotent migration for databases created before attribution existed.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(ai_usage)")}
+        if "feature" not in columns:
+            conn.execute("ALTER TABLE ai_usage ADD COLUMN feature TEXT")
+        if "user" not in columns:
+            conn.execute("ALTER TABLE ai_usage ADD COLUMN user TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -48,6 +58,8 @@ def record_usage(
     output_tokens: int,
     cost_usd: float,
     success: bool,
+    feature: str,
+    user: str | None = None,
     error: str | None = None,
 ) -> None:
     """Record one AI Assist LLM call. Never raises — a tracking failure
@@ -58,7 +70,8 @@ def record_usage(
         try:
             conn.execute(
                 "INSERT INTO ai_usage (timestamp, provider, model, input_tokens, "
-                "output_tokens, cost_usd, success, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "output_tokens, cost_usd, success, error, feature, user) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     dt.datetime.now(dt.UTC).isoformat(),
                     provider,
@@ -68,6 +81,8 @@ def record_usage(
                     cost_usd,
                     1 if success else 0,
                     error,
+                    feature,
+                    user,
                 ),
             )
             conn.commit()
@@ -100,14 +115,27 @@ def query_usage(start: dt.datetime, end: dt.datetime) -> list[dict]:
             "cost_usd": r["cost_usd"],
             "success": bool(r["success"]),
             "error": r["error"],
+            "feature": r["feature"],
+            "user": r["user"],
         }
         for r in rows
     ]
 
 
-def usage_summary(start: dt.datetime, end: dt.datetime, num_buckets: int = 24) -> dict:
+def usage_summary(
+    start: dt.datetime,
+    end: dt.datetime,
+    num_buckets: int = 24,
+    *,
+    by_feature: bool = False,
+) -> dict:
     """Bucket the [start, end] range into num_buckets equal time slices,
-    plus running totals for the whole range."""
+    plus running totals for the whole range.
+
+    With by_feature=True, also adds a "by_feature" key mapping each feature
+    label (rows predating attribution count as "unknown") to its own
+    calls/cost_usd/failures totals.
+    """
     rows = query_usage(start, end)
 
     span = (end - start).total_seconds()
@@ -152,7 +180,7 @@ def usage_summary(start: dt.datetime, end: dt.datetime, num_buckets: int = 24) -
         buckets[idx]["input_tokens"] += row["input_tokens"]
         buckets[idx]["output_tokens"] += row["output_tokens"]
 
-    return {
+    result = {
         "buckets": buckets,
         "total_calls": total_calls,
         "total_cost_usd": total_cost,
@@ -160,3 +188,50 @@ def usage_summary(start: dt.datetime, end: dt.datetime, num_buckets: int = 24) -
         "total_input_tokens": total_input,
         "total_output_tokens": total_output,
     }
+    if by_feature:
+        by_feature_totals: dict[str, dict] = {}
+        for row in rows:
+            key = row["feature"] or "unknown"
+            entry = by_feature_totals.setdefault(
+                key, {"calls": 0, "cost_usd": 0.0, "failures": 0}
+            )
+            entry["calls"] += 1
+            entry["cost_usd"] += row["cost_usd"]
+            if not row["success"]:
+                entry["failures"] += 1
+        result["by_feature"] = by_feature_totals
+    return result
+
+
+def prune_old_data() -> None:
+    """Delete rows older than _RETENTION_DAYS. Never raises."""
+    try:
+        cutoff = (
+            dt.datetime.now(dt.UTC) - dt.timedelta(days=_RETENTION_DAYS)
+        ).isoformat()
+        _init_db()
+        conn = sqlite3.connect(_DB_PATH)
+        try:
+            conn.execute("DELETE FROM ai_usage WHERE timestamp < ?", (cutoff,))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def init_scheduler(app: Flask) -> None:
+    """Register the daily prune job (one scheduler per module, as elsewhere)."""
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(
+        func=prune_old_data,
+        trigger="cron",
+        hour=3,
+        minute=10,
+        id="ai_usage_prune",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.start()

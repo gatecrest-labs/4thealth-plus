@@ -12,7 +12,14 @@ class CodexProvider(LLMProvider):
             raise LLMError("OPENAI_API_KEY is not set in .env")
         self._model = Config.OPENAI_MODEL
 
-    def narrate(self, system_prompt: str, user_prompt: str) -> str:
+    def narrate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        feature: str,
+        user: str | None = None,
+    ) -> str:
         from app.ai_usage import record_usage
         from app.llm.pricing import estimate_cost
 
@@ -37,6 +44,8 @@ class CodexProvider(LLMProvider):
                 output_tokens=0,
                 cost_usd=0.0,
                 success=False,
+                feature=feature,
+                user=user,
                 error=str(exc),
             )
             raise LLMError("the 'openai' package is not installed") from exc
@@ -48,6 +57,8 @@ class CodexProvider(LLMProvider):
                 output_tokens=0,
                 cost_usd=0.0,
                 success=False,
+                feature=feature,
+                user=user,
                 error=str(exc),
             )
             raise LLMError(f"OpenAI API call failed: {exc}") from exc
@@ -64,5 +75,7 @@ class CodexProvider(LLMProvider):
             output_tokens=output_tokens,
             cost_usd=estimate_cost("codex", self._model, input_tokens, output_tokens),
             success=True,
+            feature=feature,
+            user=user,
         )
         return text

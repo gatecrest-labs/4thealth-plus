@@ -440,7 +440,7 @@ def pc_ai_summary(adom: str, device: str):
     narrative = None
     narrative_error = None
     try:
-        narrative = build_diff_narrative(adom, devices)
+        narrative = build_diff_narrative(adom, devices, user=session.get("user"))
     except Exception as exc:
         narrative_error = str(exc)
 
