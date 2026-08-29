@@ -460,6 +460,24 @@ def init_scheduler(app):
             )
             _time.sleep(15)
             _run_device_sweep(app)
+            return
+
+        # pending_status_cache's own startup refresh runs concurrently in a
+        # separate background thread and can still be "pending" or "running"
+        # (not yet "ok") by the time this sweep reads it, since both fire at
+        # app boot with no ordering guarantee between them -- leaving
+        # pending_config_diff_count stuck at null until the next scheduled
+        # sweep, up to device_interval_min later. One retry, same pattern
+        # as the failure-retry above, gives the other cache time to warm up.
+        from app.pending_status_cache import get_cache_status as _pending_status
+
+        if _pending_status()["status"] in ("pending", "running"):
+            logger.info(
+                "executive_summary_cache: pending_status_cache not warm yet, "
+                "retrying device sweep in 15s"
+            )
+            _time.sleep(15)
+            _run_device_sweep(app)
 
     def _startup_hygiene(app=app):
         if not _run_hygiene_sweep(app):
