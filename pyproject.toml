@@ -9,8 +9,8 @@ dependencies = [
     "bcrypt>=5.0.0",
     "apscheduler>=3.11.3",
     "openpyxl>=3.1.5",
-    "pysnmp>=7.1.28",
-    "cryptography>=50.0.0",
+    "pysnmp>=7.1.29",
+    "cryptography>=50.0.1",
     "pyzipper>=0.4.0",
     "paramiko>=5.0.0",
     "pyyaml>=6.0.3",
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-prod = ["gunicorn>=26.1.0"]
+prod = ["gunicorn>=26.2.0"]
 
 [tool.uv]
 package = false
@@ -38,5 +38,5 @@ ignore = ["BLE001", "S110", "S112"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "ruff>=0.16.3",
+    "ruff>=0.16.4",
 ]
