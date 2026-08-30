@@ -1,4 +1,7 @@
-<img alt="4tHealth+ logo" src="logo.svg" width="240">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logo-dark.svg">
+  <img alt="4tHealth+ logo" src="logo.svg" width="240">
+</picture>
 
 # 4THealth+ — Network Operations Dashboard
 

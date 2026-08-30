@@ -1,16 +1,15 @@
-<svg width="520" height="140" viewBox="0 0 520 140" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="4tHealth+ logo">
-  <rect width="520" height="140" rx="16" fill="#141a24"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 140" role="img" aria-label="4tHealth+ logo">
   <g transform="translate(28, 22)">
-    <path d="M48 6 L86 26 V70 L48 90 L10 70 V26 Z" fill="#f4f6f8"/>
-    <path d="M48 6 L48 46 L10 26 Z" fill="#2f9e6e"/>
-    <path d="M48 6 L86 26 L48 46 Z" fill="#e08a2c"/>
-    <path d="M20 60 H33 L38 50 L45 66 L50 56 H58"
-          stroke="#141a24" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-    <circle cx="70" cy="56" r="6.5" stroke="#141a24" stroke-width="3.4" fill="none"/>
-    <line x1="64" y1="56" x2="58" y2="56" stroke="#141a24" stroke-width="3.4" stroke-linecap="round"/>
+    <circle cx="30" cy="70" r="36" stroke="#141a24" stroke-width="3" opacity=".15" fill="none"/>
+    <circle cx="30" cy="70" r="25" stroke="#141a24" stroke-width="3" opacity=".28" fill="none"/>
+    <circle cx="30" cy="70" r="14" stroke="#141a24" stroke-width="3" opacity=".45" fill="none"/>
+    <circle cx="30" cy="70" r="9" fill="#141a24"/>
+    <line x1="37" y1="63" x2="64" y2="36" stroke="#141a24" stroke-width="2.2" stroke-dasharray="1 5" stroke-linecap="round"/>
+    <circle cx="65" cy="24" r="8" fill="#2f9e6e" opacity=".92"/>
+    <circle cx="76" cy="28" r="8" fill="#e08a2c" opacity=".92"/>
   </g>
   <text x="150" y="82" font-family="'Space Grotesk','Segoe UI',Helvetica,Arial,sans-serif" font-size="44" font-weight="700">
-    <tspan fill="#f4f6f8">4t</tspan><tspan fill="#2f9e6e">Health</tspan><tspan fill="#e08a2c">+</tspan>
+    <tspan fill="#141a24">4t</tspan><tspan fill="#2f9e6e">Health</tspan><tspan fill="#e08a2c">+</tspan>
   </text>
-  <text x="150" y="108" font-family="'IBM Plex Mono','Courier New',monospace" font-size="13" letter-spacing="1" fill="#9aa7b6">FABRIC HEALTH &#183; DASHBOARD</text>
+  <text x="150" y="108" font-family="'IBM Plex Mono','Courier New',monospace" font-size="13" letter-spacing="1" fill="#5b6472">FABRIC HEALTH &#183; DASHBOARD</text>
 </svg>
