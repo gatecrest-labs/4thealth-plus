@@ -1409,10 +1409,9 @@ def hygiene_run():
                                 int(pid), p.get("_hitcount") or 0
                             )
 
-            # For the shadow check, fetch address and service objects so the
-            # check engine can detect IP-containment shadowing in addition to
-            # exact name-match shadowing.
-            if "shadow" in valid_checks:
+            # For the shadow and redundant checks, fetch address and service objects so the
+            # check engine can detect IP-containment shadowing and equivalence.
+            if "shadow" in valid_checks or "redundant" in valid_checks:
                 try:
                     addr_objects = client.get_address_objects(adom)
                     addr_groups = client.get_address_groups(adom)

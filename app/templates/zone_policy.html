@@ -20,6 +20,7 @@
 <div class="zp-tab-bar">
   <button class="zp-tab active" data-panel="query">&#128270; Query Flow</button>
   <button class="zp-tab" data-panel="browse">&#128209; Browse</button>
+  <button class="zp-tab" data-panel="seghealth">&#128200; Segmentation Health</button>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
@@ -136,8 +137,64 @@
   <div id="zpBrowseError" class="alert alert-danger" style="display:none;margin-top:.75rem"></div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════════════════
+     SEGMENTATION HEALTH PANEL
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div id="panel-seghealth" class="zp-panel" style="display:none">
+  <div id="zpSegError" class="alert alert-danger" style="display:none"></div>
+  <div id="zpSegLoading" class="text-muted" style="display:none;font-style:italic;margin-top:.5rem">Loading…</div>
+
+  <div id="zpSegContent" style="display:none">
+    <!-- Score bar -->
+    <div class="zp-stat-bar" style="margin-bottom:1.5rem">
+      <div class="zp-stat">
+        <span id="zpSegScore" style="font-size:2rem;font-weight:700">—</span>
+        <small>Segmentation Score</small>
+      </div>
+      <div class="zp-stat">
+        <span id="zpSegTotalZones">—</span>
+        <small>Zones</small>
+      </div>
+      <div class="zp-stat">
+        <span id="zpSegTotalPairs">—</span>
+        <small>Zone Pairs</small>
+      </div>
+      <div class="zp-stat">
+        <span id="zpSegOpenCount">—</span>
+        <small>Open Pairs</small>
+      </div>
+    </div>
+
+    <!-- Open pairs -->
+    <h4 style="margin-bottom:.5rem">Open Zone Pairs <small class="text-muted" style="font-weight:400;font-size:.85rem">(allow all)</small></h4>
+    <div id="zpOpenPairsEmpty" class="text-muted" style="display:none;font-style:italic;margin-bottom:1rem">No open zone pairs — fully segmented.</div>
+    <div class="table-wrapper" id="zpOpenPairsWrapper">
+      <table class="data-table" id="zpOpenPairsTable">
+        <thead>
+          <tr>
+            <th>From Zone</th>
+            <th>To Zone</th>
+            <th style="width:7rem">Allow-All Policies</th>
+          </tr>
+        </thead>
+        <tbody id="zpOpenPairsTbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Trust boundary -->
+    <div style="margin-top:1.75rem">
+      <h4 style="margin-bottom:.5rem">Trust Boundary Findings</h4>
+      <div id="zpTrustNoLevels" class="text-muted" style="display:none;font-style:italic;font-size:.87rem">
+        No zones have <code>trust_level</code> configured. Set it via <strong>Admin → Zone Policy →
+        Modify Zone Field</strong> (0–100) to enable this analysis.
+      </div>
+      <div id="zpTrustList"></div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/zone_policy.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='js/zone_policy.js') }}?v=5"></script>
 {% endblock %}
