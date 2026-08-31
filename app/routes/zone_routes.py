@@ -8,6 +8,7 @@ API (all JSON):
   GET  /api/zone/zones            list all zones + subnets
   GET  /api/zone/policies         list all policy rules
   GET  /api/zone/validate         run validation, return report
+  GET  /api/zone/segmentation-report  segmentation effectiveness report
   POST /api/zone/zone/add         add a zone
   POST /api/zone/zone/remove      remove a zone
   POST /api/zone/zone/modify      modify a zone field
@@ -146,6 +147,18 @@ def api_validate():
         return jsonify(zdb.validate_db(db))
     except Exception as exc:
         return internal_api_error("zone_policy", exc)
+
+
+@bp.route("/api/zone/segmentation-report")
+@tab_required("zone_policy")
+def api_segmentation_report():
+    if not zdb.db_available():
+        return _err("policy_db.json not found", 503)
+    try:
+        db = zdb.load_db()
+        return jsonify(zdb.compute_segmentation_report(db))
+    except Exception as exc:
+        return internal_api_error("segmentation report", exc)
 
 
 # ── Backup ────────────────────────────────────────────────────────────────────

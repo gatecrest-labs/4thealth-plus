@@ -11,7 +11,7 @@ function debounce(fn, ms) {
 }
 
 /* ── Sub-tab routing ────────────────────────────────────────────────────────── */
-const panels = ['query', 'browse'];
+const panels = ['query', 'browse', 'seghealth'];
 
 document.querySelectorAll('.zp-tab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -23,6 +23,7 @@ document.querySelectorAll('.zp-tab').forEach(btn => {
       if (el) el.style.display = p === target ? '' : 'none';
     });
     if (target === 'browse' && !_browseLoaded) loadBrowse();
+    if (target === 'seghealth' && !_segLoaded) loadSegHealth();
   });
 });
 
@@ -356,3 +357,99 @@ document.getElementById('zpPolSearch').addEventListener('input', dPolSearch);
 document.getElementById('zpPolAccessFilter').addEventListener('change', renderPolicies);
 document.getElementById('zpPolSevFilter').addEventListener('change', renderPolicies);
 
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SEGMENTATION HEALTH PANEL
+   ════════════════════════════════════════════════════════════════════════════ */
+
+let _segLoaded = false;
+
+async function loadSegHealth() {
+  _segLoaded = true;
+  document.getElementById('zpSegLoading').style.display = '';
+  document.getElementById('zpSegError').style.display   = 'none';
+  document.getElementById('zpSegContent').style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/zone/segmentation-report');
+    const data = await resp.json();
+    if (!resp.ok) {
+      _segLoaded = false;
+      showSegError(data.error || 'Failed to load segmentation report.');
+      return;
+    }
+    renderSegHealth(data);
+  } catch (e) {
+    _segLoaded = false;
+    showSegError(e.message);
+  } finally {
+    document.getElementById('zpSegLoading').style.display = 'none';
+  }
+}
+
+function showSegError(msg) {
+  const el = document.getElementById('zpSegError');
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+function renderSegHealth(data) {
+  // Score
+  const score = data.score ?? 100;
+  const scoreEl = document.getElementById('zpSegScore');
+  scoreEl.textContent = score.toFixed(1) + '%';
+  scoreEl.style.color = score >= 80 ? 'var(--success)'
+                      : score >= 50 ? 'var(--warning)'
+                      : 'var(--danger)';
+
+  document.getElementById('zpSegTotalZones').textContent = data.total_zones ?? '—';
+  document.getElementById('zpSegTotalPairs').textContent = data.total_pairs ?? '—';
+  document.getElementById('zpSegOpenCount').textContent  = data.open_pair_count ?? 0;
+
+  // Open pairs table
+  const pairs = data.open_pairs || [];
+  const tbody = document.getElementById('zpOpenPairsTbody');
+  if (pairs.length === 0) {
+    document.getElementById('zpOpenPairsWrapper').style.display = 'none';
+    document.getElementById('zpOpenPairsEmpty').style.display   = '';
+  } else {
+    document.getElementById('zpOpenPairsWrapper').style.display = '';
+    document.getElementById('zpOpenPairsEmpty').style.display   = 'none';
+    tbody.innerHTML = pairs.map(p => `<tr>
+      <td style="font-family:monospace;font-size:.84rem">${esc(p.from_zone)}</td>
+      <td style="font-family:monospace;font-size:.84rem">${esc(p.to_zone)}</td>
+      <td style="text-align:center">${p.policy_count}</td>
+    </tr>`).join('');
+  }
+
+  // Trust mismatches
+  const mismatches = data.trust_mismatches || [];
+  if (!data.has_trust_levels) {
+    document.getElementById('zpTrustNoLevels').style.display = '';
+    document.getElementById('zpTrustList').innerHTML = '';
+  } else if (mismatches.length === 0) {
+    document.getElementById('zpTrustNoLevels').style.display = 'none';
+    document.getElementById('zpTrustList').innerHTML =
+      '<p class="text-muted" style="font-style:italic;font-size:.87rem">No trust boundary mismatches found.</p>';
+  } else {
+    document.getElementById('zpTrustNoLevels').style.display = 'none';
+    document.getElementById('zpTrustList').innerHTML = mismatches.map(m => {
+      const dir = m.delta > 0 ? 'low→high trust' : 'high→low trust';
+      return `<div class="zp-zone-card" style="margin-bottom:.5rem;border-left:3px solid var(--warning)">
+        <div style="padding:.5rem .75rem;font-size:.87rem">
+          <strong style="font-family:monospace">${esc(m.from_zone)}</strong>
+          <span style="color:var(--text-muted)"> → </span>
+          <strong style="font-family:monospace">${esc(m.to_zone)}</strong>
+          <span class="hygiene-badge" style="margin-left:.5rem;background:rgba(245,158,11,.15);color:var(--warning);border-color:#f59e0b40">
+            Δ${Math.abs(m.delta)} (${dir})
+          </span>
+          <span class="text-muted" style="font-size:.8rem;margin-left:.4rem">
+            trust ${m.from_trust} → ${m.to_trust} · ${m.policy_count} open polic${m.policy_count === 1 ? 'y' : 'ies'}
+          </span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('zpSegContent').style.display = '';
+}

@@ -92,7 +92,7 @@ app/
   config.py            # Reads .env into a Config object
   auth.py              # Session-based login; bcrypt password verify against users.json
   fmg_client.py        # FortiManager JSON-RPC client (context manager: auto login/logout)
-  hygiene.py           # Rule hygiene check engine (6 checks: unnamed, unlogged, shadow, disabled, expired, unhit)
+  hygiene.py           # Rule hygiene check engine (8 checks: unnamed, unlogged, shadow, disabled, expired, unhit, missing security profile, redundant)
   hygiene_ai.py        # AI Explain for a single Rule Hygiene finding — narrates one already-computed finding, never re-runs a check
   device_review.py     # Device Review check engine — interface protocol checks; add new checks here
   rule_review.py       # Policy analysis + route-tracing engine; zone policy integration
@@ -182,7 +182,7 @@ Two-section layout (tab displays as "Rule Review" in the nav; internal key remai
    - Interface badges (source = blue, destination = green)
    - Page size 10/25/50/100 with `<< < … > >>` pagination
    - Export (CSV/JSON/PDF) — each export includes a filter header block at the top (package, ADOM, timestamp, search terms, total/filtered counts)
-2. **Hygiene Analysis** (below) — select ADOM + package, run 6 checks, filter/export findings (CSV/JSON/PDF).
+2. **Hygiene Analysis** (below) — select ADOM + package, run 8 checks, filter/export findings (CSV/JSON/PDF).
    - **Find Unused Objects** button (next to Run Analysis) scans the selected package and lists address/address-group/service/service-group objects not referenced by any policy rule (BFS group-member expansion catches indirect references; FortiGuard/built-in objects like `all`/`ANY`/`g-*`/`ISDB-*` are excluded). A scope selector (All / Local only / Global only) controls whether the shared Global-ADOM object pool is included — services and service groups have no global pool, so `scope=global` always returns empty for those. Results are filterable/paginated (10/25/50/100) with CSV/JSON export. Backend: `GET /api/hygiene/unused-objects?adom=&pkg=&scope=`, logic in `app/hygiene.py::find_unused_objects()`.
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
@@ -412,16 +412,19 @@ into a lost result.
 
 Self-contained network segmentation policy browser. No FortiManager connection required — all data comes from `policy_db.json` in the project root.
 
-Two sub-tab panels, read-only for all users:
+Three sub-tab panels, read-only for all users:
 1. **Query Flow** — enter source/destination IPs (multi-line or comma-separated), optional service, get ALLOWED/BLOCKED/UNKNOWN verdict with governing rules
 2. **Browse** — zone accordion list (searchable, filterable) + full policy table (filterable by access type/severity)
+3. **Segmentation Health** — effectiveness score, open zone-pair list, and trust-boundary mismatch report (see below)
 
 **Validate** and **Edit Database** live under **Admin → Zone Policy** (admin only) — see the Admin tab section below. This keeps the Zone Policy tab fully read-only for every user and consolidates all `policy_db.json` write operations in Admin.
 
 Backend: `app/zone_db.py` is the single source of truth — query engine, validation, and all CRUD mutations. It writes back to `policy_db.json` atomically. Routes in `app/routes/zone_routes.py`:
 - `POST /api/zone/query` — flow query (tab_required)
-- `GET /api/zone/zones`, `GET /api/zone/policies`, `GET /api/zone/validate` — read-only (tab_required)
+- `GET /api/zone/zones`, `GET /api/zone/policies`, `GET /api/zone/validate`, `GET /api/zone/segmentation-report` — read-only (tab_required)
 - Zone/subnet/policy mutation routes — admin_required
+
+**Segmentation Health report** (`zdb.compute_segmentation_report()`): for every ordered zone pair (A→B, A≠B), flags pairs with at least one `allow all` policy as "open"; score = `1 - open_pairs/total_pairs`, as a percentage. Also surfaces **trust-boundary mismatches** — pairs where both zones have an optional `trust_level` (0–100) set, the trust delta is ≥40, and an `allow all`/`allow only` policy connects them (e.g. a low-trust Guest zone with open access into a high-trust Server zone). `trust_level` is opt-in per zone; pairs are skipped from mismatch analysis unless both zones have it set, so an un-annotated database produces no false positives. Editable via **Admin → Zone Policy → Modify Zone Field** (`trust_level` in `ZONE_MUTABLE_FIELDS`), integer 0–100 or blank to clear.
 
 Zone evaluation logic: block all > block only (service match) > allow only (service match) > allow all > implicit UNKNOWN. Zone hierarchy is supported via `parents[]` and zone name expansion.
 
@@ -441,7 +444,8 @@ Runtime data file (gitignored). Copy from a known-good source or build from scra
     "ZoneName": {
       "domain": "Default", "is_shared": false, "description": "",
       "subnets": [{"subnet": "10.1.0.0/16", "description": ""}],
-      "children": [], "parents": []
+      "children": [], "parents": [],
+      "trust_level": 90
     }
   },
   "policies": [

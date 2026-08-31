@@ -19,7 +19,7 @@ DB_PATH = Path(__file__).parent.parent / "policy_db.json"
 
 VALID_ACCESS_TYPES: set[str] = {"allow all", "block all", "block only", "allow only"}
 VALID_SEVERITIES: set[str] = {"high", "critical"}
-ZONE_MUTABLE_FIELDS: set[str] = {"domain", "description", "is_shared"}
+ZONE_MUTABLE_FIELDS: set[str] = {"domain", "description", "is_shared", "trust_level"}
 POLICY_MUTABLE_FIELDS: set[str] = {
     "policy_set",
     "from_domain",
@@ -427,7 +427,20 @@ def zone_modify(db: dict, name: str, field: str, value: str) -> str:
         raise KeyError(f"Zone '{name}' not found.")
     if field not in ZONE_MUTABLE_FIELDS:
         raise ValueError(f"Field '{field}' is not editable.")
-    coerced = (value.lower() == "true") if field == "is_shared" else value
+    if field == "is_shared":
+        coerced = value.lower() == "true"
+    elif field == "trust_level":
+        if value == "":
+            coerced = None
+        else:
+            try:
+                coerced = int(value)
+            except ValueError:
+                raise ValueError("trust_level must be an integer 0–100.")
+            if not (0 <= coerced <= 100):
+                raise ValueError("trust_level must be between 0 and 100.")
+    else:
+        coerced = value
     db["zones"][name][field] = coerced
     save_db(db)
     return f"Zone '{name}' — {field} updated."
@@ -520,3 +533,107 @@ def policy_modify(db: dict, index: int, field: str, value: str) -> str:
     db["policies"][index][field] = coerced
     save_db(db)
     return f"Policy #{index}: {field} updated."
+
+
+# ── Segmentation health report ────────────────────────────────────────────────
+
+_TRUST_MISMATCH_THRESHOLD = 40
+_OPEN_ACCESS_TYPES = {"allow all", "allow only"}
+
+
+def compute_segmentation_report(db: dict) -> dict:
+    """Compute a segmentation effectiveness report for the zone database.
+
+    Returns:
+        score            — float 0–100; higher = more segmented
+        total_zones      — int
+        total_pairs      — int; ordered zone pairs (A→B where A≠B)
+        open_pair_count  — int; pairs with at least one allow-all policy
+        open_pairs       — list of {from_zone, to_zone, policy_count}
+        trust_mismatches — list of {from_zone, to_zone, from_trust, to_trust,
+                           delta, policy_count}; only when both zones have
+                           trust_level set and delta >= threshold
+        has_trust_levels — bool; True if any zone has trust_level set
+    """
+    zones: dict = db.get("zones", {})
+    policies: list = db.get("policies", [])
+
+    zone_names = list(zones.keys())
+    n = len(zone_names)
+    total_pairs = n * (n - 1)
+
+    # Index policies by (from_zone, to_zone)
+    pair_policies: dict[tuple, list] = {}
+    for p in policies:
+        key = (p.get("from_zone"), p.get("to_zone"))
+        if key[0] and key[1]:
+            pair_policies.setdefault(key, []).append(p)
+
+    # Open pairs: any pair with at least one allow-all policy
+    open_pair_set: set[tuple] = set()
+    for (fz, tz), pols in pair_policies.items():
+        if (
+            fz in zones
+            and tz in zones
+            and fz != tz
+            and any(p.get("access_type") == "allow all" for p in pols)
+        ):
+            open_pair_set.add((fz, tz))
+
+    open_pairs = [
+        {
+            "from_zone": fz,
+            "to_zone": tz,
+            "policy_count": sum(
+                1
+                for p in pair_policies.get((fz, tz), [])
+                if p.get("access_type") == "allow all"
+            ),
+        }
+        for fz, tz in sorted(open_pair_set)
+    ]
+
+    score = (
+        max(0.0, round((1 - len(open_pair_set) / total_pairs) * 100, 1))
+        if total_pairs > 0
+        else 100.0
+    )
+
+    # Trust mismatches
+    has_trust_levels = any(z.get("trust_level") is not None for z in zones.values())
+    trust_mismatches = []
+    for (fz, tz), pols in pair_policies.items():
+        fz_data = zones.get(fz, {})
+        tz_data = zones.get(tz, {})
+        fz_trust = fz_data.get("trust_level")
+        tz_trust = tz_data.get("trust_level")
+        if fz_trust is None or tz_trust is None:
+            continue
+        delta = tz_trust - fz_trust
+        if abs(delta) < _TRUST_MISMATCH_THRESHOLD:
+            continue
+        concerning = [p for p in pols if p.get("access_type") in _OPEN_ACCESS_TYPES]
+        if not concerning:
+            continue
+        trust_mismatches.append(
+            {
+                "from_zone": fz,
+                "to_zone": tz,
+                "from_trust": fz_trust,
+                "to_trust": tz_trust,
+                "delta": delta,
+                "policy_count": len(concerning),
+            }
+        )
+
+    trust_mismatches.sort(key=lambda m: abs(m["delta"]), reverse=True)
+
+    return {
+        "score": score,
+        "total_zones": n,
+        "total_pairs": total_pairs,
+        "open_pair_count": len(open_pair_set),
+        "open_pairs": open_pairs,
+        "trust_mismatches": trust_mismatches,
+        "has_trust_levels": has_trust_levels,
+    }
