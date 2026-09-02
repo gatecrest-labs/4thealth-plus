@@ -13,7 +13,7 @@
       if (btn.dataset.panel === 'map-regions' && !_mapRegionsLoaded) loadMapRegions();
       if (btn.dataset.panel === 'external-api' && !_extApiLoaded) loadExtApi();
       if (btn.dataset.panel === 'ai-assist' && !_aiAssistLoaded) loadAiAssist();
-      if (btn.dataset.panel === 'scheduled') { loadSMTP(); loadJobs(); loadDRJobs(); }
+      if (btn.dataset.panel === 'scheduled') { loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); }
       if (btn.dataset.panel === 'backup') { window.loadBackupConfig(); window.loadBackupJobs(); }
       if (btn.dataset.panel === 'zone-policy' && !_zonePolicyLoaded) loadZonePolicyEdit();
     });
@@ -1637,6 +1637,178 @@ async function runDRJobNow(id) {
       if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
     }
   }, 3000);
+}
+
+// ── Rule Hygiene Scheduled Jobs ──────────────────────────────────────────────
+
+const _RH_CHECK_KEYS = [
+  'unnamed','unlogged','shadow','disabled',
+  'expired','unhit','missing_security_profile','redundant'
+];
+
+async function loadRHJobs() {
+  const res = await fetch('/admin/api/rule-hygiene/jobs');
+  const jobs = await res.json();
+  const tbody = document.getElementById('rhJobsTableBody');
+  if (!jobs.length) {
+    tbody.innerHTML = '<tr><td colspan="11" style="color:var(--text-muted);text-align:center">No scheduled jobs.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = jobs.map(j => {
+    const lastRun = j.runs && j.runs[0];
+    const lastRunStr = lastRun
+      ? `${lastRun.ran_at.slice(0,16).replace('T',' ')} — ${lastRun.status}`
+      : '—';
+    const activeChecks = (j.checks && j.checks.length) ? j.checks.length + ' checks' : 'All checks';
+    const days = (j.days_of_week || []).join(', ');
+    const enabledBadge = j.enabled
+      ? '<span class="badge badge-green">Enabled</span>'
+      : '<span class="badge badge-gray">Disabled</span>';
+    return `<tr>
+      <td>${escH(j.name)}</td>
+      <td>${escH(j.adom)}</td>
+      <td>${escH(days)}</td>
+      <td>${escH(j.time)}</td>
+      <td>${escH(activeChecks)}</td>
+      <td>${escH(j.format || 'html')}</td>
+      <td>${escH(j.batch_size || 20)}</td>
+      <td>${escH(j.email)}</td>
+      <td style="font-size:11px">${escH(lastRunStr)}</td>
+      <td>${enabledBadge}</td>
+      <td>
+        <button class="btn-sm" onclick="showRHJobForm('${j.id}')">Edit</button>
+        <button class="btn-sm" id="rhRunBtn-${j.id}" onclick="runRHJobNow('${j.id}')">Run Now</button>
+        <button class="btn-sm btn-danger" onclick="deleteRHJob('${j.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function showRHJobForm(id) {
+  document.getElementById('rhJobForm').style.display = '';
+  document.getElementById('rhJobFormId').value = id || '';
+  document.getElementById('rhJobFormMsg').textContent = '';
+
+  // Populate ADOM dropdown
+  const adomSel = document.getElementById('rhJobFormAdom');
+  adomSel.innerHTML = '<option value="">Loading…</option>';
+  fetch('/admin/api/adoms').then(r => r.json()).then(data => {
+    adomSel.innerHTML = (data.adoms || []).map(a => `<option value="${escH(a)}">${escH(a)}</option>`).join('');
+    if (id) {
+      fetch('/admin/api/rule-hygiene/jobs').then(r => r.json()).then(allJobs => {
+        const job = allJobs.find(j => j.id === id);
+        if (!job) return;
+        document.getElementById('rhJobFormTitle').textContent = 'Edit Rule Hygiene Job';
+        document.getElementById('rhJobFormName').value = job.name || '';
+        adomSel.value = job.adom || '';
+        document.getElementById('rhJobFormTime').value = job.time || '03:00';
+        ['SUN','MON','TUE','WED','THU','FRI','SAT'].forEach(d => {
+          document.getElementById(`rhDayChk-${d}`).checked =
+            (job.days_of_week || []).includes(d);
+        });
+        _RH_CHECK_KEYS.forEach(k => {
+          const el = document.getElementById(`rhChk-${k}`);
+          if (el) el.checked = !job.checks.length || job.checks.includes(k);
+        });
+        document.getElementById('rhJobFormUnusedObjects').checked =
+          !!job.include_unused_objects;
+        document.getElementById('rhJobFormFormat').value = job.format || 'html';
+        document.getElementById('rhJobFormBatchSize').value = job.batch_size || 20;
+        document.getElementById('rhJobFormEmail').value = job.email || '';
+        document.getElementById('rhJobFormEnabled').checked = !!job.enabled;
+      });
+    } else {
+      document.getElementById('rhJobFormTitle').textContent = 'New Rule Hygiene Job';
+      document.getElementById('rhJobFormName').value = '';
+      document.getElementById('rhJobFormTime').value = '03:00';
+      ['SUN','MON','TUE','WED','THU','FRI','SAT'].forEach(d => {
+        document.getElementById(`rhDayChk-${d}`).checked = false;
+      });
+      _RH_CHECK_KEYS.forEach(k => {
+        const el = document.getElementById(`rhChk-${k}`);
+        if (el) el.checked = true;
+      });
+      document.getElementById('rhJobFormUnusedObjects').checked = false;
+      document.getElementById('rhJobFormFormat').value = 'html';
+      document.getElementById('rhJobFormBatchSize').value = '20';
+      document.getElementById('rhJobFormEmail').value = '';
+      document.getElementById('rhJobFormEnabled').checked = true;
+    }
+  });
+}
+
+function cancelRHJobForm() {
+  document.getElementById('rhJobForm').style.display = 'none';
+}
+
+async function saveRHJob() {
+  const id = document.getElementById('rhJobFormId').value;
+  const days = ['SUN','MON','TUE','WED','THU','FRI','SAT']
+    .filter(d => document.getElementById(`rhDayChk-${d}`).checked);
+  const checks = _RH_CHECK_KEYS.filter(k => {
+    const el = document.getElementById(`rhChk-${k}`);
+    return el && el.checked;
+  });
+  const payload = {
+    name: document.getElementById('rhJobFormName').value.trim(),
+    adom: document.getElementById('rhJobFormAdom').value,
+    days_of_week: days,
+    time: document.getElementById('rhJobFormTime').value,
+    checks: checks,
+    include_unused_objects: document.getElementById('rhJobFormUnusedObjects').checked,
+    format: document.getElementById('rhJobFormFormat').value,
+    batch_size: parseInt(document.getElementById('rhJobFormBatchSize').value, 10) || 20,
+    email: document.getElementById('rhJobFormEmail').value.trim(),
+    enabled: document.getElementById('rhJobFormEnabled').checked,
+  };
+  const url    = id ? `/admin/api/rule-hygiene/jobs/${id}` : '/admin/api/rule-hygiene/jobs';
+  const method = id ? 'PUT' : 'POST';
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    document.getElementById('rhJobFormMsg').textContent = data.error || 'Save failed';
+    return;
+  }
+  cancelRHJobForm();
+  loadRHJobs();
+}
+
+async function deleteRHJob(id) {
+  if (!confirm('Delete this rule hygiene job?')) return;
+  const res = await fetch(`/admin/api/rule-hygiene/jobs/${id}`, {
+    method: 'DELETE', headers: { 'X-CSRF-Token': getCSRF() },
+  });
+  if (!res.ok) { alert('Delete failed'); return; }
+  loadRHJobs();
+}
+
+async function runRHJobNow(id) {
+  const btn = document.getElementById(`rhRunBtn-${id}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+  const runRes = await fetch(`/admin/api/rule-hygiene/jobs/${id}/run`, {
+    method: 'POST', headers: { 'X-CSRF-Token': getCSRF() },
+  });
+  if (!runRes.ok) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+    alert('Failed to start job.');
+    return;
+  }
+  pollRHJobStatus(id, btn);
+}
+
+async function pollRHJobStatus(id, btn) {
+  const res  = await fetch(`/admin/api/rule-hygiene/jobs/${id}/status`);
+  const data = await res.json();
+  if (data.running) {
+    setTimeout(() => pollRHJobStatus(id, btn), 3000);
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+    loadRHJobs();
+  }
 }
 
 // ── Backup sub-tab ────────────────────────────────────────────────────────────

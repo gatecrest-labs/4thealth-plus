@@ -586,6 +586,47 @@ Persists jobs in `device_review_jobs.json` (gitignored; copy `device_review_jobs
 
 **Scheduled report output:** Email reports include a **per-host summary table** at the top of both the email body and the attached file (HTML, CSV, and JSON formats), showing per-device counts for each result type: Device | PASS | FAIL | INSECURE | WARN | CONFIG_MISSING | INFO | Total. The per-check aggregate summary follows below the host summary in the email body. When `ai_assist_enabled` is on, reports also include an AI-generated summary section (best-effort — silently omitted if narration fails, never blocks report delivery).
 
+#### Rule Hygiene Scheduled Jobs
+
+`app/rule_hygiene_scheduler.py` — APScheduler-based scheduler mirroring `device_review_scheduler.py`.
+
+Persists jobs in `rule_hygiene_jobs.json` (gitignored; copy `rule_hygiene_jobs.example.json` to create).
+
+**Job schema:**
+```json
+{
+  "id": "uuid",
+  "name": "Weekly Rule Hygiene",
+  "adom": "Enterprise Services",
+  "days_of_week": ["MON", "FRI"],
+  "time": "03:00",
+  "checks": ["unnamed", "unlogged"],
+  "include_unused_objects": false,
+  "batch_size": 20,
+  "format": "html",
+  "email": "alice@corp.com",
+  "enabled": true,
+  "runs": [...]
+}
+```
+
+`checks`: list of check keys from `hygiene.CHECKS`; empty list = run all 8.
+`include_unused_objects`: when true, fetches ADOM-level address/service catalogs once and runs `find_unused_objects()` per package.
+`batch_size`: number of per-package report files per zip email (1–100, default 20). For ADOMs with more packages than `batch_size`, multiple emails are sent: email 1 has the full summary table + Part 1 zip; subsequent emails contain a `[Part N of M]` subject and the next zip.
+
+**`bulk_hygiene_adom(adom, checks, include_unused_objects, max_workers=4)`** in `app/routes/hygiene_routes.py` — session-free entry point for the scheduler. Uses `ThreadPoolExecutor(max_workers=4)`. Scope member data (via `FMGClient.get_pkg_scope_members`) is used to determine the device name for file naming. Unlike the interactive `/api/hygiene/run` path, the scheduler does not overlay live per-device hit counts for the `unhit` check (too expensive across every package in an ADOM) and always pre-fetches address/service catalogs once per ADOM for the `shadow`/`redundant` resolvers, rather than only when those checks are selected.
+
+**Admin API endpoints** (all `admin_required`):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/admin/api/rule-hygiene/jobs` | List all Rule Hygiene scheduled jobs |
+| `POST` | `/admin/api/rule-hygiene/jobs` | Create a new job |
+| `PUT` | `/admin/api/rule-hygiene/jobs/<id>` | Update an existing job |
+| `DELETE` | `/admin/api/rule-hygiene/jobs/<id>` | Delete a job |
+| `POST` | `/admin/api/rule-hygiene/jobs/<id>/run` | Trigger an immediate run |
+| `GET` | `/admin/api/rule-hygiene/jobs/<id>/status` | Get last run status / history |
+
 ### External API
 
 `app/routes/external_api_routes.py` — blueprint at `/external/api/`
