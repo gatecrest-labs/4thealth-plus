@@ -5,6 +5,18 @@ All notable changes to 4THealth+ are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Rule Hygiene Scheduled Jobs (Admin → Scheduled):** admins can create recurring
+  Rule Hygiene audit jobs — choose an ADOM, select any subset of the 8 hygiene
+  checks, optionally include unused-object analysis, set a day-of-week + time
+  schedule, and email per-package reports (HTML, CSV, or JSON) as zip
+  attachments. Jobs persist in `rule_hygiene_jobs.json` and are registered as
+  APScheduler CronTriggers at startup, mirroring the existing Config-Delta and
+  Device Review schedulers (`app/rule_hygiene_scheduler.py`). ADOMs with more
+  packages than the configured batch size split into multiple `[Part N of M]`
+  emails; the first carries the full per-package summary table. New
+  `bulk_hygiene_adom()` session-free entry point in `app/routes/hygiene_routes.py`
+  runs checks across all packages in an ADOM via a thread pool. Ported from the
+  sibling [4THealth](https://github.com/Alski-MPLS/4thealth) repo.
 - **PSIRT Advisory Assessment (Device Review tab):** New section — paste or
   upload a Fortinet PSIRT advisory email, get an LLM-assisted structured
   extraction (editable before running), then a deterministic per-device

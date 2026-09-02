@@ -47,6 +47,7 @@ from flask import Blueprint, jsonify, render_template, request, session
 from app import config_diff_scheduler as _sched
 from app import device_review_scheduler as _dr_sched
 from app import registry
+from app import rule_hygiene_scheduler as _rh_sched
 from app import smtp_client as _smtp
 from app.api_tokens import create_token, list_tokens, revoke_token
 from app.app_logger import (
@@ -600,3 +601,67 @@ def admin_dr_jobs_status(job_id: str):
         return jsonify({"error": "Job not found"}), 404
     last_run = job["runs"][0] if job.get("runs") else None
     return jsonify({"running": _dr_sched.is_job_running(job_id), "last_run": last_run})
+
+
+# ── Rule Hygiene Scheduled Jobs API ──────────────────────────────────────────
+
+
+@bp.route("/api/rule-hygiene/jobs")
+@_admin_required
+def admin_rh_jobs_list():
+    return jsonify(_rh_sched.get_all_jobs())
+
+
+@bp.route("/api/rule-hygiene/jobs", methods=["POST"])
+@_admin_required
+def admin_rh_jobs_create():
+    data = request.get_json(force=True) or {}
+    try:
+        job = _rh_sched.create_job(data)
+    except (KeyError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(job), 201
+
+
+@bp.route("/api/rule-hygiene/jobs/<job_id>", methods=["PUT"])
+@_admin_required
+def admin_rh_jobs_update(job_id: str):
+    data = request.get_json(force=True) or {}
+    try:
+        job = _rh_sched.update_job(job_id, data)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(job)
+
+
+@bp.route("/api/rule-hygiene/jobs/<job_id>", methods=["DELETE"])
+@_admin_required
+def admin_rh_jobs_delete(job_id: str):
+    try:
+        _rh_sched.delete_job(job_id)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/rule-hygiene/jobs/<job_id>/run", methods=["POST"])
+@_admin_required
+def admin_rh_jobs_run(job_id: str):
+    jobs = _rh_sched.get_all_jobs()
+    if not any(j["id"] == job_id for j in jobs):
+        return jsonify({"error": "Job not found"}), 404
+    _rh_sched.run_job_now(job_id)
+    return jsonify({"ok": True, "message": "Job started"}), 202
+
+
+@bp.route("/api/rule-hygiene/jobs/<job_id>/status")
+@_admin_required
+def admin_rh_jobs_status(job_id: str):
+    jobs = _rh_sched.get_all_jobs()
+    job = next((j for j in jobs if j["id"] == job_id), None)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    last_run = job["runs"][0] if job.get("runs") else None
+    return jsonify({"running": _rh_sched.is_job_running(job_id), "last_run": last_run})

@@ -252,7 +252,7 @@
   <!-- SMTP Configuration -->
   <div class="admin-panel-header">
     <h3>SMTP Configuration</h3>
-    <p class="admin-panel-desc">Global email settings used by all scheduled jobs (Config-Delta and Device Review).</p>
+    <p class="admin-panel-desc">Global email settings used by all scheduled jobs (Config-Delta, Device Review, and Rule Hygiene).</p>
   </div>
   <div style="max-width:520px">
     <div class="form-row">
@@ -301,7 +301,7 @@
 
   <!-- Scheduled Jobs -->
   <div class="admin-panel-header" style="margin-top:2rem">
-    <h3>Scheduled Exports</h3>
+    <h3>Configuration-Delta Jobs</h3>
     <p class="admin-panel-desc">Each job fetches Config-Delta diffs for an entire ADOM and emails the results.</p>
   </div>
   <button class="btn-primary" onclick="showJobForm()" style="margin-bottom:12px">+ Add Job</button>
@@ -453,6 +453,129 @@
       </thead>
       <tbody id="drJobsTableBody">
         <tr><td colspan="10" style="color:#6b7280;text-align:center">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Rule Hygiene Scheduled Jobs -->
+  <div class="admin-panel-header" style="margin-top:2rem">
+    <h3>Rule Hygiene Jobs</h3>
+    <p class="admin-panel-desc">Each job runs rule hygiene checks against all policy packages in an ADOM and emails per-package reports as zip attachments.</p>
+  </div>
+  <button class="btn-primary" onclick="showRHJobForm()" style="margin-bottom:12px">+ Add Job</button>
+
+  <!-- Add/Edit inline form -->
+  <div id="rhJobForm" class="job-form-panel" style="display:none">
+    <h4 style="margin:0 0 12px" id="rhJobFormTitle">New Rule Hygiene Job</h4>
+    <input type="hidden" id="rhJobFormId">
+    <div class="form-row">
+      <label>Name</label>
+      <input type="text" id="rhJobFormName" placeholder="e.g. Weekly Hygiene — Enterprise" style="min-width:280px">
+    </div>
+    <div class="form-row">
+      <label>ADOM</label>
+      <select id="rhJobFormAdom" style="min-width:200px"></select>
+    </div>
+    <div class="form-row">
+      <label>Day(s)</label>
+      <div class="day-picker">
+        <label class="day-picker-item"><input type="checkbox" id="rhDayChk-SUN" value="SUN"> Sun</label>
+        <label class="day-picker-item"><input type="checkbox" id="rhDayChk-MON" value="MON"> Mon</label>
+        <label class="day-picker-item"><input type="checkbox" id="rhDayChk-TUE" value="TUE"> Tue</label>
+        <label class="day-picker-item"><input type="checkbox" id="rhDayChk-WED" value="WED"> Wed</label>
+        <label class="day-picker-item"><input type="checkbox" id="rhDayChk-THU" value="THU"> Thu</label>
+        <label class="day-picker-item"><input type="checkbox" id="rhDayChk-FRI" value="FRI"> Fri</label>
+        <label class="day-picker-item"><input type="checkbox" id="rhDayChk-SAT" value="SAT"> Sat</label>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Time (24h)</label>
+      <input type="time" id="rhJobFormTime" value="03:00">
+    </div>
+    <div class="form-row" style="align-items:flex-start">
+      <label style="padding-top:4px">Checks</label>
+      <div style="display:flex;flex-direction:column;gap:4px;padding:4px 0">
+        <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+          <input type="checkbox" id="rhChk-unnamed" value="unnamed" checked>
+          <span>Unnamed Rules (no comment/name)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+          <input type="checkbox" id="rhChk-unlogged" value="unlogged" checked>
+          <span>Unlogged Rules (logging disabled)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+          <input type="checkbox" id="rhChk-shadow" value="shadow" checked>
+          <span>Shadow Rules (hidden by broader rule above)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+          <input type="checkbox" id="rhChk-disabled" value="disabled" checked>
+          <span>Disabled / Inactive Rules</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+          <input type="checkbox" id="rhChk-expired" value="expired" checked>
+          <span>Expired Rules (past schedule end-date)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+          <input type="checkbox" id="rhChk-unhit" value="unhit" checked>
+          <span>Unused / Un-Hit Rules (zero hit count)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+          <input type="checkbox" id="rhChk-missing_security_profile" value="missing_security_profile" checked>
+          <span>Missing Security Profiles (accept rules without UTM)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+          <input type="checkbox" id="rhChk-redundant" value="redundant" checked>
+          <span>Redundant Rules (duplicate scope of an earlier rule)</span>
+        </label>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Unused Objects</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+        <input type="checkbox" id="rhJobFormUnusedObjects">
+        <span>Include unused address &amp; service objects analysis</span>
+        <span style="color:var(--text-muted);font-size:.8rem">(requires extra FMG catalog fetch per run)</span>
+      </label>
+    </div>
+    <div class="form-row">
+      <label>Format</label>
+      <select id="rhJobFormFormat">
+        <option value="html" selected>HTML (styled report)</option>
+        <option value="csv">CSV</option>
+        <option value="json">JSON</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Batch Size</label>
+      <input type="number" id="rhJobFormBatchSize" value="20" min="1" max="100" style="width:80px">
+      <span style="font-size:.82rem;color:var(--text-muted);margin-left:8px">packages per email (1–100)</span>
+    </div>
+    <div class="form-row">
+      <label>Email To</label>
+      <input type="text" id="rhJobFormEmail" placeholder="alice@corp.com, bob@corp.com" style="min-width:280px">
+    </div>
+    <div class="form-row">
+      <label>Enabled</label>
+      <input type="checkbox" id="rhJobFormEnabled" checked>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn-primary" onclick="saveRHJob()">Save</button>
+      <button class="btn-secondary" onclick="cancelRHJobForm()">Cancel</button>
+      <span id="rhJobFormMsg" style="font-size:12px;align-self:center"></span>
+    </div>
+  </div>
+
+  <!-- Rule Hygiene Jobs table -->
+  <div style="overflow-x:auto;margin-top:12px">
+    <table class="admin-table" id="rhJobsTable">
+      <thead>
+        <tr>
+          <th>Name</th><th>ADOM</th><th>Days</th><th>Time</th><th>Checks</th>
+          <th>Format</th><th>Batch</th><th>Email</th><th>Last Run</th><th>Status</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="rhJobsTableBody">
+        <tr><td colspan="11" style="color:#6b7280;text-align:center">Loading…</td></tr>
       </tbody>
     </table>
   </div>
