@@ -234,13 +234,16 @@ function renderTable() {
     `${rows.length} finding${rows.length !== 1 ? 's' : ''} — page ${currentPage} of ${total}`;
 
   const BADGE_COLORS = {
-    unnamed:     '#6366f1',
-    unlogged:    '#f59e0b',
-    shadow:      '#ef4444',
-    disabled:    '#64748b',
-    expired:     '#dc2626',
-    unhit:       '#0ea5e9',
+    unnamed:          '#6366f1',
+    unlogged:         '#f59e0b',
+    shadow:           '#ef4444',
+    disabled:         '#64748b',
+    expired:          '#dc2626',
+    unhit:            '#0ea5e9',
+    over_permissive:  '#f97316',
   };
+
+  const SEVERITY_COLORS = { critical: '#ef4444', high: '#f97316' };
 
   const tbody = document.getElementById('hygieneTbody');
 
@@ -263,7 +266,7 @@ function renderTable() {
     </div>`;
 
   const rowsHtml = slice.map((f, i) => {
-    const color  = BADGE_COLORS[f.check] || '#94a3b8';
+    const color  = SEVERITY_COLORS[f.severity] || BADGE_COLORS[f.check] || '#94a3b8';
     const label  = checkLabels[f.check] || f.check;
     const rowId  = `finding-detail-${currentPage}-${i}`;
     const isShadow       = f.check === 'shadow' && f.shadow_rule && f.shadowing_rule;
