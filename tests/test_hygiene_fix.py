@@ -201,7 +201,7 @@ def test_shadow_offers_reorder_when_actions_differ():
     result = build_fixes(live, findings, now=None)
     options = result["fixes"][0]["options"]
     reorder = next(o for o in options if o["option_id"] == "reorder")
-    assert reorder["cli"] == ["move 20 before 5"]
+    assert reorder["cli"] == ["config firewall policy\n    move 20 before 5\nend"]
 
 
 def test_shadow_offers_narrow_when_one_dimension_differs_and_not_wildcard():
@@ -256,7 +256,7 @@ def test_report_payload_handles_no_automated_fix():
     result = build_fixes(live, findings, now=None)
     payload = to_hygiene_fix_report_payload(result)
     assert payload["fixes"][0]["selected_option"] == "No automated fix"
-    assert payload["fixes"][0]["description"] == "no UTM configured"
+    assert "no automated fix" in payload["fixes"][0]["description"].lower()
 
 
 def test_build_fixes_handles_full_mixed_batch():
@@ -273,3 +273,32 @@ def test_build_fixes_handles_full_mixed_batch():
     result = build_fixes(live, findings, now=None)
     assert len(result["fixes"]) == 2
     assert len(result["stale_findings"]) == 1
+
+
+def test_disabled_under_90_days_carries_info_with_days_remaining():
+    live = [{"policyid": 12, "name": "recently-disabled", "comments": "note [HygieneFix 2026-08-01]"}]
+    findings = [{"policy_id": "12", "policy_name": "recently-disabled", "check": "disabled", "detail": "status=disable"}]
+    result = build_fixes(live, findings, now=datetime(2026, 9, 3, tzinfo=UTC))
+    fix = result["fixes"][0]
+    assert fix["options"] == []
+    assert fix["info"] is not None
+    assert "33 days ago" in fix["info"]
+    assert "57 days remaining" in fix["info"]
+
+
+def test_missing_security_profile_carries_no_automated_fix_info():
+    live = [{"policyid": 9, "name": "no-utm", "comments": ""}]
+    findings = [{"policy_id": "9", "policy_name": "no-utm", "check": "missing_security_profile", "detail": "no UTM"}]
+    result = build_fixes(live, findings, now=None)
+    fix = result["fixes"][0]
+    assert fix["options"] == []
+    assert "no automated fix" in fix["info"].lower()
+
+
+def test_report_payload_prefers_info_over_detail_when_no_options():
+    live = [{"policyid": 9, "name": "no-utm", "comments": ""}]
+    findings = [{"policy_id": "9", "policy_name": "no-utm", "check": "missing_security_profile", "detail": "raw detail text"}]
+    result = build_fixes(live, findings, now=None)
+    payload = to_hygiene_fix_report_payload(result)
+    assert "no automated fix" in payload["fixes"][0]["description"].lower()
+    assert payload["fixes"][0]["description"] != "raw detail text"

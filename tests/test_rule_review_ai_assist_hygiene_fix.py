@@ -138,3 +138,116 @@ def test_hygiene_fix_narration_failure_still_returns_fixes(client):
     assert len(data["fixes"]) == 1
     assert data["narrative"] is None
     assert "no provider configured" in data["narrative_error"]
+
+
+def test_hygiene_fix_csv_with_scheduler_style_comment_preamble_parses(client):
+    csv_text = (
+        "# 4THealth Rule Hygiene\r\n"
+        "# Package: OT-Package\r\n"
+        "# Device(s): fw-01\r\n"
+        "# Generated: 2026-09-03T00:00:00Z\r\n"
+        "\r\n"
+        "Policy ID,Policy Name,Seq,Check,Detail\r\n"
+        "10,r1,1,unlogged,no logging\r\n"
+    )
+    live_policies = [{"policyid": 10, "name": "r1", "logtraffic": "disable", "comments": ""}]
+
+    with patch("app.app_settings.get_setting", return_value=True), \
+         patch("app.decorators.check_adom_access", return_value=None), \
+         patch("app.routes.rule_review_routes.make_client") as mock_make_client, \
+         patch("app.llm.get_provider") as mock_get_provider:
+        mock_client = MagicMock()
+        mock_client.get_policies.return_value = live_policies
+        mock_make_client.return_value.__enter__.return_value = mock_client
+        mock_get_provider.return_value.narrate.return_value = "Narrative text."
+
+        resp = _post_form(
+            client,
+            {"adom": "OT-ADOM", "pkg": "OT-Package"},
+            files={"findings_file": (io.BytesIO(csv_text.encode()), "findings.csv")},
+        )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data["fixes"]) == 1
+    assert data["fixes"][0]["check"] == "unlogged"
+
+
+def test_hygiene_fix_stale_finding_reported_via_route(client):
+    findings = json.dumps([
+        {"policy_id": "999", "policy_name": "ghost", "check": "unlogged", "detail": "no logging"},
+    ])
+    live_policies = [{"policyid": 10, "name": "r1", "logtraffic": "disable", "comments": ""}]
+
+    with patch("app.app_settings.get_setting", return_value=True), \
+         patch("app.decorators.check_adom_access", return_value=None), \
+         patch("app.routes.rule_review_routes.make_client") as mock_make_client, \
+         patch("app.llm.get_provider") as mock_get_provider:
+        mock_client = MagicMock()
+        mock_client.get_policies.return_value = live_policies
+        mock_make_client.return_value.__enter__.return_value = mock_client
+        mock_get_provider.return_value.narrate.return_value = "Narrative text."
+
+        resp = _post_form(client, {"adom": "OT-ADOM", "pkg": "OT-Package", "findings_text": findings})
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["fixes"] == []
+    assert len(data["stale_findings"]) == 1
+    assert data["stale_findings"][0]["policy_id"] == "999"
+
+
+def test_hygiene_fix_json_envelope_shape_accepted(client):
+    findings_envelope = json.dumps({
+        "meta": {"adom": "OT-ADOM", "package": "OT-Package"},
+        "findings": [
+            {"policy_id": "10", "policy_name": "r1", "check": "unlogged", "detail": "no logging"},
+        ],
+    })
+    live_policies = [{"policyid": 10, "name": "r1", "logtraffic": "disable", "comments": ""}]
+
+    with patch("app.app_settings.get_setting", return_value=True), \
+         patch("app.decorators.check_adom_access", return_value=None), \
+         patch("app.routes.rule_review_routes.make_client") as mock_make_client, \
+         patch("app.llm.get_provider") as mock_get_provider:
+        mock_client = MagicMock()
+        mock_client.get_policies.return_value = live_policies
+        mock_make_client.return_value.__enter__.return_value = mock_client
+        mock_get_provider.return_value.narrate.return_value = "Narrative text."
+
+        resp = _post_form(client, {"adom": "OT-ADOM", "pkg": "OT-Package", "findings_text": findings_envelope})
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data["fixes"]) == 1
+
+
+def test_hygiene_fix_file_wins_over_text_when_both_present(client):
+    file_findings = json.dumps([
+        {"policy_id": "10", "policy_name": "r1", "check": "unlogged", "detail": "no logging"},
+    ])
+    text_findings = json.dumps([
+        {"policy_id": "999", "policy_name": "ghost", "check": "unlogged", "detail": "should be ignored"},
+    ])
+    live_policies = [{"policyid": 10, "name": "r1", "logtraffic": "disable", "comments": ""}]
+
+    with patch("app.app_settings.get_setting", return_value=True), \
+         patch("app.decorators.check_adom_access", return_value=None), \
+         patch("app.routes.rule_review_routes.make_client") as mock_make_client, \
+         patch("app.llm.get_provider") as mock_get_provider:
+        mock_client = MagicMock()
+        mock_client.get_policies.return_value = live_policies
+        mock_make_client.return_value.__enter__.return_value = mock_client
+        mock_get_provider.return_value.narrate.return_value = "Narrative text."
+
+        resp = _post_form(
+            client,
+            {"adom": "OT-ADOM", "pkg": "OT-Package", "findings_text": text_findings},
+            files={"findings_file": (io.BytesIO(file_findings.encode()), "findings.json")},
+        )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data["fixes"]) == 1
+    assert data["fixes"][0]["policy_id"] == "10"
+    assert data["stale_findings"] == []

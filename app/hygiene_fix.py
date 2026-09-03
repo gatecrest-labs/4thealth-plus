@@ -264,7 +264,7 @@ def _fix_shadow(finding: dict, live: dict, today: date) -> list[dict]:
                     f"shadowing={shadowing_rule.get('action')}) -- move this rule "
                     "above the shadowing rule so it can take effect."
                 ),
-                "cli": [f"move {pid} before {shadowing_id}"],
+                "cli": [f"config firewall policy\n    move {pid} before {shadowing_id}\nend"],
                 "new_comment": None,
             }
         )
@@ -326,6 +326,29 @@ _FIX_FNS = {
 }
 
 
+def _info_disabled(finding: dict, live: dict, today: date) -> str | None:
+    """Informational text for the 'disabled' check when no options are offered
+    (tag present and <= 90 days old) -- explains why, with the days-remaining count."""
+    comment = _comment_field(live)
+    tag_date = _find_tag(comment)
+    if tag_date is None:
+        return None
+    age_days = (today - tag_date).days
+    if age_days > 90:
+        return None
+    return f"Tagged {age_days} days ago -- no action needed yet ({90 - age_days} days remaining before deletion is recommended)."
+
+
+def _info_missing_security_profile(finding: dict, live: dict, today: date) -> str | None:
+    return "No automated fix is offered for this check at this time -- manual review required."
+
+
+_INFO_FNS = {
+    "disabled": _info_disabled,
+    "missing_security_profile": _info_missing_security_profile,
+}
+
+
 def build_fixes(
     live_policies: list[dict],
     pasted_findings: list[dict],
@@ -361,6 +384,11 @@ def build_fixes(
         if fn is None:
             continue
         options = fn(finding, live, today)
+        info = None
+        if not options:
+            info_fn = _INFO_FNS.get(finding.get("check"))
+            if info_fn is not None:
+                info = info_fn(finding, live, today)
         fixes.append(
             {
                 "policy_id": pid,
@@ -368,6 +396,7 @@ def build_fixes(
                 "check": finding.get("check"),
                 "detail": finding.get("detail", ""),
                 "options": options,
+                "info": info,
             }
         )
     return {"fixes": fixes, "stale_findings": stale}
@@ -387,7 +416,7 @@ def to_hygiene_fix_report_payload(result: dict) -> dict:
                 "check": fix["check"],
                 "detail": fix["detail"],
                 "selected_option": default["label"] if default else "No automated fix",
-                "description": default["description"] if default else fix["detail"],
+                "description": default["description"] if default else (fix.get("info") or fix["detail"]),
             }
         )
     return {"fixes": payload_fixes, "stale_findings": result["stale_findings"]}

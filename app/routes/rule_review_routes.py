@@ -764,6 +764,18 @@ def rr_ai_assist_fqdn():
     )
 
 
+def _strip_csv_preamble(raw: str) -> str:
+    """Skip leading '#'-prefixed comment lines and blank lines (as written
+    by the scheduler's CSV attachment) so csv.DictReader starts at the real
+    header row, regardless of whether the CSV came from the interactive
+    export (no preamble) or a scheduled job's attachment (has one)."""
+    lines = raw.splitlines()
+    i = 0
+    while i < len(lines) and (lines[i].strip() == "" or lines[i].lstrip().startswith("#")):
+        i += 1
+    return "\n".join(lines[i:])
+
+
 @bp.route("/api/rule-review/ai-assist-hygiene-fix", methods=["POST"])
 @tab_required("rule_review")
 def rr_ai_assist_hygiene_fix():
@@ -808,7 +820,7 @@ def rr_ai_assist_hygiene_fix():
 
     try:
         if is_csv:
-            reader = csv.DictReader(io.StringIO(raw))
+            reader = csv.DictReader(io.StringIO(_strip_csv_preamble(raw)))
             pasted_findings = [
                 {
                     "policy_id": row.get("Policy ID", ""),

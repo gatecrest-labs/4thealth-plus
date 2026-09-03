@@ -1068,7 +1068,7 @@ function renderHygieneFixResult(data) {
             ${esc(o.label)}
           </label>`).join('') + '</div>'
       : '';
-    const description = active ? esc(active.description) : esc(fix.detail);
+    const description = active ? esc(active.description) : esc(fix.info || fix.detail);
     const cliText = active && active.cli.length ? active.cli.join('\n\n') : '(no CLI -- manual review required)';
     return `
       <div class="rr-hf-fix-card" style="border:1px solid var(--border-color, #ccc);border-radius:6px;padding:.75rem;margin-bottom:.75rem">
@@ -1328,7 +1328,7 @@ function downloadHygieneFixReport() {
 
   const rows = hfLastResult.fixes.map((fix, idx) => {
     const active = hfActiveOption(fix, idx);
-    const description = active ? active.description : fix.detail;
+    const description = active ? active.description : (fix.info || fix.detail);
     const cliText = active && active.cli.length ? active.cli.join('\n\n') : '(no CLI -- manual review required)';
     return `
       <div class="finding">
