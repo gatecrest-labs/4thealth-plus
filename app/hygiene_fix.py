@@ -76,8 +76,74 @@ def _fix_unlogged(finding: dict, live: dict, today: date) -> list[dict]:
     ]
 
 
+def _fix_unnamed(finding: dict, live: dict, today: date) -> list[dict]:
+    src_names = [
+        n for n in _addr_list(live.get("srcaddr") or live.get("src_addr"))
+        if n.lower() not in ("any", "all")
+    ]
+    dst_names = [
+        n for n in _addr_list(live.get("dstaddr") or live.get("dst_addr"))
+        if n.lower() not in ("any", "all")
+    ]
+    if src_names and dst_names:
+        new_name = f"Allow {src_names[0]} to {dst_names[0]}"[:_MAX_NAME_LEN]
+    else:
+        new_name = "Unknown -- Requires additional research"
+    new_comment = _append_tag(_comment_field(live), today)
+    cli = _policy_cli(
+        live.get("policyid"),
+        [f'set name "{_safe(new_name)}"', f'set comments "{_safe(new_comment)}"'],
+    )
+    return [
+        {
+            "option_id": "rename",
+            "label": "Set name",
+            "description": f'Suggested name: "{new_name}".',
+            "cli": [cli],
+            "new_comment": new_comment,
+        }
+    ]
+
+
+def _fix_expired(finding: dict, live: dict, today: date) -> list[dict]:
+    new_comment = _append_tag(_comment_field(live), today)
+    cli = _policy_cli(
+        live.get("policyid"),
+        ["set status disable", f'set comments "{_safe(new_comment)}"'],
+    )
+    return [
+        {
+            "option_id": "disable",
+            "label": "Disable rule",
+            "description": "Schedule has expired -- disable the rule and record the date it was flagged.",
+            "cli": [cli],
+            "new_comment": new_comment,
+        }
+    ]
+
+
+def _fix_unhit(finding: dict, live: dict, today: date) -> list[dict]:
+    new_comment = _append_tag(_comment_field(live), today)
+    cli = _policy_cli(
+        live.get("policyid"),
+        ["set status disable", f'set comments "{_safe(new_comment)}"'],
+    )
+    return [
+        {
+            "option_id": "disable",
+            "label": "Disable rule",
+            "description": "Zero hit count -- disable the rule and record the date it was flagged for later removal.",
+            "cli": [cli],
+            "new_comment": new_comment,
+        }
+    ]
+
+
 _FIX_FNS = {
     "unlogged": _fix_unlogged,
+    "unnamed": _fix_unnamed,
+    "expired": _fix_expired,
+    "unhit": _fix_unhit,
 }
 
 

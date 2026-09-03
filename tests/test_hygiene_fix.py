@@ -71,3 +71,38 @@ def test_build_fixes_skips_unknown_check_key():
     result = build_fixes(live, findings, now=None)
     assert result["fixes"] == []
     assert result["stale_findings"] == []
+
+
+def test_unnamed_suggests_name_from_src_and_dst():
+    live = [{"policyid": 5, "name": "", "srcaddr": ["Vendor-API"], "dstaddr": ["Internal-DB"], "comments": ""}]
+    findings = [{"policy_id": "5", "policy_name": "Policy #5", "check": "unnamed", "detail": "no name"}]
+    result = build_fixes(live, findings, now=None)
+    opt = result["fixes"][0]["options"][0]
+    assert 'set name "Allow Vendor-API to Internal-DB"' in opt["cli"][0]
+    assert "[HygieneFix" in opt["new_comment"]
+
+
+def test_unnamed_falls_back_to_unknown_when_no_specific_reference():
+    live = [{"policyid": 6, "name": "", "srcaddr": ["all"], "dstaddr": ["any"], "comments": ""}]
+    findings = [{"policy_id": "6", "policy_name": "Policy #6", "check": "unnamed", "detail": "no name"}]
+    result = build_fixes(live, findings, now=None)
+    opt = result["fixes"][0]["options"][0]
+    assert 'set name "Unknown -- Requires additional research"' in opt["cli"][0]
+
+
+def test_expired_disables_and_tags():
+    live = [{"policyid": 7, "name": "old-rule", "comments": ""}]
+    findings = [{"policy_id": "7", "policy_name": "old-rule", "check": "expired", "detail": "past end date"}]
+    result = build_fixes(live, findings, now=None)
+    opt = result["fixes"][0]["options"][0]
+    assert "set status disable" in opt["cli"][0]
+    assert "[HygieneFix" in opt["new_comment"]
+
+
+def test_unhit_disables_and_tags():
+    live = [{"policyid": 8, "name": "unused-rule", "comments": "orig note"}]
+    findings = [{"policy_id": "8", "policy_name": "unused-rule", "check": "unhit", "detail": "zero hits"}]
+    result = build_fixes(live, findings, now=None)
+    opt = result["fixes"][0]["options"][0]
+    assert "set status disable" in opt["cli"][0]
+    assert opt["new_comment"].startswith("orig note")
