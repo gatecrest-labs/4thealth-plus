@@ -26,7 +26,7 @@ def _find_tag(comment: str) -> date | None:
     if not match:
         return None
     try:
-        return datetime.strptime(match.group(1), "%Y-%m-%d").date()
+        return datetime.strptime(match.group(1), "%Y-%m-%d").replace(tzinfo=UTC).date()
     except ValueError:
         return None
 
@@ -41,9 +41,7 @@ def _append_tag(comment: str, today: date, exempt: bool = False) -> str:
     base = (comment or "").strip()
     if not base:
         return tag
-    room = _MAX_COMMENT_LEN - len(tag) - 1  # -1 for the joining space
-    if room < 0:
-        room = 0
+    room = max(_MAX_COMMENT_LEN - len(tag) - 1, 0)  # -1 for the joining space
     if len(base) > room:
         base = base[:room].rstrip()
     return f"{base} {tag}" if base else tag
