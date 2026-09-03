@@ -173,6 +173,53 @@ def _fix_disabled(finding: dict, live: dict, today: date) -> list[dict]:
     ]
 
 
+def _fix_over_permissive(finding: dict, live: dict, today: date) -> list[dict]:
+    disable_comment = _append_tag(_comment_field(live), today)
+    disable_cli = _policy_cli(
+        live.get("policyid"),
+        ["set status disable", f'set comments "{_safe(disable_comment)}"'],
+    )
+    exempt_comment = _append_tag(_comment_field(live), today, exempt=True)
+    exempt_cli = _policy_cli(live.get("policyid"), [f'set comments "{_safe(exempt_comment)}"'])
+    return [
+        {
+            "option_id": "disable",
+            "label": "Disable rule",
+            "description": "Disable the over-permissive rule.",
+            "cli": [disable_cli],
+            "new_comment": disable_comment,
+        },
+        {
+            "option_id": "exempt",
+            "label": "Exempt (keep enabled)",
+            "description": "Mark the rule as reviewed and exempted, keeping it enabled.",
+            "cli": [exempt_cli],
+            "new_comment": exempt_comment,
+        },
+    ]
+
+
+def _fix_redundant(finding: dict, live: dict, today: date) -> list[dict]:
+    dup = finding.get("duplicate_of") or {}
+    dup_desc = (
+        f" (duplicate of rule '{dup.get('name', '?')}' id {dup.get('id', '?')})" if dup else ""
+    )
+    new_comment = _append_tag(_comment_field(live), today)
+    cli = _policy_cli(
+        live.get("policyid"),
+        ["set status disable", f'set comments "{_safe(new_comment)}"'],
+    )
+    return [
+        {
+            "option_id": "disable",
+            "label": "Disable rule",
+            "description": f"Disable the redundant rule{dup_desc}.",
+            "cli": [cli],
+            "new_comment": new_comment,
+        }
+    ]
+
+
 _FIX_FNS = {
     "unlogged": _fix_unlogged,
     "unnamed": _fix_unnamed,
@@ -180,6 +227,8 @@ _FIX_FNS = {
     "unhit": _fix_unhit,
     "missing_security_profile": _fix_missing_security_profile,
     "disabled": _fix_disabled,
+    "over_permissive": _fix_over_permissive,
+    "redundant": _fix_redundant,
 }
 
 

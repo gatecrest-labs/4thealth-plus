@@ -142,3 +142,28 @@ def test_disabled_with_tag_over_90_days_proposes_delete():
     assert opt["option_id"] == "delete"
     assert "delete 13" in opt["cli"][0]
     assert opt["new_comment"] is None
+
+
+def test_over_permissive_returns_disable_and_exempt_options():
+    live = [{"policyid": 14, "name": "wide-open", "comments": ""}]
+    findings = [{"policy_id": "14", "policy_name": "wide-open", "check": "over_permissive", "detail": "fully open"}]
+    result = build_fixes(live, findings, now=None)
+    options = result["fixes"][0]["options"]
+    assert [o["option_id"] for o in options] == ["disable", "exempt"]
+    assert "set status disable" in options[0]["cli"][0]
+    assert "EXEMPT" in options[1]["new_comment"]
+    assert "set status disable" not in options[1]["cli"][0]
+
+
+def test_redundant_disables_later_rule_and_names_duplicate():
+    live = [{"policyid": 15, "name": "later-rule", "comments": ""}]
+    findings = [{
+        "policy_id": "15", "policy_name": "later-rule", "check": "redundant",
+        "detail": "matches earlier rule",
+        "duplicate_of": {"id": "3", "name": "earlier-rule"},
+    }]
+    result = build_fixes(live, findings, now=None)
+    opt = result["fixes"][0]["options"][0]
+    assert "set status disable" in opt["cli"][0]
+    assert "earlier-rule" in opt["description"]
+    assert "id 3" in opt["description"]
