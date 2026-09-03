@@ -13,6 +13,7 @@ API (all read-only against FortiManager; POST is for submitting work items):
   POST /api/rule-review/ai-assist           — single-request AI Assist (planner + LLM narration)
   GET  /api/rule-review/devices             — device:ADOM pairs across accessible ADOMs (AI Assist typeahead)
   POST /api/rule-review/ai-assist-fqdn      — vendor FQDN/wildcard allowlist AI Assist (planner + LLM narration)
+  POST /api/rule-review/ai-assist-hygiene-fix — Rule Hygiene findings -> deterministic CLI fixes (planner + LLM narration)
 """
 
 import csv
@@ -757,6 +758,127 @@ def rr_ai_assist_fqdn():
     return jsonify(
         {
             "plan": plan_dict,
+            "narrative": narrative,
+            "narrative_error": narrative_error,
+        }
+    )
+
+
+@bp.route("/api/rule-review/ai-assist-hygiene-fix", methods=["POST"])
+@tab_required("rule_review")
+def rr_ai_assist_hygiene_fix():
+    """AI Assist (Hygiene Fix mode): parse a pasted/uploaded Rule Hygiene
+    export, re-fetch the live policy package, generate deterministic CLI
+    remediations, then narrate the batch with the configured LLM. Same
+    guarantees as rr_ai_assist -- the deterministic result always returns;
+    narration is best-effort."""
+    from datetime import UTC, datetime
+
+    from app.app_settings import get_setting
+    from app.hygiene import CHECKS
+    from app.hygiene_fix import build_fixes, to_hygiene_fix_report_payload
+
+    if not get_setting("ai_assist_enabled", False):
+        return jsonify({"error": "AI Assist is not enabled"}), 503
+
+    adom = (request.form.get("adom") or "").strip()
+    pkg = (request.form.get("pkg") or "").strip()
+    if not adom or not pkg:
+        return jsonify({"error": "adom and pkg are required"}), 400
+    if err := check_adom_access(adom):
+        return err
+
+    label_to_key = {v: k for k, v in CHECKS.items()}
+
+    def _normalize_check_key(raw: str) -> str:
+        return raw if raw in CHECKS else label_to_key.get(raw, raw)
+
+    findings_file = request.files.get("findings_file")
+    is_csv = False
+    if findings_file and findings_file.filename:
+        raw = findings_file.read().decode("utf-8", errors="replace")
+        is_csv = findings_file.filename.lower().endswith(".csv")
+    else:
+        raw = request.form.get("findings_text", "")
+        stripped = raw.strip()
+        is_csv = bool(stripped) and not stripped.startswith(("{", "["))
+
+    if not raw.strip():
+        return jsonify({"error": "No findings provided"}), 400
+
+    try:
+        if is_csv:
+            reader = csv.DictReader(io.StringIO(raw))
+            pasted_findings = [
+                {
+                    "policy_id": row.get("Policy ID", ""),
+                    "policy_name": row.get("Policy Name", ""),
+                    "seq": row.get("Seq", ""),
+                    "check": _normalize_check_key(row.get("Check", "")),
+                    "detail": row.get("Detail", ""),
+                }
+                for row in reader
+                if row.get("Policy ID")
+            ]
+        else:
+            parsed = _json.loads(raw)
+            pasted_findings = parsed.get("findings", []) if isinstance(parsed, dict) else parsed
+            if not isinstance(pasted_findings, list):
+                raise ValueError(
+                    "Expected a list of findings or an object with a 'findings' array"
+                )
+            for f in pasted_findings:
+                if isinstance(f, dict) and "check" in f:
+                    f["check"] = _normalize_check_key(f["check"])
+    except Exception as exc:
+        return jsonify({"error": f"Could not parse findings: {exc}"}), 400
+
+    if not pasted_findings:
+        return jsonify({"error": "No findings found in the provided data"}), 400
+
+    try:
+        with make_client() as client:
+            live_policies = client.get_policies(adom, pkg)
+    except FMGError as exc:
+        return upstream_api_error("rule_review", exc)
+    except Exception as exc:
+        return internal_api_error("rule_review", exc)
+
+    result = build_fixes(live_policies, pasted_findings)
+
+    narrative = None
+    narrative_error = None
+    try:
+        from app.llm import get_provider
+
+        provider = get_provider()
+        narrative = provider.narrate(
+            system_prompt=(
+                "You are a firewall rule hygiene assistant. You are given a "
+                "structured, already-computed set of remediation options for a "
+                "batch of Rule Hygiene findings (unnamed, unlogged, shadow, "
+                "disabled, expired, unhit, missing security profile, "
+                "redundant, over-permissive) as JSON. Write a clear, concise "
+                "report for a peer reviewer: summarize counts by check, and "
+                "call out anything notable (e.g. a rule recommended for "
+                "deletion). Never invent or change any value -- only explain "
+                "the already-selected default option for each finding in "
+                "prose."
+            ),
+            user_prompt=_json.dumps(to_hygiene_fix_report_payload(result), default=str),
+            feature="rule_review_ai_assist_hygiene_fix",
+            user=session.get("user"),
+        )
+    except Exception as exc:
+        narrative_error = str(exc)
+
+    return jsonify(
+        {
+            "adom": adom,
+            "pkg": pkg,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "fixes": result["fixes"],
+            "stale_findings": result["stale_findings"],
             "narrative": narrative,
             "narrative_error": narrative_error,
         }
