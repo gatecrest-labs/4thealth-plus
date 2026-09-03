@@ -85,10 +85,9 @@ def _fix_unnamed(finding: dict, live: dict, today: date) -> list[dict]:
         for n in _addr_list(live.get("dstaddr") or live.get("dst_addr"))
         if n.lower() not in ("any", "all")
     ]
-    if src_names and dst_names:
-        new_name = f"Allow {src_names[0]} to {dst_names[0]}"[:_MAX_NAME_LEN]
-    else:
-        new_name = "Unknown -- Requires additional research"
+    if not (src_names and dst_names):
+        return []
+    new_name = f"Allow {src_names[0]} to {dst_names[0]}"[:_MAX_NAME_LEN]
     new_comment = _append_tag(_comment_field(live), today)
     cli = _policy_cli(
         live.get("policyid"),
@@ -350,12 +349,33 @@ def _info_disabled(finding: dict, live: dict, today: date) -> str | None:
 def _info_missing_security_profile(
     finding: dict, live: dict, today: date
 ) -> str | None:
-    return "No automated fix is offered for this check at this time -- manual review required."
+    detail = finding.get("detail", "")
+    if "utm-status disabled" in detail:
+        return (
+            "No automated fix is offered for this check -- enabling UTM and "
+            "selecting appropriate security profiles (IPS, AV, webfilter, "
+            "DNS filter, application control) requires knowledge of profile "
+            "objects specific to this environment. Manual review required."
+        )
+    return (
+        "No automated fix is offered for this check -- UTM is already "
+        "enabled but no security profile is attached in any of IPS, AV, "
+        "webfilter, DNS filter, or application control. Manual review "
+        "required to select and attach an appropriate profile."
+    )
+
+
+def _info_unnamed(finding: dict, live: dict, today: date) -> str | None:
+    return (
+        "Source and/or destination are unrestricted (any/all) -- no reliable "
+        "name can be derived automatically. Manual naming required."
+    )
 
 
 _INFO_FNS = {
     "disabled": _info_disabled,
     "missing_security_profile": _info_missing_security_profile,
+    "unnamed": _info_unnamed,
 }
 
 
@@ -409,6 +429,26 @@ def build_fixes(
                 "info": info,
             }
         )
+
+    # Stable-sort by policy_id (numeric where possible) so every finding for
+    # a given rule sits together -- with 9 independent checks, a rule flagged
+    # by several of them otherwise has its findings scattered across the
+    # report in check-run order, making it easy to miss that two findings on
+    # the same rule recommend conflicting actions (e.g. shadow's "narrow
+    # scope, keep enabled" vs. unhit's "disable").
+    def _pid_sort_key(fix: dict) -> tuple[int, int | str]:
+        pid = fix["policy_id"]
+        return (0, int(pid)) if pid.isdigit() else (1, pid)
+
+    fixes.sort(key=_pid_sort_key)
+
+    by_pid: dict[str, list[str]] = {}
+    for fix in fixes:
+        by_pid.setdefault(fix["policy_id"], []).append(fix["check"])
+    for fix in fixes:
+        siblings = [c for c in by_pid[fix["policy_id"]] if c != fix["check"]]
+        fix["related_checks"] = siblings
+
     return {"fixes": fixes, "stale_findings": stale}
 
 

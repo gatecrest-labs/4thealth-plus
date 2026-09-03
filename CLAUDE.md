@@ -415,9 +415,18 @@ re-fetches the live policy package, matches findings to live rules by
 FortiOS CLI remediations per finding — every comment-changing fix appends a
 `[HygieneFix YYYY-MM-DD]` traceability tag. Where a check has more than one
 viable fix (Shadow: disable / reorder / narrow-scope; Over-Permissive:
-disable / exempt), the engineer picks per-finding which option to use. The
-LLM narrates the batch for a peer reviewer, same best-effort guarantee as
-the other two modes. **Endpoint:** `POST
+disable / exempt), the engineer picks per-finding which option to use.
+Findings are grouped by `policy_id` in the output (stable sort, ties broken
+by original check-run order) so every finding against the same rule is
+shown together, and each fix carries a `related_checks` list of the other
+checks that also flagged that rule — surfaced in the UI and the downloaded
+report as "Also flagged by: ..." — since two findings on the same rule can
+recommend conflicting actions (e.g. shadow's "narrow scope, keep enabled"
+vs. unhit's "disable"). When `_fix_unnamed` cannot derive a name from a
+non-generic src/dst pair, it returns no automated fix (info-only, same
+pattern as `missing_security_profile`) rather than applying a placeholder
+string as the rule's actual name. The LLM narrates the batch for a peer
+reviewer, same best-effort guarantee as the other two modes. **Endpoint:** `POST
 /api/rule-review/ai-assist-hygiene-fix` — body: `multipart/form-data` with
 `adom`, `pkg`, and one of `findings_text` / `findings_file`. Results can be
 downloaded as a standalone HTML report (`<package>_<date>.html`) via the

@@ -82,12 +82,13 @@ def test_unnamed_suggests_name_from_src_and_dst():
     assert "[HygieneFix" in opt["new_comment"]
 
 
-def test_unnamed_falls_back_to_unknown_when_no_specific_reference():
+def test_unnamed_offers_no_automated_fix_when_no_specific_reference():
     live = [{"policyid": 6, "name": "", "srcaddr": ["all"], "dstaddr": ["any"], "comments": ""}]
     findings = [{"policy_id": "6", "policy_name": "Policy #6", "check": "unnamed", "detail": "no name"}]
     result = build_fixes(live, findings, now=None)
-    opt = result["fixes"][0]["options"][0]
-    assert 'set name "Unknown -- Requires additional research"' in opt["cli"][0]
+    fix = result["fixes"][0]
+    assert fix["options"] == []
+    assert "Manual naming required" in fix["info"]
 
 
 def test_expired_disables_and_tags():
@@ -257,6 +258,33 @@ def test_report_payload_handles_no_automated_fix():
     payload = to_hygiene_fix_report_payload(result)
     assert payload["fixes"][0]["selected_option"] == "No automated fix"
     assert "no automated fix" in payload["fixes"][0]["description"].lower()
+
+
+def test_build_fixes_groups_findings_by_policy_id_and_flags_related_checks():
+    live = [
+        {"policyid": 20, "name": "r20", "comments": "", "srcaddr": ["all"], "dstaddr": ["all"]},
+        {"policyid": 5, "name": "r5", "comments": ""},
+    ]
+    # Findings interleaved out of policy-id order, as a real hygiene run
+    # produces them (grouped by check, not by rule).
+    findings = [
+        {"policy_id": "20", "policy_name": "r20", "check": "over_permissive", "severity": "high", "detail": "open"},
+        {"policy_id": "5", "policy_name": "r5", "check": "unhit", "detail": "zero hits"},
+        {"policy_id": "20", "policy_name": "r20", "check": "unhit", "detail": "zero hits"},
+    ]
+    result = build_fixes(live, findings, now=None)
+    pids_in_order = [f["policy_id"] for f in result["fixes"]]
+    assert pids_in_order == ["5", "20", "20"]
+
+    r5_fix = next(f for f in result["fixes"] if f["policy_id"] == "5")
+    assert r5_fix["related_checks"] == []
+
+    r20_fixes = [f for f in result["fixes"] if f["policy_id"] == "20"]
+    checks = {f["check"] for f in r20_fixes}
+    assert checks == {"over_permissive", "unhit"}
+    for f in r20_fixes:
+        other_check = "unhit" if f["check"] == "over_permissive" else "over_permissive"
+        assert f["related_checks"] == [other_check]
 
 
 def test_build_fixes_handles_full_mixed_batch():

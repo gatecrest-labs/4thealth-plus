@@ -1070,9 +1070,13 @@ function renderHygieneFixResult(data) {
       : '';
     const description = active ? esc(active.description) : esc(fix.info || fix.detail);
     const cliText = active && active.cli.length ? active.cli.join('\n\n') : '(no CLI -- manual review required)';
+    const related = (fix.related_checks || []).length
+      ? `<div class="text-muted" style="font-size:11px">Also flagged by: ${fix.related_checks.map(esc).join(', ')} on this same rule -- verify remediation choices don't conflict.</div>`
+      : '';
     return `
       <div class="rr-hf-fix-card" style="border:1px solid var(--border-color, #ccc);border-radius:6px;padding:.75rem;margin-bottom:.75rem">
         <div><strong>${esc(fix.policy_name)}</strong> <span class="text-muted">(id ${esc(fix.policy_id)}, ${esc(fix.check)})</span></div>
+        ${related}
         ${radios}
         <div style="margin:.5rem 0">${description}</div>
         <pre class="rr-cli-block" data-fix-idx="${idx}">${esc(cliText)}</pre>
@@ -1330,9 +1334,13 @@ function downloadHygieneFixReport() {
     const active = hfActiveOption(fix, idx);
     const description = active ? active.description : (fix.info || fix.detail);
     const cliText = active && active.cli.length ? active.cli.join('\n\n') : '(no CLI -- manual review required)';
+    const related = (fix.related_checks || []).length
+      ? `<p><small>Also flagged by: ${esc(fix.related_checks.join(', '))} on this same rule -- verify remediation choices don't conflict.</small></p>`
+      : '';
     return `
       <div class="finding">
         <h3>${esc(fix.policy_name)} <small>(id ${esc(fix.policy_id)}, ${esc(fix.check)})</small></h3>
+        ${related}
         <p>${esc(description)}</p>
         <pre>${esc(cliText)}</pre>
       </div>`;
