@@ -126,6 +126,7 @@
   <div class="rr-ai-mode-toggle" style="margin-bottom:1rem;display:flex;gap:.5rem">
     <button type="button" class="btn btn-sm btn-primary" id="rrAiModeSingle">Single Change</button>
     <button type="button" class="btn btn-sm btn-secondary" id="rrAiModeFqdn">FQDN Allowlist</button>
+    <button type="button" class="btn btn-sm btn-secondary" id="rrAiModeHygieneFix">Hygiene Fix</button>
   </div>
 
   <form id="rrAiForm" class="rr-form" style="display:">
@@ -219,6 +220,27 @@
     <button type="submit" class="btn btn-primary" id="rrAiFqdnSubmitBtn">Run AI Assist</button>
   </form>
 
+  <form id="rrAiHygieneFixForm" class="rr-form" style="display:none">
+    <div class="rr-form-row">
+      <label for="rrHfAdom">ADOM</label>
+      <select id="rrHfAdom"><option value="">— select ADOM —</option></select>
+    </div>
+    <div class="rr-form-row">
+      <label for="rrHfPackage">Policy Package</label>
+      <select id="rrHfPackage" disabled><option value="">— select ADOM first —</option></select>
+    </div>
+    <div class="rr-form-row">
+      <label for="rrHfFindingsText">Paste hygiene findings (JSON or CSV)</label>
+      <textarea id="rrHfFindingsText" rows="8" placeholder="Paste the contents of a Rule Hygiene JSON or CSV export here"></textarea>
+    </div>
+    <div class="rr-form-row">
+      <label for="rrHfFindingsFile">Or upload a findings export (.json or .csv)</label>
+      <input type="file" id="rrHfFindingsFile" accept=".json,.csv">
+      <span class="rr-field-hint">If a file is attached, the pasted text above is ignored.</span>
+    </div>
+    <button type="submit" class="btn btn-primary" id="rrHfSubmitBtn">Run AI Assist</button>
+  </form>
+
   <div id="rrAiRunning" class="rr-running" style="display:none">Running planner and generating report&hellip;</div>
   <div id="rrAiFqdnRunning" class="rr-running" style="display:none">Running planner and generating report&hellip;</div>
   <div id="rrAiError" class="rr-error" style="display:none"></div>
@@ -245,6 +267,18 @@
     <h3>AI-Generated Report</h3>
     <div id="rrAiFqdnNarrativeError" class="rr-notice" style="display:none"></div>
     <div id="rrAiFqdnNarrative" class="rr-narrative"></div>
+  </div>
+
+  <div id="rrAiHygieneFixRunning" class="rr-running" style="display:none">Fetching live policy data and generating fixes&hellip;</div>
+  <div id="rrAiHygieneFixError" class="rr-error" style="display:none"></div>
+
+  <div id="rrAiHygieneFixResult" style="display:none">
+    <div id="rrHfStaleWarning" class="alert alert-warning" style="display:none"></div>
+    <div id="rrHfFixesContainer"></div>
+    <h3>AI-Generated Report</h3>
+    <div id="rrHfNarrativeError" class="rr-notice" style="display:none"></div>
+    <div id="rrHfNarrative" class="rr-narrative"></div>
+    <button type="button" class="btn btn-sm" id="rrHfDownloadBtn">Download HTML Report</button>
   </div>
 </section>
 

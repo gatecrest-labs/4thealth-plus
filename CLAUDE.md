@@ -406,6 +406,25 @@ wrapped as `FMGError` and would surface as a `500` — a known, separate gap in
 `app/fmg_client.py`. The LLM call itself is never allowed to turn a good plan
 into a lost result.
 
+A third mode, **Hygiene Fix**, turns a completed Rule Hygiene run's findings
+into deterministic remediations: paste or upload the findings (JSON or CSV,
+from either the interactive Rule Hygiene export or a scheduled job's email
+attachment) plus an ADOM + Policy Package, and `app/hygiene_fix.py`
+re-fetches the live policy package, matches findings to live rules by
+`policy_id` (flagging any that no longer match as "stale"), and generates
+FortiOS CLI remediations per finding — every comment-changing fix appends a
+`[HygieneFix YYYY-MM-DD]` traceability tag. Where a check has more than one
+viable fix (Shadow: disable / reorder / narrow-scope; Over-Permissive:
+disable / exempt), the engineer picks per-finding which option to use. The
+LLM narrates the batch for a peer reviewer, same best-effort guarantee as
+the other two modes. **Endpoint:** `POST
+/api/rule-review/ai-assist-hygiene-fix` — body: `multipart/form-data` with
+`adom`, `pkg`, and one of `findings_text` / `findings_file`. Results can be
+downloaded as a standalone HTML report (`<package>_<date>.html`) via the
+"Download HTML Report" button — client-side only, no server round trip,
+same as every other export in this app. This app is read-only throughout —
+every generated CLI snippet is a human-reviewed suggestion, never applied.
+
 ### Zone Policy tab
 
 `GET /zone-policy` → `zone_policy.html` + `zone_policy.js`
