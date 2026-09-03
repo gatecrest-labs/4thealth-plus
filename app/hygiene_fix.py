@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, date, datetime
 
-from app.hygiene import _action, _addr_list, _name, _svc_is_any  # noqa: F401 (re-exported for generators added in later tasks)
+from app.hygiene import _addr_list, _name
 
 _TAG_RE = re.compile(r"\[HygieneFix(?: EXEMPT)? (\d{4}-\d{2}-\d{2})\]")
 _MAX_COMMENT_LEN = 255
@@ -371,3 +371,23 @@ def build_fixes(
             }
         )
     return {"fixes": fixes, "stale_findings": stale}
+
+
+def to_hygiene_fix_report_payload(result: dict) -> dict:
+    """Flatten build_fixes()'s result to the default (first) option per
+    finding, for one-shot LLM narration. Never used to compute anything --
+    purely a reshaping of already-computed data."""
+    payload_fixes = []
+    for fix in result["fixes"]:
+        default = fix["options"][0] if fix["options"] else None
+        payload_fixes.append(
+            {
+                "policy_id": fix["policy_id"],
+                "policy_name": fix["policy_name"],
+                "check": fix["check"],
+                "detail": fix["detail"],
+                "selected_option": default["label"] if default else "No automated fix",
+                "description": default["description"] if default else fix["detail"],
+            }
+        )
+    return {"fixes": payload_fixes, "stale_findings": result["stale_findings"]}

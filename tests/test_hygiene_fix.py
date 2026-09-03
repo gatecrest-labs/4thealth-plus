@@ -236,3 +236,40 @@ def test_shadow_without_embedded_rule_summaries_offers_only_disable():
     result = build_fixes(live, findings, now=None)
     options = result["fixes"][0]["options"]
     assert [o["option_id"] for o in options] == ["disable"]
+
+
+from app.hygiene_fix import to_hygiene_fix_report_payload
+
+
+def test_report_payload_uses_first_option_as_default():
+    live = [{"policyid": 21, "name": "wide-open", "comments": ""}]
+    findings = [{"policy_id": "21", "policy_name": "wide-open", "check": "over_permissive", "detail": "fully open"}]
+    result = build_fixes(live, findings, now=None)
+    payload = to_hygiene_fix_report_payload(result)
+    assert payload["fixes"][0]["selected_option"] == "Disable rule"
+    assert payload["fixes"][0]["description"] == "Disable the over-permissive rule."
+
+
+def test_report_payload_handles_no_automated_fix():
+    live = [{"policyid": 22, "name": "no-utm", "comments": ""}]
+    findings = [{"policy_id": "22", "policy_name": "no-utm", "check": "missing_security_profile", "detail": "no UTM configured"}]
+    result = build_fixes(live, findings, now=None)
+    payload = to_hygiene_fix_report_payload(result)
+    assert payload["fixes"][0]["selected_option"] == "No automated fix"
+    assert payload["fixes"][0]["description"] == "no UTM configured"
+
+
+def test_build_fixes_handles_full_mixed_batch():
+    live = [
+        {"policyid": 1, "name": "r1", "comments": "", "srcaddr": ["all"], "dstaddr": ["all"]},
+        {"policyid": 2, "name": "r2", "comments": "", "logtraffic": "disable"},
+        {"policyid": 3, "name": "r3", "comments": ""},
+    ]
+    findings = [
+        {"policy_id": "1", "policy_name": "r1", "check": "unnamed", "detail": "no name"},
+        {"policy_id": "2", "policy_name": "r2", "check": "unlogged", "detail": "no logging"},
+        {"policy_id": "999", "policy_name": "ghost", "check": "expired", "detail": "gone"},
+    ]
+    result = build_fixes(live, findings, now=None)
+    assert len(result["fixes"]) == 2
+    assert len(result["stale_findings"]) == 1
