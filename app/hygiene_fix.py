@@ -139,11 +139,47 @@ def _fix_unhit(finding: dict, live: dict, today: date) -> list[dict]:
     ]
 
 
+def _fix_missing_security_profile(finding: dict, live: dict, today: date) -> list[dict]:
+    return []
+
+
+def _fix_disabled(finding: dict, live: dict, today: date) -> list[dict]:
+    comment = _comment_field(live)
+    tag_date = _find_tag(comment)
+    if tag_date is None:
+        new_comment = _append_tag(comment, today)
+        cli = _policy_cli(live.get("policyid"), [f'set comments "{_safe(new_comment)}"'])
+        return [
+            {
+                "option_id": "tag",
+                "label": "Record disabled date",
+                "description": "No prior HygieneFix tag found -- record today's date so age can be tracked.",
+                "cli": [cli],
+                "new_comment": new_comment,
+            }
+        ]
+    age_days = (today - tag_date).days
+    if age_days <= 90:
+        return []
+    cli = f"config firewall policy\n    delete {live.get('policyid')}\nend"
+    return [
+        {
+            "option_id": "delete",
+            "label": "Delete rule",
+            "description": f"Disabled and tagged {age_days} days ago (over 90) -- recommend deletion.",
+            "cli": [cli],
+            "new_comment": None,
+        }
+    ]
+
+
 _FIX_FNS = {
     "unlogged": _fix_unlogged,
     "unnamed": _fix_unnamed,
     "expired": _fix_expired,
     "unhit": _fix_unhit,
+    "missing_security_profile": _fix_missing_security_profile,
+    "disabled": _fix_disabled,
 }
 
 

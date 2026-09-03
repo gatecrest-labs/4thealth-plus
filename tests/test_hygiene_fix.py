@@ -106,3 +106,39 @@ def test_unhit_disables_and_tags():
     opt = result["fixes"][0]["options"][0]
     assert "set status disable" in opt["cli"][0]
     assert opt["new_comment"].startswith("orig note")
+
+
+from datetime import UTC, datetime
+
+
+def test_missing_security_profile_returns_no_options():
+    live = [{"policyid": 9, "name": "no-utm", "comments": ""}]
+    findings = [{"policy_id": "9", "policy_name": "no-utm", "check": "missing_security_profile", "detail": "no UTM"}]
+    result = build_fixes(live, findings, now=None)
+    assert result["fixes"][0]["options"] == []
+
+
+def test_disabled_with_no_prior_tag_proposes_adding_one():
+    live = [{"policyid": 11, "name": "old-disabled", "comments": "manually turned off"}]
+    findings = [{"policy_id": "11", "policy_name": "old-disabled", "check": "disabled", "detail": "status=disable"}]
+    result = build_fixes(live, findings, now=datetime(2026, 9, 3, tzinfo=UTC))
+    opt = result["fixes"][0]["options"][0]
+    assert opt["option_id"] == "tag"
+    assert "[HygieneFix 2026-09-03]" in opt["new_comment"]
+
+
+def test_disabled_with_tag_under_90_days_needs_no_action():
+    live = [{"policyid": 12, "name": "recently-disabled", "comments": "note [HygieneFix 2026-08-01]"}]
+    findings = [{"policy_id": "12", "policy_name": "recently-disabled", "check": "disabled", "detail": "status=disable"}]
+    result = build_fixes(live, findings, now=datetime(2026, 9, 3, tzinfo=UTC))
+    assert result["fixes"][0]["options"] == []
+
+
+def test_disabled_with_tag_over_90_days_proposes_delete():
+    live = [{"policyid": 13, "name": "stale-disabled", "comments": "note [HygieneFix 2026-01-01]"}]
+    findings = [{"policy_id": "13", "policy_name": "stale-disabled", "check": "disabled", "detail": "status=disable"}]
+    result = build_fixes(live, findings, now=datetime(2026, 9, 3, tzinfo=UTC))
+    opt = result["fixes"][0]["options"][0]
+    assert opt["option_id"] == "delete"
+    assert "delete 13" in opt["cli"][0]
+    assert opt["new_comment"] is None
