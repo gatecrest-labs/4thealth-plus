@@ -1,0 +1,73 @@
+import os
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
+
+from datetime import date
+from app.hygiene_fix import _append_tag, _find_tag, build_fixes
+
+
+def test_append_tag_no_prior_comment():
+    result = _append_tag("", date(2026, 9, 3))
+    assert result == "[HygieneFix 2026-09-03]"
+
+
+def test_append_tag_preserves_prior_comment():
+    result = _append_tag("Allow vendor access", date(2026, 9, 3))
+    assert result == "Allow vendor access [HygieneFix 2026-09-03]"
+
+
+def test_append_tag_exempt_marker():
+    result = _append_tag("Reviewed", date(2026, 9, 3), exempt=True)
+    assert result == "Reviewed [HygieneFix EXEMPT 2026-09-03]"
+
+
+def test_append_tag_truncates_long_comment_to_255_chars():
+    long_comment = "x" * 300
+    result = _append_tag(long_comment, date(2026, 9, 3))
+    assert len(result) <= 255
+    assert result.endswith("[HygieneFix 2026-09-03]")
+
+
+def test_find_tag_returns_date_when_present():
+    assert _find_tag("Old note [HygieneFix 2026-06-01]") == date(2026, 6, 1)
+
+
+def test_find_tag_returns_none_when_absent():
+    assert _find_tag("No tag here") is None
+
+
+def test_find_tag_matches_exempt_variant():
+    assert _find_tag("Reviewed [HygieneFix EXEMPT 2026-06-01]") == date(2026, 6, 1)
+
+
+def _live_policy(policyid, logtraffic="disable", comments=""):
+    return {"policyid": policyid, "name": "rule-1", "logtraffic": logtraffic, "comments": comments}
+
+
+def test_build_fixes_unlogged_generates_cli():
+    live = [_live_policy(10)]
+    findings = [{"policy_id": "10", "policy_name": "rule-1", "check": "unlogged", "detail": "no logging"}]
+    result = build_fixes(live, findings, now=None)
+    assert result["stale_findings"] == []
+    assert len(result["fixes"]) == 1
+    fix = result["fixes"][0]
+    assert fix["check"] == "unlogged"
+    assert len(fix["options"]) == 1
+    assert "set logtraffic all" in fix["options"][0]["cli"][0]
+    assert "edit 10" in fix["options"][0]["cli"][0]
+
+
+def test_build_fixes_flags_stale_finding():
+    live = [_live_policy(10)]
+    findings = [{"policy_id": "999", "policy_name": "ghost", "check": "unlogged", "detail": "no logging"}]
+    result = build_fixes(live, findings, now=None)
+    assert result["fixes"] == []
+    assert len(result["stale_findings"]) == 1
+    assert "policy_id not found" in result["stale_findings"][0]["reason"]
+
+
+def test_build_fixes_skips_unknown_check_key():
+    live = [_live_policy(10)]
+    findings = [{"policy_id": "10", "policy_name": "rule-1", "check": "not_a_real_check", "detail": "x"}]
+    result = build_fixes(live, findings, now=None)
+    assert result["fixes"] == []
+    assert result["stale_findings"] == []
