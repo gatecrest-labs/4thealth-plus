@@ -35,6 +35,38 @@ def test_update_job(jobs_path):
     assert sched.get_all_jobs()[0]["email"] == "new@x.com"
 
 
+def test_create_job_ai_summary_enabled_defaults_true(jobs_path):
+    from app import config_diff_scheduler as sched
+    job = sched.create_job({
+        "adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
+        "format": "pdf", "email": "x@x.com", "enabled": True
+    })
+    assert job["ai_summary_enabled"] is True
+
+
+def test_create_job_ai_summary_enabled_can_be_disabled(jobs_path):
+    from app import config_diff_scheduler as sched
+    job = sched.create_job({
+        "adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
+        "format": "pdf", "email": "x@x.com", "enabled": True,
+        "ai_summary_enabled": False,
+    })
+    assert job["ai_summary_enabled"] is False
+    assert sched.get_all_jobs()[0]["ai_summary_enabled"] is False
+
+
+def test_update_job_preserves_ai_summary_enabled_when_omitted(jobs_path):
+    from app import config_diff_scheduler as sched
+    job = sched.create_job({
+        "adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
+        "format": "pdf", "email": "x@x.com", "enabled": True,
+        "ai_summary_enabled": False,
+    })
+    payload = {k: v for k, v in job.items() if k != "ai_summary_enabled"}
+    updated = sched.update_job(job["id"], {**payload, "email": "new@x.com"})
+    assert updated["ai_summary_enabled"] is False
+
+
 def test_delete_job(jobs_path):
     from app import config_diff_scheduler as sched
     job = sched.create_job({"adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
@@ -284,3 +316,45 @@ def test_execute_job_no_changes_skips_ai_narrative(jobs_path, monkeypatch):
     assert "AI Summary" not in sent["body"]
     runs = sched.get_all_jobs()[0]["runs"]
     assert "ai_narrative_error" not in runs[-1]
+
+
+def test_execute_job_ai_summary_disabled_skips_narrative_even_if_globally_enabled(
+    jobs_path, monkeypatch
+):
+    """A job with ai_summary_enabled=False must never call the LLM narrator,
+    even when the global ai_assist_enabled setting is on and there are
+    changes to summarize."""
+    import app.config_diff_scheduler as sched
+
+    job = sched.create_job({
+        "name": "T", "adom": "CorpADOM", "days_of_week": ["MON"], "time": "06:00",
+        "format": "pdf", "email": "test@corp.com", "enabled": True,
+        "ai_summary_enabled": False,
+    })
+
+    fake_results = [
+        {"device": "fw-01", "ip": "10.0.0.1", "status": "ok", "pkg_status": "modified",
+         "summary": {"firewall_policy": 1}, "vdoms": [{"name": "root", "changes": [
+             {"type": "add", "line": "edit 1"}]}], "raw": "edit 1", "error": None},
+    ]
+
+    sent = {}
+    monkeypatch.setattr(
+        "app.routes.pending_changes_routes.bulk_preview_adom",
+        lambda adom, max_workers=1: fake_results,
+    )
+    monkeypatch.setattr(
+        "app.smtp_client.send_email",
+        lambda to, subject, body_html, attachments: sent.update({"body": body_html}),
+    )
+    monkeypatch.setattr("app.app_settings.get_setting", lambda k, d=None: True)
+    called = {}
+    monkeypatch.setattr(
+        "app.pending_changes_ai.build_diff_narrative",
+        lambda adom, devices: called.setdefault("called", True),
+    )
+
+    sched._execute_job(job["id"])
+
+    assert "called" not in called
+    assert "AI Summary" not in sent["body"]

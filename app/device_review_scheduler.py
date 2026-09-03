@@ -102,6 +102,7 @@ def create_job(data: dict) -> dict:
         "format": data.get("format", "pdf"),
         "email": data.get("email", ""),
         "enabled": bool(data.get("enabled", True)),
+        "ai_summary_enabled": bool(data.get("ai_summary_enabled", True)),
         "runs": [],
     }
     with _lock:
@@ -132,6 +133,11 @@ def update_job(job_id: str, data: dict) -> dict:
                 "format": data.get("format", existing.get("format", "pdf")),
                 "email": data.get("email", existing["email"]),
                 "enabled": bool(data.get("enabled", True)),
+                "ai_summary_enabled": bool(
+                    data.get(
+                        "ai_summary_enabled", existing.get("ai_summary_enabled", True)
+                    )
+                ),
             }
         )
         jobs[idx] = existing
@@ -277,7 +283,7 @@ def _execute_job(job_id: str) -> None:
         subject = f"4THealth+ Device Review — {adom} — {generated_at[:10]}"
         check_summary = _build_check_summary(results, checks)
         ai_narrative_html, ai_narrative_error = _build_ai_narrative_html(
-            adom, check_summary, results
+            adom, check_summary, results, job.get("ai_summary_enabled", True)
         )
         body_html = _build_summary_html(
             adom, results, generated_at, check_summary, ai_narrative_html
@@ -594,7 +600,10 @@ def _build_host_summary_html(results: list[dict]) -> str:
 
 
 def _build_ai_narrative_html(
-    adom: str, check_summary: list[dict], results: list[dict]
+    adom: str,
+    check_summary: list[dict],
+    results: list[dict],
+    ai_summary_enabled: bool = True,
 ) -> tuple[str, str | None]:
     """Return (html, error) for the AI narrative section.
 
@@ -604,7 +613,7 @@ def _build_ai_narrative_html(
     """
     from app.app_settings import get_setting
 
-    if not get_setting("ai_assist_enabled", False):
+    if not ai_summary_enabled or not get_setting("ai_assist_enabled", False):
         return "", None
     try:
         from app.device_review_ai import build_narrative

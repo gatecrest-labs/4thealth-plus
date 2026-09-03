@@ -542,7 +542,7 @@ Two scheduler modules support recurring exports: Config-Delta diffs (`app/config
 
 **Run history pruning:** On each successful job execution, records older than `run_history_days` (default 30) are removed from `runs[]` in `config_diff_jobs.json`.
 
-**AI Summary:** When `ai_assist_enabled` is on, reports also include an AI-generated summary section (best-effort — silently omitted if narration fails, never blocks report delivery). The section is also omitted entirely when no device in the run has any actual diff changes (e.g. a fully in-sync ADOM), so a no-op run never triggers an LLM call or shows empty prose. A narration failure is recorded as `ai_narrative_error` on the run history entry in `config_diff_jobs.json`.
+**AI Summary:** When `ai_assist_enabled` is on AND the job's own `ai_summary_enabled` field (default `true`) is also on, reports include an AI-generated summary section (best-effort — silently omitted if narration fails, never blocks report delivery). The section is also omitted entirely when no device in the run has any actual diff changes (e.g. a fully in-sync ADOM), so a no-op run never triggers an LLM call or shows empty prose. A narration failure is recorded as `ai_narrative_error` on the run history entry in `config_diff_jobs.json`. Per-job `ai_summary_enabled` lets a job be scheduled without incurring any LLM token cost even while the global AI Assist flag stays on for other features — toggled via the "AI Summary" checkbox on the job form in Admin → Scheduled.
 
 #### Device Review Scheduled Jobs
 
@@ -563,6 +563,7 @@ Persists jobs in `device_review_jobs.json` (gitignored; copy `device_review_jobs
   "email": "alice@corp.com, bob@corp.com",
   "format": "pdf",
   "enabled": true,
+  "ai_summary_enabled": true,
   "runs": [...]
 }
 ```
@@ -570,6 +571,7 @@ Persists jobs in `device_review_jobs.json` (gitignored; copy `device_review_jobs
 `checks`: list of check keys from `CHECKS_META`; empty list = run all 18.
 `check_params`: only entries for parameterized checks; omitted keys = `CONFIG_MISSING`.
 `email`: comma-separated string — `smtp_client._parse_recipients()` handles splitting.
+`ai_summary_enabled`: default `true`; when `false`, the scheduled run never calls the LLM for its AI Summary section even if `ai_assist_enabled` is globally on — set per-job in Admin → Scheduled to avoid unwanted token spend on jobs that don't need narration.
 
 **`bulk_device_review_adom(adom, checks, check_params, max_workers=4)`** in `app/routes/device_review_routes.py` — session-free entry point for the scheduler. Uses `ThreadPoolExecutor(max_workers=4)`.
 
@@ -584,7 +586,7 @@ Persists jobs in `device_review_jobs.json` (gitignored; copy `device_review_jobs
 | `POST` | `/admin/api/device-review/jobs/<id>/run` | Trigger an immediate run |
 | `GET` | `/admin/api/device-review/jobs/<id>/status` | Get last run status / history |
 
-**Scheduled report output:** Email reports include a **per-host summary table** at the top of both the email body and the attached file (HTML, CSV, and JSON formats), showing per-device counts for each result type: Device | PASS | FAIL | INSECURE | WARN | CONFIG_MISSING | INFO | Total. The per-check aggregate summary follows below the host summary in the email body. When `ai_assist_enabled` is on, reports also include an AI-generated summary section (best-effort — silently omitted if narration fails, never blocks report delivery).
+**Scheduled report output:** Email reports include a **per-host summary table** at the top of both the email body and the attached file (HTML, CSV, and JSON formats), showing per-device counts for each result type: Device | PASS | FAIL | INSECURE | WARN | CONFIG_MISSING | INFO | Total. The per-check aggregate summary follows below the host summary in the email body. When `ai_assist_enabled` is on AND the job's own `ai_summary_enabled` field (default `true`) is also on, reports also include an AI-generated summary section (best-effort — silently omitted if narration fails, never blocks report delivery). Toggled via the "AI Summary" checkbox on the job form in Admin → Scheduled.
 
 #### Rule Hygiene Scheduled Jobs
 

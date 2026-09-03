@@ -1317,6 +1317,7 @@ function showJobForm(job) {
   document.getElementById('jobFormFormat').value  = job ? job.format : 'pdf';
   document.getElementById('jobFormEmail').value   = job ? job.email : '';
   document.getElementById('jobFormEnabled').checked = job ? !!job.enabled : true;
+  document.getElementById('jobFormAiSummaryEnabled').checked = job ? job.ai_summary_enabled !== false : true;
   document.getElementById('jobFormMsg').textContent = '';
   document.getElementById('jobForm').style.display = 'block';
   loadJobAdoms();
@@ -1350,6 +1351,7 @@ async function saveJob() {
     format:       document.getElementById('jobFormFormat').value,
     email:        document.getElementById('jobFormEmail').value.trim(),
     enabled:      document.getElementById('jobFormEnabled').checked,
+    ai_summary_enabled: document.getElementById('jobFormAiSummaryEnabled').checked,
   };
   const url    = id ? `/admin/api/config-diff/jobs/${id}` : '/admin/api/config-diff/jobs';
   const method = id ? 'PUT' : 'POST';
@@ -1472,6 +1474,7 @@ function showDRJobForm(job) {
   document.getElementById('drJobFormFormat').value  = job ? job.format : 'pdf';
   document.getElementById('drJobFormEmail').value   = job ? job.email : '';
   document.getElementById('drJobFormEnabled').checked = job ? !!job.enabled : true;
+  document.getElementById('drJobFormAiSummaryEnabled').checked = job ? job.ai_summary_enabled !== false : true;
 
   // Restore check selections
   const savedChecks = job && job.checks && job.checks.length ? new Set(job.checks) : null;
@@ -1591,6 +1594,7 @@ async function saveDRJob() {
     format:       document.getElementById('drJobFormFormat').value,
     email:        document.getElementById('drJobFormEmail').value.trim(),
     enabled:      document.getElementById('drJobFormEnabled').checked,
+    ai_summary_enabled: document.getElementById('drJobFormAiSummaryEnabled').checked,
   };
   const url    = id ? `/admin/api/device-review/jobs/${id}` : '/admin/api/device-review/jobs';
   const method = id ? 'PUT' : 'POST';

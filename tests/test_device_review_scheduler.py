@@ -73,6 +73,41 @@ def test_update_job(jobs_path):
     assert sched.get_all_jobs()[0]["email"] == "new@x.com"
 
 
+def test_create_job_ai_summary_enabled_defaults_true(jobs_path):
+    from app import device_review_scheduler as sched
+    job = sched.create_job({
+        "name": "Test", "adom": "TEST", "days_of_week": ["MON"],
+        "time": "06:00", "checks": [], "check_params": {},
+        "format": "pdf", "email": "x@x.com", "enabled": True,
+    })
+    assert job["ai_summary_enabled"] is True
+
+
+def test_create_job_ai_summary_enabled_can_be_disabled(jobs_path):
+    from app import device_review_scheduler as sched
+    job = sched.create_job({
+        "name": "Test", "adom": "TEST", "days_of_week": ["MON"],
+        "time": "06:00", "checks": [], "check_params": {},
+        "format": "pdf", "email": "x@x.com", "enabled": True,
+        "ai_summary_enabled": False,
+    })
+    assert job["ai_summary_enabled"] is False
+    assert sched.get_all_jobs()[0]["ai_summary_enabled"] is False
+
+
+def test_update_job_preserves_ai_summary_enabled_when_omitted(jobs_path):
+    from app import device_review_scheduler as sched
+    job = sched.create_job({
+        "name": "Test", "adom": "TEST", "days_of_week": ["MON"],
+        "time": "06:00", "checks": [], "check_params": {},
+        "format": "pdf", "email": "x@x.com", "enabled": True,
+        "ai_summary_enabled": False,
+    })
+    payload = {k: v for k, v in job.items() if k != "ai_summary_enabled"}
+    updated = sched.update_job(job["id"], {**payload, "email": "new@x.com"})
+    assert updated["ai_summary_enabled"] is False
+
+
 def test_delete_job(jobs_path):
     from app import device_review_scheduler as sched
     job = sched.create_job({
@@ -1060,3 +1095,50 @@ def test_execute_job_narrative_disabled_no_ai_narrative_error(jobs_path, monkeyp
     job_after = next(j for j in jobs if j["id"] == job["id"])
     last_run = job_after.get("runs", [])[-1]
     assert "ai_narrative_error" not in last_run
+
+
+def test_execute_job_ai_summary_disabled_skips_narrative_even_if_globally_enabled(
+    jobs_path, monkeypatch
+):
+    """A job with ai_summary_enabled=False must never call the LLM narrator,
+    even when the global ai_assist_enabled setting is on and there are
+    findings to summarize."""
+    import app.device_review_scheduler as sched
+
+    fake_meta = [
+        {"key": "trusted_hosts", "name": "Trusted Hosts on Admin Accounts (CIS)",
+         "description": "Check trusted hosts"},
+    ]
+    monkeypatch.setattr("app.device_review_scheduler._CHECKS_META", fake_meta)
+
+    job = sched.create_job({
+        "name": "T", "adom": "CorpADOM", "days_of_week": ["MON"], "time": "06:00",
+        "checks": ["trusted_hosts"], "check_params": {},
+        "format": "pdf", "email": "test@corp.com", "enabled": True,
+        "ai_summary_enabled": False,
+    })
+
+    fake_results = [
+        {"device": "fw-01", "ip": "10.0.0.1",
+         "rows": [{"device": "fw-01", "check": "Trusted Hosts on Admin Accounts (CIS)",
+                   "result": "FAIL", "interface": "system", "vdom": "root",
+                   "ip": "", "detail": "no restriction", "protocols": [],
+                   "has_insecure": False, "has_secure": False}],
+         "error": None},
+    ]
+
+    sent = {}
+    monkeypatch.setattr("app.device_review_scheduler._bulk_device_review_adom",
+                         lambda *a, **kw: fake_results)
+    monkeypatch.setattr("app.device_review_scheduler._send_email",
+                         lambda to, subject, body_html, attachments: sent.update(
+                             {"body": body_html, "attachments": attachments}))
+    monkeypatch.setattr("app.app_settings.get_setting", lambda k, d=None: True)
+    called = {}
+    monkeypatch.setattr("app.device_review_ai.build_narrative",
+                         lambda adom, cs, r: called.setdefault("called", True))
+
+    sched._execute_job(job["id"])
+
+    assert "called" not in called
+    assert "AI Summary" not in sent["body"]
