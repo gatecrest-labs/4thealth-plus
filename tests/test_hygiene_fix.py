@@ -167,3 +167,72 @@ def test_redundant_disables_later_rule_and_names_duplicate():
     assert "set status disable" in opt["cli"][0]
     assert "earlier-rule" in opt["description"]
     assert "id 3" in opt["description"]
+
+
+def _shadow_finding(shadow_rule=None, shadowing_rule=None):
+    f = {"policy_id": "20", "policy_name": "shadowed-rule", "check": "shadow", "detail": "fully shadowed"}
+    if shadow_rule is not None:
+        f["shadow_rule"] = shadow_rule
+    if shadowing_rule is not None:
+        f["shadowing_rule"] = shadowing_rule
+    return f
+
+
+def test_shadow_always_offers_disable():
+    live = [{"policyid": 20, "name": "shadowed-rule", "comments": ""}]
+    findings = [_shadow_finding(
+        shadow_rule={"id": "20", "name": "shadowed-rule", "action": "accept", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
+        shadowing_rule={"id": "5", "name": "earlier-rule", "action": "accept", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
+    )]
+    result = build_fixes(live, findings, now=None)
+    options = result["fixes"][0]["options"]
+    assert options[0]["option_id"] == "disable"
+    assert "set status disable" in options[0]["cli"][0]
+    # identical scope -> no narrow option, and same action -> no reorder option
+    assert [o["option_id"] for o in options] == ["disable"]
+
+
+def test_shadow_offers_reorder_when_actions_differ():
+    live = [{"policyid": 20, "name": "shadowed-rule", "comments": ""}]
+    findings = [_shadow_finding(
+        shadow_rule={"id": "20", "name": "shadowed-rule", "action": "deny", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
+        shadowing_rule={"id": "5", "name": "earlier-rule", "action": "accept", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
+    )]
+    result = build_fixes(live, findings, now=None)
+    options = result["fixes"][0]["options"]
+    reorder = next(o for o in options if o["option_id"] == "reorder")
+    assert reorder["cli"] == ["move 20 before 5"]
+
+
+def test_shadow_offers_narrow_when_one_dimension_differs_and_not_wildcard():
+    live = [{"policyid": 20, "name": "shadowed-rule", "comments": ""}]
+    findings = [_shadow_finding(
+        shadow_rule={"id": "20", "name": "shadowed-rule", "action": "accept", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
+        shadowing_rule={"id": "5", "name": "earlier-rule", "action": "accept", "srcaddr": ["A", "C"], "dstaddr": ["B"], "service": ["ALL"]},
+    )]
+    result = build_fixes(live, findings, now=None)
+    options = result["fixes"][0]["options"]
+    narrow = next(o for o in options if o["option_id"] == "narrow")
+    assert narrow["cli"] == ['config firewall policy\n    edit 5\n        set srcaddr "C"\n    next\nend']
+
+
+def test_shadow_narrow_option_has_no_cli_when_dimension_is_wildcard():
+    live = [{"policyid": 20, "name": "shadowed-rule", "comments": ""}]
+    findings = [_shadow_finding(
+        shadow_rule={"id": "20", "name": "shadowed-rule", "action": "accept", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
+        shadowing_rule={"id": "5", "name": "earlier-rule", "action": "accept", "srcaddr": ["all"], "dstaddr": ["B"], "service": ["ALL"]},
+    )]
+    result = build_fixes(live, findings, now=None)
+    options = result["fixes"][0]["options"]
+    narrow = next(o for o in options if o["option_id"] == "narrow")
+    assert narrow["cli"] == []
+    assert "manual" in narrow["description"].lower()
+
+
+def test_shadow_without_embedded_rule_summaries_offers_only_disable():
+    # CSV-sourced findings have no shadow_rule/shadowing_rule -- degrade gracefully.
+    live = [{"policyid": 20, "name": "shadowed-rule", "comments": ""}]
+    findings = [_shadow_finding()]
+    result = build_fixes(live, findings, now=None)
+    options = result["fixes"][0]["options"]
+    assert [o["option_id"] for o in options] == ["disable"]

@@ -220,6 +220,99 @@ def _fix_redundant(finding: dict, live: dict, today: date) -> list[dict]:
     ]
 
 
+_SHADOW_DIMS = ("srcaddr", "dstaddr", "service")
+
+
+def _diff_dims(shadow_rule: dict, shadowing_rule: dict) -> list[str]:
+    return [
+        dim
+        for dim in _SHADOW_DIMS
+        if set(shadow_rule.get(dim, [])) != set(shadowing_rule.get(dim, []))
+    ]
+
+
+def _fix_shadow(finding: dict, live: dict, today: date) -> list[dict]:
+    shadow_rule = finding.get("shadow_rule") or {}
+    shadowing_rule = finding.get("shadowing_rule") or {}
+    pid = live.get("policyid")
+
+    disable_comment = _append_tag(_comment_field(live), today)
+    disable_cli = _policy_cli(
+        pid, ["set status disable", f'set comments "{_safe(disable_comment)}"']
+    )
+    options = [
+        {
+            "option_id": "disable",
+            "label": "Disable shadowed rule",
+            "description": "This rule can never match traffic -- disable it.",
+            "cli": [disable_cli],
+            "new_comment": disable_comment,
+        }
+    ]
+
+    if not shadow_rule or not shadowing_rule:
+        return options
+
+    if shadow_rule.get("action") != shadowing_rule.get("action"):
+        shadowing_id = shadowing_rule.get("id")
+        options.append(
+            {
+                "option_id": "reorder",
+                "label": "Reorder above shadowing rule",
+                "description": (
+                    f"Actions differ (shadowed={shadow_rule.get('action')}, "
+                    f"shadowing={shadowing_rule.get('action')}) -- move this rule "
+                    "above the shadowing rule so it can take effect."
+                ),
+                "cli": [f"move {pid} before {shadowing_id}"],
+                "new_comment": None,
+            }
+        )
+
+    diffs = _diff_dims(shadow_rule, shadowing_rule)
+    if diffs:
+        shadowing_id = shadowing_rule.get("id")
+        if len(diffs) == 1:
+            dim = diffs[0]
+            shadowing_vals = set(shadowing_rule.get(dim, []))
+            shadow_vals = set(shadow_rule.get(dim, []))
+            narrowed = shadowing_vals - shadow_vals
+            is_wildcard = any(v.lower() in ("any", "all") for v in shadowing_vals)
+            if narrowed and not is_wildcard and shadowing_id:
+                quoted = " ".join(f'"{_safe(v)}"' for v in sorted(narrowed))
+                cli = [_policy_cli(shadowing_id, [f"set {dim} {quoted}"])]
+                description = (
+                    f"Restrict rule '{shadowing_rule.get('name', '?')}' "
+                    f"(id {shadowing_id}) to exclude this rule's traffic, so "
+                    "both rules become independently reachable."
+                )
+            else:
+                cli = []
+                description = (
+                    f"Rule '{shadowing_rule.get('name', '?')}' (id {shadowing_id}) "
+                    "uses a wildcard/group in the differing dimension that can't "
+                    "be safely split automatically -- manual review required."
+                )
+        else:
+            cli = []
+            description = (
+                f"Rule '{shadowing_rule.get('name', '?')}' (id {shadowing_id}) "
+                "differs from this rule in more than one dimension -- manual "
+                "review required to narrow its scope safely."
+            )
+        options.append(
+            {
+                "option_id": "narrow",
+                "label": "Narrow shadowing rule's scope",
+                "description": description,
+                "cli": cli,
+                "new_comment": None,
+            }
+        )
+
+    return options
+
+
 _FIX_FNS = {
     "unlogged": _fix_unlogged,
     "unnamed": _fix_unnamed,
@@ -229,6 +322,7 @@ _FIX_FNS = {
     "disabled": _fix_disabled,
     "over_permissive": _fix_over_permissive,
     "redundant": _fix_redundant,
+    "shadow": _fix_shadow,
 }
 
 
