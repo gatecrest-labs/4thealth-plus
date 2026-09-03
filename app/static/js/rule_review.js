@@ -913,30 +913,194 @@ document.getElementById('rrAiDownloadBtn')?.addEventListener('click', downloadAi
 // ── AI Assist: FQDN Allowlist mode ───────────────────────────────────────
 
 function switchAiMode(mode) {
-  const singleForm = document.getElementById('rrAiForm');
-  const fqdnForm = document.getElementById('rrAiFqdnForm');
-  const singleBtn = document.getElementById('rrAiModeSingle');
-  const fqdnBtn = document.getElementById('rrAiModeFqdn');
-  const singleResult = document.getElementById('rrAiResult');
-  const fqdnResult = document.getElementById('rrAiFqdnResult');
-
-  if (mode === 'fqdn') {
-    singleForm.style.display = 'none';
-    fqdnForm.style.display = '';
-    singleBtn.classList.replace('btn-primary', 'btn-secondary');
-    fqdnBtn.classList.replace('btn-secondary', 'btn-primary');
-    singleResult.style.display = 'none';
-  } else {
-    singleForm.style.display = '';
-    fqdnForm.style.display = 'none';
-    fqdnBtn.classList.replace('btn-primary', 'btn-secondary');
-    singleBtn.classList.replace('btn-secondary', 'btn-primary');
-    fqdnResult.style.display = 'none';
+  const forms = {
+    single: document.getElementById('rrAiForm'),
+    fqdn: document.getElementById('rrAiFqdnForm'),
+    hygiene_fix: document.getElementById('rrAiHygieneFixForm'),
+  };
+  const buttons = {
+    single: document.getElementById('rrAiModeSingle'),
+    fqdn: document.getElementById('rrAiModeFqdn'),
+    hygiene_fix: document.getElementById('rrAiModeHygieneFix'),
+  };
+  const results = {
+    single: document.getElementById('rrAiResult'),
+    fqdn: document.getElementById('rrAiFqdnResult'),
+    hygiene_fix: document.getElementById('rrAiHygieneFixResult'),
+  };
+  Object.keys(forms).forEach(key => {
+    forms[key].style.display = key === mode ? '' : 'none';
+    buttons[key].classList.toggle('btn-primary', key === mode);
+    buttons[key].classList.toggle('btn-secondary', key !== mode);
+    if (key !== mode) results[key].style.display = 'none';
+  });
+  if (mode === 'hygiene_fix' && document.getElementById('rrHfAdom').options.length <= 1) {
+    loadHfAdoms();
   }
 }
 
 document.getElementById('rrAiModeSingle')?.addEventListener('click', () => switchAiMode('single'));
 document.getElementById('rrAiModeFqdn')?.addEventListener('click', () => switchAiMode('fqdn'));
+document.getElementById('rrAiModeHygieneFix')?.addEventListener('click', () => switchAiMode('hygiene_fix'));
+
+// ── AI Assist: Hygiene Fix mode ──────────────────────────────────────────
+
+let hfPkgPaths = {};   // package display name -> path, scoped to the Hygiene Fix form
+
+async function loadHfAdoms() {
+  const sel = document.getElementById('rrHfAdom');
+  try {
+    const resp = await fetch('/api/rule-review/adoms');
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const adoms = await resp.json();
+    if (!Array.isArray(adoms)) return;
+    adoms.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a; opt.textContent = a;
+      sel.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
+async function loadHfPackages(adom) {
+  const sel = document.getElementById('rrHfPackage');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  sel.disabled = true;
+  hfPkgPaths = {};
+  try {
+    const resp = await fetch(`/api/rule-review/adoms/${encodeURIComponent(adom)}/packages`);
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const pkgs = await resp.json();
+    sel.innerHTML = '<option value="">— select package —</option>';
+    if (Array.isArray(pkgs)) {
+      pkgs.forEach(p => {
+        hfPkgPaths[p.name] = p.path || p.name;
+        const opt = document.createElement('option');
+        opt.value = p.name; opt.textContent = p.name;
+        sel.appendChild(opt);
+      });
+    }
+    sel.disabled = false;
+  } catch (_) {
+    sel.innerHTML = '<option value="">Failed to load</option>';
+  }
+}
+
+document.getElementById('rrHfAdom')?.addEventListener('change', (e) => {
+  const adom = e.target.value;
+  if (adom) loadHfPackages(adom);
+});
+
+let hfLastResult = null;
+let hfSelectedOption = new Map();  // fix index -> selected option index
+
+async function runHygieneFixAiAssist(evt) {
+  evt.preventDefault();
+  const errEl = document.getElementById('rrAiHygieneFixError');
+  const resultEl = document.getElementById('rrAiHygieneFixResult');
+  const runningEl = document.getElementById('rrAiHygieneFixRunning');
+  errEl.style.display = 'none';
+  resultEl.style.display = 'none';
+  runningEl.style.display = '';
+
+  const adom = document.getElementById('rrHfAdom').value;
+  const pkgName = document.getElementById('rrHfPackage').value;
+  const pkg = hfPkgPaths[pkgName] || pkgName;
+  const fileInput = document.getElementById('rrHfFindingsFile');
+  const file = fileInput.files[0];
+  const text = document.getElementById('rrHfFindingsText').value;
+
+  const fd = new FormData();
+  fd.append('adom', adom);
+  fd.append('pkg', pkg);
+  if (file) {
+    fd.append('findings_file', file);
+  } else {
+    fd.append('findings_text', text);
+  }
+
+  try {
+    const resp = await fetch('/api/rule-review/ai-assist-hygiene-fix', { method: 'POST', body: fd });
+    const data = await resp.json();
+    runningEl.style.display = 'none';
+    if (!resp.ok) {
+      errEl.textContent = data.error || `Request failed (${resp.status})`;
+      errEl.style.display = '';
+      return;
+    }
+    hfSelectedOption = new Map();
+    renderHygieneFixResult(data);
+  } catch (e) {
+    runningEl.style.display = 'none';
+    errEl.textContent = 'Request failed: ' + e.message;
+    errEl.style.display = '';
+  }
+}
+
+document.getElementById('rrAiHygieneFixForm')?.addEventListener('submit', runHygieneFixAiAssist);
+
+function hfActiveOption(fix, idx) {
+  const optIdx = hfSelectedOption.get(idx) ?? 0;
+  return fix.options[optIdx] || null;
+}
+
+function renderHygieneFixResult(data) {
+  hfLastResult = data;
+
+  const staleEl = document.getElementById('rrHfStaleWarning');
+  if ((data.stale_findings || []).length) {
+    staleEl.innerHTML = '<strong>Skipped (not found in the live package):</strong><ul>' +
+      data.stale_findings.map(f => `<li>${esc(f.policy_name || f.policy_id)} (${esc(f.check)}): ${esc(f.reason)}</li>`).join('') +
+      '</ul>';
+    staleEl.style.display = '';
+  } else {
+    staleEl.innerHTML = '';
+    staleEl.style.display = 'none';
+  }
+
+  const container = document.getElementById('rrHfFixesContainer');
+  container.innerHTML = data.fixes.map((fix, idx) => {
+    const active = hfActiveOption(fix, idx);
+    const radios = fix.options.length > 1
+      ? '<div class="rr-hf-options">' + fix.options.map((o, oi) => `
+          <label style="margin-right:1rem">
+            <input type="radio" name="hf-opt-${idx}" data-fix-idx="${idx}" data-opt-idx="${oi}" ${oi === (hfSelectedOption.get(idx) ?? 0) ? 'checked' : ''}>
+            ${esc(o.label)}
+          </label>`).join('') + '</div>'
+      : '';
+    const description = active ? esc(active.description) : esc(fix.detail);
+    const cliText = active && active.cli.length ? active.cli.join('\n\n') : '(no CLI -- manual review required)';
+    return `
+      <div class="rr-hf-fix-card" style="border:1px solid var(--border-color, #ccc);border-radius:6px;padding:.75rem;margin-bottom:.75rem">
+        <div><strong>${esc(fix.policy_name)}</strong> <span class="text-muted">(id ${esc(fix.policy_id)}, ${esc(fix.check)})</span></div>
+        ${radios}
+        <div style="margin:.5rem 0">${description}</div>
+        <pre class="rr-cli-block" data-fix-idx="${idx}">${esc(cliText)}</pre>
+      </div>`;
+  }).join('');
+
+  container.querySelectorAll('input[type=radio]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const fixIdx = Number(e.target.dataset.fixIdx);
+      const optIdx = Number(e.target.dataset.optIdx);
+      hfSelectedOption.set(fixIdx, optIdx);
+      renderHygieneFixResult(hfLastResult);
+    });
+  });
+
+  const narrEl = document.getElementById('rrHfNarrative');
+  const narrErrEl = document.getElementById('rrHfNarrativeError');
+  if (data.narrative) {
+    narrEl.textContent = data.narrative;
+    narrErrEl.style.display = 'none';
+  } else {
+    narrEl.textContent = '';
+    narrErrEl.textContent = 'AI summary unavailable: ' + (data.narrative_error || 'unknown error');
+    narrErrEl.style.display = '';
+  }
+
+  document.getElementById('rrAiHygieneFixResult').style.display = '';
+}
 
 function addFqdnRow() {
   const tbody = document.getElementById('rrAiFqdnRows');
