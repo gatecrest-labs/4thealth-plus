@@ -76,11 +76,13 @@ def _fix_unlogged(finding: dict, live: dict, today: date) -> list[dict]:
 
 def _fix_unnamed(finding: dict, live: dict, today: date) -> list[dict]:
     src_names = [
-        n for n in _addr_list(live.get("srcaddr") or live.get("src_addr"))
+        n
+        for n in _addr_list(live.get("srcaddr") or live.get("src_addr"))
         if n.lower() not in ("any", "all")
     ]
     dst_names = [
-        n for n in _addr_list(live.get("dstaddr") or live.get("dst_addr"))
+        n
+        for n in _addr_list(live.get("dstaddr") or live.get("dst_addr"))
         if n.lower() not in ("any", "all")
     ]
     if src_names and dst_names:
@@ -146,7 +148,9 @@ def _fix_disabled(finding: dict, live: dict, today: date) -> list[dict]:
     tag_date = _find_tag(comment)
     if tag_date is None:
         new_comment = _append_tag(comment, today)
-        cli = _policy_cli(live.get("policyid"), [f'set comments "{_safe(new_comment)}"'])
+        cli = _policy_cli(
+            live.get("policyid"), [f'set comments "{_safe(new_comment)}"']
+        )
         return [
             {
                 "option_id": "tag",
@@ -178,7 +182,9 @@ def _fix_over_permissive(finding: dict, live: dict, today: date) -> list[dict]:
         ["set status disable", f'set comments "{_safe(disable_comment)}"'],
     )
     exempt_comment = _append_tag(_comment_field(live), today, exempt=True)
-    exempt_cli = _policy_cli(live.get("policyid"), [f'set comments "{_safe(exempt_comment)}"'])
+    exempt_cli = _policy_cli(
+        live.get("policyid"), [f'set comments "{_safe(exempt_comment)}"']
+    )
     return [
         {
             "option_id": "disable",
@@ -200,7 +206,9 @@ def _fix_over_permissive(finding: dict, live: dict, today: date) -> list[dict]:
 def _fix_redundant(finding: dict, live: dict, today: date) -> list[dict]:
     dup = finding.get("duplicate_of") or {}
     dup_desc = (
-        f" (duplicate of rule '{dup.get('name', '?')}' id {dup.get('id', '?')})" if dup else ""
+        f" (duplicate of rule '{dup.get('name', '?')}' id {dup.get('id', '?')})"
+        if dup
+        else ""
     )
     new_comment = _append_tag(_comment_field(live), today)
     cli = _policy_cli(
@@ -262,7 +270,9 @@ def _fix_shadow(finding: dict, live: dict, today: date) -> list[dict]:
                     f"shadowing={shadowing_rule.get('action')}) -- move this rule "
                     "above the shadowing rule so it can take effect."
                 ),
-                "cli": [f"config firewall policy\n    move {pid} before {shadowing_id}\nend"],
+                "cli": [
+                    f"config firewall policy\n    move {pid} before {shadowing_id}\nend"
+                ],
                 "new_comment": None,
             }
         )
@@ -337,7 +347,9 @@ def _info_disabled(finding: dict, live: dict, today: date) -> str | None:
     return f"Tagged {age_days} days ago -- no action needed yet ({90 - age_days} days remaining before deletion is recommended)."
 
 
-def _info_missing_security_profile(finding: dict, live: dict, today: date) -> str | None:
+def _info_missing_security_profile(
+    finding: dict, live: dict, today: date
+) -> str | None:
     return "No automated fix is offered for this check at this time -- manual review required."
 
 
@@ -414,7 +426,9 @@ def to_hygiene_fix_report_payload(result: dict) -> dict:
                 "check": fix["check"],
                 "detail": fix["detail"],
                 "selected_option": default["label"] if default else "No automated fix",
-                "description": default["description"] if default else (fix.get("info") or fix["detail"]),
+                "description": default["description"]
+                if default
+                else (fix.get("info") or fix["detail"]),
             }
         )
     return {"fixes": payload_fixes, "stale_findings": result["stale_findings"]}

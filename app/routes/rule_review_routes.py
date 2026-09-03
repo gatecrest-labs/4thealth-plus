@@ -771,7 +771,9 @@ def _strip_csv_preamble(raw: str) -> str:
     export (no preamble) or a scheduled job's attachment (has one)."""
     lines = raw.splitlines()
     i = 0
-    while i < len(lines) and (lines[i].strip() == "" or lines[i].lstrip().startswith("#")):
+    while i < len(lines) and (
+        lines[i].strip() == "" or lines[i].lstrip().startswith("#")
+    ):
         i += 1
     return "\n".join(lines[i:])
 
@@ -834,7 +836,9 @@ def rr_ai_assist_hygiene_fix():
             ]
         else:
             parsed = _json.loads(raw)
-            pasted_findings = parsed.get("findings", []) if isinstance(parsed, dict) else parsed
+            pasted_findings = (
+                parsed.get("findings", []) if isinstance(parsed, dict) else parsed
+            )
             if not isinstance(pasted_findings, list):
                 raise ValueError(
                     "Expected a list of findings or an object with a 'findings' array"
