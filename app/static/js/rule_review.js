@@ -1319,3 +1319,46 @@ function renderFqdnAiResult(data) {
 document.getElementById('rrAiFqdnForm')?.addEventListener('submit', runFqdnAiAssist);
 
 checkAiAssistAvailable();
+
+/* ── Hygiene Fix: Download HTML Report ──────────────────────────────────────── */
+function downloadHygieneFixReport() {
+  if (!hfLastResult) return;
+  const dateStr = hfLastResult.generated_at.slice(0, 10);
+  const title = `Hygiene Fix Report — ${hfLastResult.adom} / ${hfLastResult.pkg}`;
+
+  const rows = hfLastResult.fixes.map((fix, idx) => {
+    const active = hfActiveOption(fix, idx);
+    const description = active ? active.description : fix.detail;
+    const cliText = active && active.cli.length ? active.cli.join('\n\n') : '(no CLI -- manual review required)';
+    return `
+      <div class="finding">
+        <h3>${esc(fix.policy_name)} <small>(id ${esc(fix.policy_id)}, ${esc(fix.check)})</small></h3>
+        <p>${esc(description)}</p>
+        <pre>${esc(cliText)}</pre>
+      </div>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${esc(title)}</title>
+<style>
+  body{font-family:sans-serif;font-size:13px;color:#1a2133;margin:1.5cm}
+  h1{font-size:18px}
+  h3{font-size:14px;margin-bottom:2px}
+  .finding{border-bottom:1px solid #d0d7e2;padding:10px 0}
+  pre{background:#f4f6f9;padding:8px;overflow-x:auto;white-space:pre-wrap}
+  small{color:#5a6478}
+</style></head><body>
+<h1>${esc(title)}</h1>
+<div>Generated ${esc(hfLastResult.generated_at)} &bull; ${hfLastResult.fixes.length} findings</div>
+${rows}
+</body></html>`;
+
+  const a = document.createElement('a');
+  const bl = new Blob([html], { type: 'text/html' });
+  a.href = URL.createObjectURL(bl);
+  a.download = `${hfLastResult.pkg}_${dateStr}.html`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+document.getElementById('rrHfDownloadBtn')?.addEventListener('click', downloadHygieneFixReport);
