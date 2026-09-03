@@ -110,7 +110,9 @@ def update_job(job_id: str, data: dict) -> dict:
                     "email": data["email"],
                     "enabled": bool(data.get("enabled", True)),
                     "ai_summary_enabled": bool(
-                        data.get("ai_summary_enabled", j.get("ai_summary_enabled", True))
+                        data.get(
+                            "ai_summary_enabled", j.get("ai_summary_enabled", True)
+                        )
                     ),
                 }
                 _save(jobs)
