@@ -79,6 +79,7 @@ def create_job(data: dict) -> dict:
         "format": data.get("format", "pdf"),
         "email": data["email"],
         "enabled": bool(data.get("enabled", True)),
+        "ai_summary_enabled": bool(data.get("ai_summary_enabled", True)),
         "created_at": datetime.datetime.now(datetime.UTC)
         .replace(tzinfo=None)
         .isoformat()
@@ -108,6 +109,11 @@ def update_job(job_id: str, data: dict) -> dict:
                     "format": data.get("format", "pdf"),
                     "email": data["email"],
                     "enabled": bool(data.get("enabled", True)),
+                    "ai_summary_enabled": bool(
+                        data.get(
+                            "ai_summary_enabled", j.get("ai_summary_enabled", True)
+                        )
+                    ),
                 }
                 _save(jobs)
                 updated = jobs[i]
@@ -242,7 +248,9 @@ def _execute_job(job_id: str) -> None:
             "devices_with_changes": ok_count,
         }
 
-        ai_narrative_html, ai_narrative_error = _build_ai_narrative_html(adom, results)
+        ai_narrative_html, ai_narrative_error = _build_ai_narrative_html(
+            adom, results, job.get("ai_summary_enabled", True)
+        )
         if ai_narrative_error:
             record["ai_narrative_error"] = ai_narrative_error
 
@@ -303,7 +311,9 @@ def _esc(s) -> str:
     return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _build_ai_narrative_html(adom: str, results: list[dict]) -> tuple[str, str | None]:
+def _build_ai_narrative_html(
+    adom: str, results: list[dict], ai_summary_enabled: bool = True
+) -> tuple[str, str | None]:
     """Return (html, error) for the AI narrative section.
 
     html is '' if disabled/unavailable, there are no changes to summarize, or
@@ -312,7 +322,7 @@ def _build_ai_narrative_html(adom: str, results: list[dict]) -> tuple[str, str |
     not break export generation."""
     from app.app_settings import get_setting
 
-    if not get_setting("ai_assist_enabled", False):
+    if not ai_summary_enabled or not get_setting("ai_assist_enabled", False):
         return "", None
 
     has_changes = any(v.get("changes") for r in results for v in (r.get("vdoms") or []))
