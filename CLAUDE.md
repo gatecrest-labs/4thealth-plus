@@ -187,6 +187,18 @@ Two-section layout (tab displays as "Rule Review" in the nav; internal key remai
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
 
+**Exempt whitelist:** any rule whose comment field contains "exempt"
+(case-insensitive substring, `app/hygiene.py::_is_exempt()`) is filtered out
+of every check's findings in `run_checks()` — applies to both interactive
+and Scheduled Rule Hygiene runs. Filtering happens on the *output* findings,
+not the input policy list, so shadow/redundant analysis for other rules
+stays correct (an exempted rule still counts as the earlier/broader rule
+when determining whether it shadows something else). Hygiene Fix's
+over-permissive "Exempt (keep enabled)" option (see Rule Validation tab
+below) writes a `[HygieneFix EXEMPT YYYY-MM-DD]` comment tag, which this
+same substring match then recognizes — closing the loop between the two
+features.
+
 **AI Explain endpoints:**
 - `GET  /api/hygiene/ai-explain-status` — reports whether AI Explain is available (reads the `ai_assist_enabled` app-settings flag)
 - `POST /api/hygiene/explain-finding` — body is a single finding object; narrates it via `app/hygiene_ai.py`; returns `{narrative, narrative_error}`, never a 500
@@ -415,9 +427,18 @@ re-fetches the live policy package, matches findings to live rules by
 FortiOS CLI remediations per finding — every comment-changing fix appends a
 `[HygieneFix YYYY-MM-DD]` traceability tag. Where a check has more than one
 viable fix (Shadow: disable / reorder / narrow-scope; Over-Permissive:
-disable / exempt), the engineer picks per-finding which option to use. The
-LLM narrates the batch for a peer reviewer, same best-effort guarantee as
-the other two modes. **Endpoint:** `POST
+disable / exempt), the engineer picks per-finding which option to use.
+Findings are grouped by `policy_id` in the output (stable sort, ties broken
+by original check-run order) so every finding against the same rule is
+shown together, and each fix carries a `related_checks` list of the other
+checks that also flagged that rule — surfaced in the UI and the downloaded
+report as "Also flagged by: ..." — since two findings on the same rule can
+recommend conflicting actions (e.g. shadow's "narrow scope, keep enabled"
+vs. unhit's "disable"). When `_fix_unnamed` cannot derive a name from a
+non-generic src/dst pair, it returns no automated fix (info-only, same
+pattern as `missing_security_profile`) rather than applying a placeholder
+string as the rule's actual name. The LLM narrates the batch for a peer
+reviewer, same best-effort guarantee as the other two modes. **Endpoint:** `POST
 /api/rule-review/ai-assist-hygiene-fix` — body: `multipart/form-data` with
 `adom`, `pkg`, and one of `findings_text` / `findings_file`. Results can be
 downloaded as a standalone HTML report (`<package>_<date>.html`) via the

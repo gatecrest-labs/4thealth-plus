@@ -48,6 +48,17 @@ Two sections on a single page: a full **Policy Rules** viewer and a **Hygiene An
 | `disabled` | Disabled / Inactive Rules | Rules whose `status` field is `disable` |
 | `expired` | Expired Rules | Rules referencing a time-based schedule whose end-date has passed |
 | `unhit` | Unused / Un-Hit Rules | Rules where the hit counter is 0 |
+| `missing_security_profile` | Missing Security Profiles | Accept rules with `utm-status` disabled, or UTM enabled but no IPS/AV/webfilter/DNS filter/application-control profile attached |
+| `redundant` | Redundant Rules | A rule whose src/dst/service scope is fully covered by an earlier rule with the same action |
+| `over_permissive` | Over-Permissive Rules | Accept rules where 2+ of source/destination/service are unrestricted (`all`/`ANY`) — `critical` when all three are, `high` when two are |
+
+### Exempting a Rule From Hygiene Checks
+
+Add the word **"Exempt"** anywhere in a rule's comment field (case-insensitive — e.g. `"Exempt -- approved by security, CHG0012345"`) and every hygiene check silently skips that rule on every future run, regardless of which checks are selected. This is the whitelist mechanism for rules that were reviewed and intentionally kept as-is, so they stop reappearing in every report.
+
+Implementation: `app/hygiene.py::_is_exempt()` checks the rule's `comments`/`comment` field for the substring `"exempt"` (lower-cased). `run_checks()` runs every check against the **full** policy list first — exempted rules are *not* removed from the input, only from the returned findings — so shadow/redundant analysis for other rules stays correct: an exempted rule still counts as the earlier/broader rule when determining whether it shadows something else. Applies uniformly to both interactive runs and Scheduled Rule Hygiene jobs (both go through `run_checks()`).
+
+This closes the loop with Hygiene Fix's over-permissive "Exempt (keep enabled)" option below, which writes a `[HygieneFix EXEMPT YYYY-MM-DD]` comment tag — choosing that fix for a rule now also marks it exempt for future Hygiene Analysis runs.
 
 ### AI Explain
 
@@ -217,7 +228,27 @@ For each flow the engine fetches live routing table and interface data from Fort
 
 ### AI Assist
 
-*Admin-gated (`ai_assist_enabled` in Admin → AI Assist).* Alongside the bulk CSV/XLSX table workflow above, **AI Assist** is a single-request mode: describe one change (source/destination/service/target firewalls, plus an optional ticket ID and justification) and get back a deterministic verdict — computed by the same ported, tested change-planning engine (`app/planner/`), never by the LLM — an AI-written narrative report, and a peer-review package. Multi-provider: Claude (default), Codex, or Ollama, selected server-wide via `AI_PROVIDER` in `.env`. If narration fails, the deterministic plan is still returned with a `narrative_error` note rather than a lost result.
+*Admin-gated (`ai_assist_enabled` in Admin → AI Assist).* Alongside the bulk CSV/XLSX table workflow above, the **AI Assist** panel offers three modes, selected by the buttons at the top of the panel. In every mode the verdict/plan/fix is always computed deterministically first — the LLM only narrates an already-computed result — and if narration fails, the deterministic output is still returned with a `narrative_error` note rather than a lost result. Multi-provider: Claude (default), Codex, or Ollama, selected server-wide via `AI_PROVIDER` in `.env`.
+
+#### Single Change
+
+A single-request mode: describe one change (source/destination/service/target firewalls, plus an optional ticket ID and justification) and get back a deterministic verdict — computed by the same ported, tested change-planning engine (`app/planner/`) as the bulk workflow above — an AI-written narrative report, and a peer-review package. **Endpoint:** `POST /api/rule-review/ai-assist`.
+
+#### FQDN Allowlist
+
+For vendor FQDN/wildcard-FQDN allowlist requests spanning multiple entries at once (e.g. a batch of Apple push-notification hostnames). Enter vendor, category, source IP, and target firewall(s), then either upload a vendor allowlist `.xlsx` or add rows manually (FQDN/wildcard, ports, protocol, required, comment). Produces a deterministic per-firewall coverage analysis plus proposed FortiGate CLI (address objects, destination group, policy) and an AI-written report. **Endpoint:** `POST /api/rule-review/ai-assist-fqdn`.
+
+#### Hygiene Fix
+
+Turns a completed Rule Hygiene run's findings into deterministic remediations. Paste or upload the findings export (JSON or CSV — from either the interactive Hygiene Analysis export or a Scheduled Rule Hygiene job's email attachment), select the ADOM + Policy Package the findings came from, and run it. `app/hygiene_fix.py::build_fixes()` re-fetches the live policy package fresh from FortiManager and matches each finding to its rule by `policy_id`; findings whose rule no longer exists (deleted or renumbered since the hygiene run) are returned separately as **stale**, never silently dropped.
+
+- **Grouped by rule:** findings are stable-sorted by `policy_id` so every check that flagged the same rule appears together in the results (live view and the downloaded HTML report). Each finding also carries a `related_checks` list — shown as "Also flagged by: ..." — since two findings on the same rule can suggest conflicting remediations (e.g. Shadow's "narrow scope, keep enabled" vs. Unhit's "disable"); check for that before applying either.
+- **Multiple fix options:** where a check has more than one viable remediation, radio buttons let you pick per-finding — **Shadow** offers disable / reorder above the shadowing rule / narrow the shadowing rule's scope (only when the differing dimension can be split safely without a wildcard); **Over-Permissive** offers disable / exempt (keep enabled). Choosing **Exempt** writes an `[HygieneFix EXEMPT YYYY-MM-DD]` comment tag, which Hygiene Analysis's checks then recognize as [an exemption](#exempting-a-rule-from-hygiene-checks) and stop re-flagging that rule.
+- **Traceability tag:** every comment-changing fix appends a `[HygieneFix YYYY-MM-DD]` tag. A rule already disabled and tagged more than 90 days ago recommends outright deletion instead of re-tagging.
+- **No guessed fixes:** checks with no safe automated remediation (`missing_security_profile`; an `unnamed` rule whose source *and* destination are both unrestricted) show an explanatory message instead of a CLI snippet — the tool never invents a placeholder value and applies it as real CLI.
+- **Download HTML Report** — a standalone, shareable report reflecting your current per-finding option selections, generated entirely client-side (no server round trip), same as every other export in this app.
+
+**Endpoint:** `POST /api/rule-review/ai-assist-hygiene-fix` — `multipart/form-data` with `adom`, `pkg`, and one of `findings_text` / `findings_file`. This app is read-only throughout: every generated CLI snippet, from any of the three modes, is a suggestion for human review — never applied by the app itself.
 
 ---
 

@@ -187,7 +187,12 @@ const SECTIONS = [
   <li><strong>Disabled rules</strong> — rules that have been turned off but left in place.</li>
   <li><strong>Expired rules</strong> — rules with a validity end date in the past.</li>
   <li><strong>Unhit rules</strong> — rules with zero bytes or sessions since creation (may be unused).</li>
+  <li><strong>Missing Security Profiles</strong> — accept rules with UTM disabled, or UTM enabled but no IPS/AV/webfilter/DNS filter/application-control profile actually attached.</li>
+  <li><strong>Redundant rules</strong> — a rule whose src/dst/service scope is fully covered by an earlier rule with the same action, making it a duplicate.</li>
+  <li><strong>Over-permissive rules</strong> — accept rules where two or more of source, destination, and service are unrestricted (<code>all</code>/<code>ANY</code>). Severity is <em>critical</em> when all three are unrestricted, <em>high</em> when two are.</li>
 </ul>
+<h3>Exempting a Rule From Hygiene Checks</h3>
+<p>Add the word <strong>"Exempt"</strong> anywhere in a rule's comment field (case-insensitive — e.g. <code>"Exempt -- approved by security, CHG0012345"</code>) and every hygiene check silently skips that rule on future runs, no matter which checks are selected. Use this to whitelist rules you've reviewed and intentionally kept as-is, so they stop reappearing in every report. Shadow/redundant analysis for <em>other</em> rules is unaffected — an exempted rule still counts as the "earlier, broader rule" when determining whether it shadows something else; only findings <em>about the exempted rule itself</em> are suppressed. The <strong>Hygiene Fix</strong> AI Assist mode's "Exempt (keep enabled)" option (see the Rule Validation help section) writes this same tag automatically, so choosing that fix for an over-permissive rule doubles as marking it exempt going forward.</p>
 <h3>Findings Table</h3>
 <ul>
   <li>Filter by check type using the dropdown. Use the search box to find specific rule names or IDs.</li>
@@ -322,7 +327,20 @@ const SECTIONS = [
 <h3>CLI Snippets</h3>
 <p>For flows that need a new or modified rule, a <strong>FortiOS CLI snippet</strong> is generated that you can paste directly into a FortiGate CLI session.</p>
 <h3>AI Assist</h3>
-<p><em>If AI Assist is enabled (Admin → AI Assist):</em> an alternate single-request mode next to the bulk workflow above. Describe one change (source, destination, service, target firewalls, plus an optional ticket ID and justification) and get back the same kind of deterministic verdict as the bulk workflow — computed by the same engine, not the AI — plus an AI-written report and peer-review package. If the AI narration fails for any reason the deterministic verdict is still shown.</p>
+<p><em>If AI Assist is enabled (Admin → AI Assist):</em> an alternate panel next to the bulk workflow above, with three modes selected by the buttons at the top of the panel. In every mode the verdict/plan/fix is computed deterministically first — the AI only narrates an already-computed result, and if narration fails for any reason the deterministic output is still shown.</p>
+<ul>
+  <li><strong>Single Change</strong> — describe one change (source, destination, service, target firewalls, plus an optional ticket ID and justification) and get back the same kind of verdict as the bulk workflow above — computed by the same engine — plus an AI-written report and peer-review package.</li>
+  <li><strong>FQDN Allowlist</strong> — for vendor FQDN/wildcard allowlist requests spanning multiple entries at once (e.g. a batch of Apple push-notification hostnames). Enter the vendor, category, source IP, and target firewall(s), then either upload a vendor allowlist <code>.xlsx</code> or add rows manually (FQDN/wildcard, ports, protocol, required, comment). Produces one plan per firewall plus an AI-written report.</li>
+  <li><strong>Hygiene Fix</strong> — turns a completed Rule Hygiene run's findings into deterministic remediations. Paste or upload the findings export (JSON or CSV, from either the interactive Hygiene Analysis export or a Scheduled Rule Hygiene job's email attachment), pick the ADOM + Policy Package the findings came from, and click <strong>Run</strong>. The app re-fetches the live policy package and matches each finding to its rule by policy ID — findings whose rule no longer exists (deleted or renumbered since the run) are listed separately as "stale" rather than silently dropped.
+    <ul>
+      <li>Findings are grouped in the results by rule, so every check that flagged the same policy ID appears together — each finding also shows "Also flagged by: ..." when other checks hit the same rule, since two findings on one rule can suggest conflicting fixes (e.g. Shadow's "narrow scope, keep enabled" vs. Unhit's "disable").</li>
+      <li>Where a check has more than one valid remediation, radio buttons let you pick per-finding: <strong>Shadow</strong> offers disable / reorder above the shadowing rule / narrow the shadowing rule's scope (when it can be split safely); <strong>Over-Permissive</strong> offers disable / exempt (keep enabled, tag reviewed). Choosing <strong>Exempt</strong> writes an <code>[HygieneFix EXEMPT YYYY-MM-DD]</code> comment tag — which the Hygiene Analysis checks then recognize as an exemption (see "Exempting a Rule" in the Rule Review help section) and stop re-flagging that rule.</li>
+      <li>Every comment-changing fix appends a <code>[HygieneFix YYYY-MM-DD]</code> tag so its age can be tracked; a rule already disabled and tagged more than 90 days recommends outright deletion instead.</li>
+      <li>Checks with no safe automated fix (Missing Security Profiles; an Unnamed rule whose source and destination are both unrestricted) show an explanation instead of a CLI snippet — never a guessed value.</li>
+      <li>Click <strong>Download HTML Report</strong> for a standalone, shareable report reflecting your current per-finding option selections — generated entirely in the browser, no server round trip.</li>
+    </ul>
+  </li>
+</ul>
 `
   },
   {
