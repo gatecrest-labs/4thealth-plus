@@ -434,7 +434,7 @@ def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tm
     assert summary["rule_hygiene"]["rule_findings_total"] >= 0
     assert set(summary["rule_hygiene"]["rule_findings_by_type"]) == {
         "shadow", "unhit", "unlogged", "expired", "disabled", "unnamed",
-        "missing_security_profile", "redundant", "unused_objects",
+        "missing_security_profile", "redundant", "over_permissive", "unused_objects",
     }
     assert summary["rule_hygiene"]["collected_at"] is not None
     assert hygiene_rollup.get_latest()["rule_findings_total"] == summary["rule_hygiene"]["rule_findings_total"]

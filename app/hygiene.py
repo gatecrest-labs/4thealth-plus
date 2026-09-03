@@ -32,6 +32,7 @@ CHECKS: dict[str, str] = {
     "unhit": "Unused / Un-Hit Rules (zero hit count)",
     "missing_security_profile": "Missing Security Profiles (accept rules without UTM)",
     "redundant": "Redundant Rules (duplicate scope of an earlier rule)",
+    "over_permissive": "Over-Permissive Rules (accept rules with 2+ unrestricted dimensions)",
 }
 
 
@@ -604,6 +605,63 @@ def check_unhit(policies: list[dict]) -> list[dict]:
     return findings
 
 
+def check_over_permissive(policies: list[dict]) -> list[dict]:
+    """Flag enabled accept rules where 2 or more of the 3 traffic dimensions
+    (source, destination, service) are set to ANY/ALL.
+
+    Severity:
+      critical — all 3 dimensions are unrestricted
+      high     — exactly 2 dimensions are unrestricted
+    """
+    findings = []
+    for idx, p in enumerate(policies):
+        if _is_policy_block(p):
+            continue
+        if _status(p) != "enable":
+            continue
+        if _action(p) != "accept":
+            continue
+
+        src_any = _is_any(p.get("srcaddr") or p.get("src_addr"))
+        dst_any = _is_any(p.get("dstaddr") or p.get("dst_addr"))
+        svc_any = _svc_is_any(p.get("service") or p.get("services"))
+
+        open_dims = [
+            label
+            for label, flag in (
+                ("source", src_any),
+                ("destination", dst_any),
+                ("service", svc_any),
+            )
+            if flag
+        ]
+        count = len(open_dims)
+
+        if count < 2:
+            continue
+
+        if count == 3:
+            severity = "critical"
+            detail = (
+                "Fully open — source, destination, and service are all unrestricted"
+            )
+        else:
+            severity = "high"
+            detail = f"Over-permissive — {' and '.join(open_dims)} are unrestricted"
+
+        findings.append(
+            {
+                "policy_id": str(p.get("policyid", idx + 1)),
+                "policy_name": _name(p),
+                "seq": _seq(p, idx),
+                "check": "over_permissive",
+                "severity": severity,
+                "detail": detail,
+            }
+        )
+    return findings
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 _CHECK_FNS = {
@@ -615,6 +673,7 @@ _CHECK_FNS = {
     "unhit": check_unhit,
     "missing_security_profile": check_security_profile_gap,
     "redundant": check_redundant_rules,
+    "over_permissive": check_over_permissive,
 }
 
 

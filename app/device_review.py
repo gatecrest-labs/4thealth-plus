@@ -226,7 +226,24 @@ def _run_interface_protocols(
         if not _has_ip(iface):
             continue
         protos = _allowed_protos(iface)
+
         if not protos:
+            rows.append(
+                {
+                    "device": device_name,
+                    "interface": iface.get("name", ""),
+                    "vdom": iface.get("vdom", ""),
+                    "ip": _ip_str(iface),
+                    "type": (iface.get("type") or "").lower(),
+                    "status": (iface.get("status") or "").lower(),
+                    "check": "Interface Protocols",
+                    "result": "INFO",
+                    "detail": "No management access",
+                    "protocols": [],
+                    "has_insecure": False,
+                    "has_secure": False,
+                }
+            )
             continue
 
         proto_list = [{"name": p, "secure": _classify_proto(p)} for p in sorted(protos)]

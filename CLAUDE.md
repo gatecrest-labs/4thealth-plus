@@ -92,7 +92,7 @@ app/
   config.py            # Reads .env into a Config object
   auth.py              # Session-based login; bcrypt password verify against users.json
   fmg_client.py        # FortiManager JSON-RPC client (context manager: auto login/logout)
-  hygiene.py           # Rule hygiene check engine (8 checks: unnamed, unlogged, shadow, disabled, expired, unhit, missing security profile, redundant)
+  hygiene.py           # Rule hygiene check engine (9 checks: unnamed, unlogged, shadow, disabled, expired, unhit, missing security profile, redundant, over-permissive)
   hygiene_ai.py        # AI Explain for a single Rule Hygiene finding — narrates one already-computed finding, never re-runs a check
   device_review.py     # Device Review check engine — interface protocol checks; add new checks here
   rule_review.py       # Policy analysis + route-tracing engine; zone policy integration
@@ -182,7 +182,7 @@ Two-section layout (tab displays as "Rule Review" in the nav; internal key remai
    - Interface badges (source = blue, destination = green)
    - Page size 10/25/50/100 with `<< < … > >>` pagination
    - Export (CSV/JSON/PDF) — each export includes a filter header block at the top (package, ADOM, timestamp, search terms, total/filtered counts)
-2. **Hygiene Analysis** (below) — select ADOM + package, run 8 checks, filter/export findings (CSV/JSON/PDF).
+2. **Hygiene Analysis** (below) — select ADOM + package, run 9 checks, filter/export findings (CSV/JSON/PDF).
    - **Find Unused Objects** button (next to Run Analysis) scans the selected package and lists address/address-group/service/service-group objects not referenced by any policy rule (BFS group-member expansion catches indirect references; FortiGuard/built-in objects like `all`/`ANY`/`g-*`/`ISDB-*` are excluded). A scope selector (All / Local only / Global only) controls whether the shared Global-ADOM object pool is included — services and service groups have no global pool, so `scope=global` always returns empty for those. Results are filterable/paginated (10/25/50/100) with CSV/JSON export. Backend: `GET /api/hygiene/unused-objects?adom=&pkg=&scope=`, logic in `app/hygiene.py::find_unused_objects()`.
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
@@ -610,7 +610,7 @@ Persists jobs in `rule_hygiene_jobs.json` (gitignored; copy `rule_hygiene_jobs.e
 }
 ```
 
-`checks`: list of check keys from `hygiene.CHECKS`; empty list = run all 8.
+`checks`: list of check keys from `hygiene.CHECKS`; empty list = run all 9.
 `include_unused_objects`: when true, fetches ADOM-level address/service catalogs once and runs `find_unused_objects()` per package.
 `batch_size`: number of per-package report files per zip email (1–100, default 20). For ADOMs with more packages than `batch_size`, multiple emails are sent: email 1 has the full summary table + Part 1 zip; subsequent emails contain a `[Part N of M]` subject and the next zip.
 

@@ -5,6 +5,11 @@ All notable changes to 4THealth+ are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Over-Permissive Rules check (Rule Hygiene):** flags enabled accept rules
+  where 2 or more of the 3 traffic dimensions (source, destination, service)
+  are set to ANY/ALL — `critical` when all three are unrestricted, `high`
+  when exactly two are. Ported from the sibling
+  [4THealth](https://github.com/Alski-MPLS/4thealth) repo.
 - **Rule Hygiene Scheduled Jobs (Admin → Scheduled):** admins can create recurring
   Rule Hygiene audit jobs — choose an ADOM, select any subset of the 8 hygiene
   checks, optionally include unused-object analysis, set a day-of-week + time

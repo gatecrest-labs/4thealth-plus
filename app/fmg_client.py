@@ -1051,7 +1051,7 @@ class FMGClient:
                 # Could be either the flat list or the vdom-envelope list
                 if payload and isinstance(payload[0], dict) and "results" in payload[0]:
                     flat = []
-                    seen: set[str] = set()
+                    seen: set[tuple[str, str]] = set()
                     for item in payload:
                         vname = item.get("vdom", "root")
                         results = item.get("results", [])
@@ -1059,11 +1059,15 @@ class FMGClient:
                             for iface in results:
                                 if isinstance(iface, dict):
                                     iface.setdefault("vdom", vname)
-                                    # Physical/global interfaces appear once per VDOM;
-                                    # deduplicate by name so each interface is listed once.
+                                    # Deduplicate by (name, vdom) so the same
+                                    # physical interface can appear in multiple
+                                    # VDOMs but each (name, vdom) pair is listed
+                                    # only once.
                                     iname = iface.get("name", "")
-                                    if iname and iname not in seen:
-                                        seen.add(iname)
+                                    ivdom = iface.get("vdom", vname)
+                                    key = (iname, ivdom)
+                                    if iname and key not in seen:
+                                        seen.add(key)
                                         flat.append(iface)
                     return flat
                 return [i for i in payload if isinstance(i, dict)]
