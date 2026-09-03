@@ -187,6 +187,18 @@ Two-section layout (tab displays as "Rule Review" in the nav; internal key remai
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
 
+**Exempt whitelist:** any rule whose comment field contains "exempt"
+(case-insensitive substring, `app/hygiene.py::_is_exempt()`) is filtered out
+of every check's findings in `run_checks()` — applies to both interactive
+and Scheduled Rule Hygiene runs. Filtering happens on the *output* findings,
+not the input policy list, so shadow/redundant analysis for other rules
+stays correct (an exempted rule still counts as the earlier/broader rule
+when determining whether it shadows something else). Hygiene Fix's
+over-permissive "Exempt (keep enabled)" option (see Rule Validation tab
+below) writes a `[HygieneFix EXEMPT YYYY-MM-DD]` comment tag, which this
+same substring match then recognizes — closing the loop between the two
+features.
+
 **AI Explain endpoints:**
 - `GET  /api/hygiene/ai-explain-status` — reports whether AI Explain is available (reads the `ai_assist_enabled` app-settings flag)
 - `POST /api/hygiene/explain-finding` — body is a single finding object; narrates it via `app/hygiene_ai.py`; returns `{narrative, narrative_error}`, never a 500

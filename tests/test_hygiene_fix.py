@@ -1,7 +1,9 @@
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
 from datetime import date
+
 from app.hygiene_fix import _append_tag, _find_tag, build_fixes
 
 
@@ -40,12 +42,24 @@ def test_find_tag_matches_exempt_variant():
 
 
 def _live_policy(policyid, logtraffic="disable", comments=""):
-    return {"policyid": policyid, "name": "rule-1", "logtraffic": logtraffic, "comments": comments}
+    return {
+        "policyid": policyid,
+        "name": "rule-1",
+        "logtraffic": logtraffic,
+        "comments": comments,
+    }
 
 
 def test_build_fixes_unlogged_generates_cli():
     live = [_live_policy(10)]
-    findings = [{"policy_id": "10", "policy_name": "rule-1", "check": "unlogged", "detail": "no logging"}]
+    findings = [
+        {
+            "policy_id": "10",
+            "policy_name": "rule-1",
+            "check": "unlogged",
+            "detail": "no logging",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     assert result["stale_findings"] == []
     assert len(result["fixes"]) == 1
@@ -58,7 +72,14 @@ def test_build_fixes_unlogged_generates_cli():
 
 def test_build_fixes_flags_stale_finding():
     live = [_live_policy(10)]
-    findings = [{"policy_id": "999", "policy_name": "ghost", "check": "unlogged", "detail": "no logging"}]
+    findings = [
+        {
+            "policy_id": "999",
+            "policy_name": "ghost",
+            "check": "unlogged",
+            "detail": "no logging",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     assert result["fixes"] == []
     assert len(result["stale_findings"]) == 1
@@ -67,15 +88,37 @@ def test_build_fixes_flags_stale_finding():
 
 def test_build_fixes_skips_unknown_check_key():
     live = [_live_policy(10)]
-    findings = [{"policy_id": "10", "policy_name": "rule-1", "check": "not_a_real_check", "detail": "x"}]
+    findings = [
+        {
+            "policy_id": "10",
+            "policy_name": "rule-1",
+            "check": "not_a_real_check",
+            "detail": "x",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     assert result["fixes"] == []
     assert result["stale_findings"] == []
 
 
 def test_unnamed_suggests_name_from_src_and_dst():
-    live = [{"policyid": 5, "name": "", "srcaddr": ["Vendor-API"], "dstaddr": ["Internal-DB"], "comments": ""}]
-    findings = [{"policy_id": "5", "policy_name": "Policy #5", "check": "unnamed", "detail": "no name"}]
+    live = [
+        {
+            "policyid": 5,
+            "name": "",
+            "srcaddr": ["Vendor-API"],
+            "dstaddr": ["Internal-DB"],
+            "comments": "",
+        }
+    ]
+    findings = [
+        {
+            "policy_id": "5",
+            "policy_name": "Policy #5",
+            "check": "unnamed",
+            "detail": "no name",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     opt = result["fixes"][0]["options"][0]
     assert 'set name "Allow Vendor-API to Internal-DB"' in opt["cli"][0]
@@ -83,8 +126,23 @@ def test_unnamed_suggests_name_from_src_and_dst():
 
 
 def test_unnamed_offers_no_automated_fix_when_no_specific_reference():
-    live = [{"policyid": 6, "name": "", "srcaddr": ["all"], "dstaddr": ["any"], "comments": ""}]
-    findings = [{"policy_id": "6", "policy_name": "Policy #6", "check": "unnamed", "detail": "no name"}]
+    live = [
+        {
+            "policyid": 6,
+            "name": "",
+            "srcaddr": ["all"],
+            "dstaddr": ["any"],
+            "comments": "",
+        }
+    ]
+    findings = [
+        {
+            "policy_id": "6",
+            "policy_name": "Policy #6",
+            "check": "unnamed",
+            "detail": "no name",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     fix = result["fixes"][0]
     assert fix["options"] == []
@@ -93,7 +151,14 @@ def test_unnamed_offers_no_automated_fix_when_no_specific_reference():
 
 def test_expired_disables_and_tags():
     live = [{"policyid": 7, "name": "old-rule", "comments": ""}]
-    findings = [{"policy_id": "7", "policy_name": "old-rule", "check": "expired", "detail": "past end date"}]
+    findings = [
+        {
+            "policy_id": "7",
+            "policy_name": "old-rule",
+            "check": "expired",
+            "detail": "past end date",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     opt = result["fixes"][0]["options"][0]
     assert "set status disable" in opt["cli"][0]
@@ -102,7 +167,14 @@ def test_expired_disables_and_tags():
 
 def test_unhit_disables_and_tags():
     live = [{"policyid": 8, "name": "unused-rule", "comments": "orig note"}]
-    findings = [{"policy_id": "8", "policy_name": "unused-rule", "check": "unhit", "detail": "zero hits"}]
+    findings = [
+        {
+            "policy_id": "8",
+            "policy_name": "unused-rule",
+            "check": "unhit",
+            "detail": "zero hits",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     opt = result["fixes"][0]["options"][0]
     assert "set status disable" in opt["cli"][0]
@@ -114,14 +186,28 @@ from datetime import UTC, datetime
 
 def test_missing_security_profile_returns_no_options():
     live = [{"policyid": 9, "name": "no-utm", "comments": ""}]
-    findings = [{"policy_id": "9", "policy_name": "no-utm", "check": "missing_security_profile", "detail": "no UTM"}]
+    findings = [
+        {
+            "policy_id": "9",
+            "policy_name": "no-utm",
+            "check": "missing_security_profile",
+            "detail": "no UTM",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     assert result["fixes"][0]["options"] == []
 
 
 def test_disabled_with_no_prior_tag_proposes_adding_one():
     live = [{"policyid": 11, "name": "old-disabled", "comments": "manually turned off"}]
-    findings = [{"policy_id": "11", "policy_name": "old-disabled", "check": "disabled", "detail": "status=disable"}]
+    findings = [
+        {
+            "policy_id": "11",
+            "policy_name": "old-disabled",
+            "check": "disabled",
+            "detail": "status=disable",
+        }
+    ]
     result = build_fixes(live, findings, now=datetime(2026, 9, 3, tzinfo=UTC))
     opt = result["fixes"][0]["options"][0]
     assert opt["option_id"] == "tag"
@@ -129,15 +215,41 @@ def test_disabled_with_no_prior_tag_proposes_adding_one():
 
 
 def test_disabled_with_tag_under_90_days_needs_no_action():
-    live = [{"policyid": 12, "name": "recently-disabled", "comments": "note [HygieneFix 2026-08-01]"}]
-    findings = [{"policy_id": "12", "policy_name": "recently-disabled", "check": "disabled", "detail": "status=disable"}]
+    live = [
+        {
+            "policyid": 12,
+            "name": "recently-disabled",
+            "comments": "note [HygieneFix 2026-08-01]",
+        }
+    ]
+    findings = [
+        {
+            "policy_id": "12",
+            "policy_name": "recently-disabled",
+            "check": "disabled",
+            "detail": "status=disable",
+        }
+    ]
     result = build_fixes(live, findings, now=datetime(2026, 9, 3, tzinfo=UTC))
     assert result["fixes"][0]["options"] == []
 
 
 def test_disabled_with_tag_over_90_days_proposes_delete():
-    live = [{"policyid": 13, "name": "stale-disabled", "comments": "note [HygieneFix 2026-01-01]"}]
-    findings = [{"policy_id": "13", "policy_name": "stale-disabled", "check": "disabled", "detail": "status=disable"}]
+    live = [
+        {
+            "policyid": 13,
+            "name": "stale-disabled",
+            "comments": "note [HygieneFix 2026-01-01]",
+        }
+    ]
+    findings = [
+        {
+            "policy_id": "13",
+            "policy_name": "stale-disabled",
+            "check": "disabled",
+            "detail": "status=disable",
+        }
+    ]
     result = build_fixes(live, findings, now=datetime(2026, 9, 3, tzinfo=UTC))
     opt = result["fixes"][0]["options"][0]
     assert opt["option_id"] == "delete"
@@ -147,7 +259,14 @@ def test_disabled_with_tag_over_90_days_proposes_delete():
 
 def test_over_permissive_returns_disable_and_exempt_options():
     live = [{"policyid": 14, "name": "wide-open", "comments": ""}]
-    findings = [{"policy_id": "14", "policy_name": "wide-open", "check": "over_permissive", "detail": "fully open"}]
+    findings = [
+        {
+            "policy_id": "14",
+            "policy_name": "wide-open",
+            "check": "over_permissive",
+            "detail": "fully open",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     options = result["fixes"][0]["options"]
     assert [o["option_id"] for o in options] == ["disable", "exempt"]
@@ -158,11 +277,15 @@ def test_over_permissive_returns_disable_and_exempt_options():
 
 def test_redundant_disables_later_rule_and_names_duplicate():
     live = [{"policyid": 15, "name": "later-rule", "comments": ""}]
-    findings = [{
-        "policy_id": "15", "policy_name": "later-rule", "check": "redundant",
-        "detail": "matches earlier rule",
-        "duplicate_of": {"id": "3", "name": "earlier-rule"},
-    }]
+    findings = [
+        {
+            "policy_id": "15",
+            "policy_name": "later-rule",
+            "check": "redundant",
+            "detail": "matches earlier rule",
+            "duplicate_of": {"id": "3", "name": "earlier-rule"},
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     opt = result["fixes"][0]["options"][0]
     assert "set status disable" in opt["cli"][0]
@@ -171,7 +294,12 @@ def test_redundant_disables_later_rule_and_names_duplicate():
 
 
 def _shadow_finding(shadow_rule=None, shadowing_rule=None):
-    f = {"policy_id": "20", "policy_name": "shadowed-rule", "check": "shadow", "detail": "fully shadowed"}
+    f = {
+        "policy_id": "20",
+        "policy_name": "shadowed-rule",
+        "check": "shadow",
+        "detail": "fully shadowed",
+    }
     if shadow_rule is not None:
         f["shadow_rule"] = shadow_rule
     if shadowing_rule is not None:
@@ -181,10 +309,26 @@ def _shadow_finding(shadow_rule=None, shadowing_rule=None):
 
 def test_shadow_always_offers_disable():
     live = [{"policyid": 20, "name": "shadowed-rule", "comments": ""}]
-    findings = [_shadow_finding(
-        shadow_rule={"id": "20", "name": "shadowed-rule", "action": "accept", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
-        shadowing_rule={"id": "5", "name": "earlier-rule", "action": "accept", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
-    )]
+    findings = [
+        _shadow_finding(
+            shadow_rule={
+                "id": "20",
+                "name": "shadowed-rule",
+                "action": "accept",
+                "srcaddr": ["A"],
+                "dstaddr": ["B"],
+                "service": ["ALL"],
+            },
+            shadowing_rule={
+                "id": "5",
+                "name": "earlier-rule",
+                "action": "accept",
+                "srcaddr": ["A"],
+                "dstaddr": ["B"],
+                "service": ["ALL"],
+            },
+        )
+    ]
     result = build_fixes(live, findings, now=None)
     options = result["fixes"][0]["options"]
     assert options[0]["option_id"] == "disable"
@@ -195,10 +339,26 @@ def test_shadow_always_offers_disable():
 
 def test_shadow_offers_reorder_when_actions_differ():
     live = [{"policyid": 20, "name": "shadowed-rule", "comments": ""}]
-    findings = [_shadow_finding(
-        shadow_rule={"id": "20", "name": "shadowed-rule", "action": "deny", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
-        shadowing_rule={"id": "5", "name": "earlier-rule", "action": "accept", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
-    )]
+    findings = [
+        _shadow_finding(
+            shadow_rule={
+                "id": "20",
+                "name": "shadowed-rule",
+                "action": "deny",
+                "srcaddr": ["A"],
+                "dstaddr": ["B"],
+                "service": ["ALL"],
+            },
+            shadowing_rule={
+                "id": "5",
+                "name": "earlier-rule",
+                "action": "accept",
+                "srcaddr": ["A"],
+                "dstaddr": ["B"],
+                "service": ["ALL"],
+            },
+        )
+    ]
     result = build_fixes(live, findings, now=None)
     options = result["fixes"][0]["options"]
     reorder = next(o for o in options if o["option_id"] == "reorder")
@@ -207,22 +367,56 @@ def test_shadow_offers_reorder_when_actions_differ():
 
 def test_shadow_offers_narrow_when_one_dimension_differs_and_not_wildcard():
     live = [{"policyid": 20, "name": "shadowed-rule", "comments": ""}]
-    findings = [_shadow_finding(
-        shadow_rule={"id": "20", "name": "shadowed-rule", "action": "accept", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
-        shadowing_rule={"id": "5", "name": "earlier-rule", "action": "accept", "srcaddr": ["A", "C"], "dstaddr": ["B"], "service": ["ALL"]},
-    )]
+    findings = [
+        _shadow_finding(
+            shadow_rule={
+                "id": "20",
+                "name": "shadowed-rule",
+                "action": "accept",
+                "srcaddr": ["A"],
+                "dstaddr": ["B"],
+                "service": ["ALL"],
+            },
+            shadowing_rule={
+                "id": "5",
+                "name": "earlier-rule",
+                "action": "accept",
+                "srcaddr": ["A", "C"],
+                "dstaddr": ["B"],
+                "service": ["ALL"],
+            },
+        )
+    ]
     result = build_fixes(live, findings, now=None)
     options = result["fixes"][0]["options"]
     narrow = next(o for o in options if o["option_id"] == "narrow")
-    assert narrow["cli"] == ['config firewall policy\n    edit 5\n        set srcaddr "C"\n    next\nend']
+    assert narrow["cli"] == [
+        'config firewall policy\n    edit 5\n        set srcaddr "C"\n    next\nend'
+    ]
 
 
 def test_shadow_narrow_option_has_no_cli_when_dimension_is_wildcard():
     live = [{"policyid": 20, "name": "shadowed-rule", "comments": ""}]
-    findings = [_shadow_finding(
-        shadow_rule={"id": "20", "name": "shadowed-rule", "action": "accept", "srcaddr": ["A"], "dstaddr": ["B"], "service": ["ALL"]},
-        shadowing_rule={"id": "5", "name": "earlier-rule", "action": "accept", "srcaddr": ["all"], "dstaddr": ["B"], "service": ["ALL"]},
-    )]
+    findings = [
+        _shadow_finding(
+            shadow_rule={
+                "id": "20",
+                "name": "shadowed-rule",
+                "action": "accept",
+                "srcaddr": ["A"],
+                "dstaddr": ["B"],
+                "service": ["ALL"],
+            },
+            shadowing_rule={
+                "id": "5",
+                "name": "earlier-rule",
+                "action": "accept",
+                "srcaddr": ["all"],
+                "dstaddr": ["B"],
+                "service": ["ALL"],
+            },
+        )
+    ]
     result = build_fixes(live, findings, now=None)
     options = result["fixes"][0]["options"]
     narrow = next(o for o in options if o["option_id"] == "narrow")
@@ -244,7 +438,14 @@ from app.hygiene_fix import to_hygiene_fix_report_payload
 
 def test_report_payload_uses_first_option_as_default():
     live = [{"policyid": 21, "name": "wide-open", "comments": ""}]
-    findings = [{"policy_id": "21", "policy_name": "wide-open", "check": "over_permissive", "detail": "fully open"}]
+    findings = [
+        {
+            "policy_id": "21",
+            "policy_name": "wide-open",
+            "check": "over_permissive",
+            "detail": "fully open",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     payload = to_hygiene_fix_report_payload(result)
     assert payload["fixes"][0]["selected_option"] == "Disable rule"
@@ -253,7 +454,14 @@ def test_report_payload_uses_first_option_as_default():
 
 def test_report_payload_handles_no_automated_fix():
     live = [{"policyid": 22, "name": "no-utm", "comments": ""}]
-    findings = [{"policy_id": "22", "policy_name": "no-utm", "check": "missing_security_profile", "detail": "no UTM configured"}]
+    findings = [
+        {
+            "policy_id": "22",
+            "policy_name": "no-utm",
+            "check": "missing_security_profile",
+            "detail": "no UTM configured",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     payload = to_hygiene_fix_report_payload(result)
     assert payload["fixes"][0]["selected_option"] == "No automated fix"
@@ -262,15 +470,37 @@ def test_report_payload_handles_no_automated_fix():
 
 def test_build_fixes_groups_findings_by_policy_id_and_flags_related_checks():
     live = [
-        {"policyid": 20, "name": "r20", "comments": "", "srcaddr": ["all"], "dstaddr": ["all"]},
+        {
+            "policyid": 20,
+            "name": "r20",
+            "comments": "",
+            "srcaddr": ["all"],
+            "dstaddr": ["all"],
+        },
         {"policyid": 5, "name": "r5", "comments": ""},
     ]
     # Findings interleaved out of policy-id order, as a real hygiene run
     # produces them (grouped by check, not by rule).
     findings = [
-        {"policy_id": "20", "policy_name": "r20", "check": "over_permissive", "severity": "high", "detail": "open"},
-        {"policy_id": "5", "policy_name": "r5", "check": "unhit", "detail": "zero hits"},
-        {"policy_id": "20", "policy_name": "r20", "check": "unhit", "detail": "zero hits"},
+        {
+            "policy_id": "20",
+            "policy_name": "r20",
+            "check": "over_permissive",
+            "severity": "high",
+            "detail": "open",
+        },
+        {
+            "policy_id": "5",
+            "policy_name": "r5",
+            "check": "unhit",
+            "detail": "zero hits",
+        },
+        {
+            "policy_id": "20",
+            "policy_name": "r20",
+            "check": "unhit",
+            "detail": "zero hits",
+        },
     ]
     result = build_fixes(live, findings, now=None)
     pids_in_order = [f["policy_id"] for f in result["fixes"]]
@@ -289,14 +519,35 @@ def test_build_fixes_groups_findings_by_policy_id_and_flags_related_checks():
 
 def test_build_fixes_handles_full_mixed_batch():
     live = [
-        {"policyid": 1, "name": "r1", "comments": "", "srcaddr": ["all"], "dstaddr": ["all"]},
+        {
+            "policyid": 1,
+            "name": "r1",
+            "comments": "",
+            "srcaddr": ["all"],
+            "dstaddr": ["all"],
+        },
         {"policyid": 2, "name": "r2", "comments": "", "logtraffic": "disable"},
         {"policyid": 3, "name": "r3", "comments": ""},
     ]
     findings = [
-        {"policy_id": "1", "policy_name": "r1", "check": "unnamed", "detail": "no name"},
-        {"policy_id": "2", "policy_name": "r2", "check": "unlogged", "detail": "no logging"},
-        {"policy_id": "999", "policy_name": "ghost", "check": "expired", "detail": "gone"},
+        {
+            "policy_id": "1",
+            "policy_name": "r1",
+            "check": "unnamed",
+            "detail": "no name",
+        },
+        {
+            "policy_id": "2",
+            "policy_name": "r2",
+            "check": "unlogged",
+            "detail": "no logging",
+        },
+        {
+            "policy_id": "999",
+            "policy_name": "ghost",
+            "check": "expired",
+            "detail": "gone",
+        },
     ]
     result = build_fixes(live, findings, now=None)
     assert len(result["fixes"]) == 2
@@ -304,8 +555,21 @@ def test_build_fixes_handles_full_mixed_batch():
 
 
 def test_disabled_under_90_days_carries_info_with_days_remaining():
-    live = [{"policyid": 12, "name": "recently-disabled", "comments": "note [HygieneFix 2026-08-01]"}]
-    findings = [{"policy_id": "12", "policy_name": "recently-disabled", "check": "disabled", "detail": "status=disable"}]
+    live = [
+        {
+            "policyid": 12,
+            "name": "recently-disabled",
+            "comments": "note [HygieneFix 2026-08-01]",
+        }
+    ]
+    findings = [
+        {
+            "policy_id": "12",
+            "policy_name": "recently-disabled",
+            "check": "disabled",
+            "detail": "status=disable",
+        }
+    ]
     result = build_fixes(live, findings, now=datetime(2026, 9, 3, tzinfo=UTC))
     fix = result["fixes"][0]
     assert fix["options"] == []
@@ -316,7 +580,14 @@ def test_disabled_under_90_days_carries_info_with_days_remaining():
 
 def test_missing_security_profile_carries_no_automated_fix_info():
     live = [{"policyid": 9, "name": "no-utm", "comments": ""}]
-    findings = [{"policy_id": "9", "policy_name": "no-utm", "check": "missing_security_profile", "detail": "no UTM"}]
+    findings = [
+        {
+            "policy_id": "9",
+            "policy_name": "no-utm",
+            "check": "missing_security_profile",
+            "detail": "no UTM",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     fix = result["fixes"][0]
     assert fix["options"] == []
@@ -325,7 +596,14 @@ def test_missing_security_profile_carries_no_automated_fix_info():
 
 def test_report_payload_prefers_info_over_detail_when_no_options():
     live = [{"policyid": 9, "name": "no-utm", "comments": ""}]
-    findings = [{"policy_id": "9", "policy_name": "no-utm", "check": "missing_security_profile", "detail": "raw detail text"}]
+    findings = [
+        {
+            "policy_id": "9",
+            "policy_name": "no-utm",
+            "check": "missing_security_profile",
+            "detail": "raw detail text",
+        }
+    ]
     result = build_fixes(live, findings, now=None)
     payload = to_hygiene_fix_report_payload(result)
     assert "no automated fix" in payload["fixes"][0]["description"].lower()

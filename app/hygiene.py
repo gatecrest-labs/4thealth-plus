@@ -10,6 +10,11 @@ Each check function receives the full policy list and returns a list of finding 
   }
 
 CHECKS maps key -> display name.  Order here controls the dropdown order in the UI.
+
+run_checks() additionally filters any rule whose comment contains "exempt"
+(case-insensitive, see _is_exempt()) out of the returned findings -- a
+whitelist mechanism for reviewed-and-accepted rules, applied after all
+checks run so shadow/redundant analysis for other rules stays correct.
 """
 
 from __future__ import annotations
@@ -79,6 +84,17 @@ def _logtraffic(p: dict) -> str:
 
 def _name(p: dict) -> str:
     return str(p.get("name") or p.get("policyid") or p.get("policyid", ""))
+
+
+def _is_exempt(p: dict) -> bool:
+    """Whitelist mechanism: a rule is exempted from every hygiene check when
+    its comment field contains "exempt" (case-insensitive substring match --
+    this deliberately also matches the "[HygieneFix EXEMPT YYYY-MM-DD]" tag
+    that Hygiene Fix's over_permissive "Exempt (keep enabled)" option writes,
+    closing the loop so a reviewed-and-accepted rule stops being re-flagged
+    on the next run)."""
+    comment = str(p.get("comments") or p.get("comment") or "")
+    return "exempt" in comment.lower()
 
 
 def _seq(p: dict, idx: int) -> int:
@@ -684,7 +700,13 @@ def run_checks(
     addr_resolver: dict[str, frozenset | None] | None = None,
     svc_resolver: dict[str, frozenset | None] | None = None,
 ) -> list[dict]:
-    """Run the requested checks against the policy list.  Returns combined findings."""
+    """Run the requested checks against the policy list.  Returns combined findings.
+
+    Exempted rules (see `_is_exempt`) are filtered out of the returned
+    findings, not the input policy list -- shadow/redundant analysis needs
+    every rule present to correctly determine shadowing relationships among
+    the *other*, non-exempted rules.
+    """
     results = []
     for key in checks:
         fn = _CHECK_FNS.get(key)
@@ -704,6 +726,14 @@ def run_checks(
             )
         else:
             results.extend(fn(policies))
+
+    exempt_ids = {
+        str(p.get("policyid", idx + 1))
+        for idx, p in enumerate(policies)
+        if _is_exempt(p)
+    }
+    if exempt_ids:
+        results = [r for r in results if r.get("policy_id") not in exempt_ids]
     return results
 
 

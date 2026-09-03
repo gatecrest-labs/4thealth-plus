@@ -5,6 +5,25 @@ All notable changes to 4THealth+ are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **"Exempt" comment whitelist (Rule Hygiene):** add the word "Exempt"
+  anywhere in a rule's comment (case-insensitive) and every hygiene check
+  silently skips that rule on every future run — interactive and scheduled
+  alike — no matter which checks are selected. Shadow/redundant analysis for
+  *other* rules is unaffected: an exempted rule still counts as the
+  earlier/broader rule when determining whether it shadows something else;
+  only findings about the exempted rule itself are suppressed
+  (`app/hygiene.py::_is_exempt()`, applied in `run_checks()`). Hygiene Fix's
+  existing over-permissive "Exempt (keep enabled)" option already writes a
+  `[HygieneFix EXEMPT YYYY-MM-DD]` comment tag — this closes the loop, so
+  picking that fix now also stops the rule being re-flagged going forward.
+- **Hygiene Fix findings grouped by rule:** the Hygiene Fix AI Assist mode's
+  results (both the live view and the downloaded HTML report) are now
+  stable-sorted by `policy_id` so every finding against the same rule is
+  adjacent, instead of scattered in check-run order. Each finding also
+  carries a `related_checks` list, surfaced as "Also flagged by: ..." in the
+  UI, so a reviewer can catch two findings on the same rule recommending
+  conflicting actions (e.g. Shadow's "narrow scope, keep enabled" vs.
+  Unhit's "disable") before applying either.
 - **Over-Permissive Rules check (Rule Hygiene):** flags enabled accept rules
   where 2 or more of the 3 traffic dimensions (source, destination, service)
   are set to ANY/ALL — `critical` when all three are unrestricted, `high`
@@ -81,6 +100,15 @@ All notable changes to 4THealth+ are documented in this file.
   the existing deployment tooling.
 
 ### Fixed
+- Hygiene Fix's "unnamed rule" remediation (`app/hygiene_fix.py::_fix_unnamed()`)
+  fell back to applying the literal placeholder string "Unknown -- Requires
+  additional research" as the rule's actual name via `set name` whenever it
+  couldn't derive one from a non-generic source/destination pair (e.g. a
+  rule whose source is `all` but whose destination is a specific object) —
+  the placeholder also exceeded the app's own 35-character name limit. It
+  now returns no automated fix in that case (info-only "manual naming
+  required" explanation), matching the existing `missing_security_profile`
+  pattern.
 - NAT Lookup only searched ADOM-level shared VIP/IP-pool objects, missing
   VIPs installed on an individual device but never promoted to the shared
   object database. It now also sweeps every device's own VIP table (all
