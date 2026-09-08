@@ -1,4 +1,4 @@
-"""Scheduled Device Review email export engine.
+"""Scheduled Audit Review (Device Review) email export engine.
 
 Jobs and run history are persisted in device_review_jobs.json (project root).
 Each enabled job is registered as an APScheduler CronTrigger at startup.
@@ -243,7 +243,7 @@ def _execute_job(job_id: str) -> None:
         app_log(
             "INFO",
             "device_review_scheduler",
-            f"Running scheduled Device Review: adom={adom} format={fmt} to={email}",
+            f"Running scheduled Audit Review: adom={adom} format={fmt} to={email}",
         )
 
         results = _bulk_device_review_adom(adom, checks, check_params, max_workers=4)
@@ -280,7 +280,7 @@ def _execute_job(job_id: str) -> None:
         }
 
         generated_at = record["ran_at"]
-        subject = f"4THealth+ Device Review — {adom} — {generated_at[:10]}"
+        subject = f"4THealth+ Audit Review — {adom} — {generated_at[:10]}"
         check_summary = _build_check_summary(results, checks)
         ai_narrative_html, ai_narrative_error = _build_ai_narrative_html(
             adom, check_summary, results, job.get("ai_summary_enabled", True)
@@ -304,7 +304,7 @@ def _execute_job(job_id: str) -> None:
         app_log(
             "INFO",
             "device_review_scheduler",
-            f"Device Review report sent: adom={adom} devices={len(results)} "
+            f"Audit Review report sent: adom={adom} devices={len(results)} "
             f"findings={len(all_rows)} fails={fail_count} to={email}",
         )
 
@@ -321,7 +321,7 @@ def _execute_job(job_id: str) -> None:
         app_log(
             "ERROR",
             "device_review_scheduler",
-            f"Device Review scheduled job {job_id} failed: {exc}",
+            f"Audit Review scheduled job {job_id} failed: {exc}",
         )
     finally:
         _running_jobs.discard(job_id)
@@ -682,7 +682,7 @@ def _build_summary_html(
     host_summary_html = _build_host_summary_html(results)
 
     return f"""
-<h2 style="font-family:sans-serif">4THealth+ Device Review — {_esc(adom)}</h2>
+<h2 style="font-family:sans-serif">4THealth+ Audit Review — {_esc(adom)}</h2>
 <p style="font-family:sans-serif;color:#6b7280">Generated: {generated_at}</p>
 <p style="font-family:sans-serif">Devices scanned: {len(results)}</p>
 {error_note}
@@ -748,7 +748,7 @@ def _build_attachment_dr(
     if fmt == "csv":
         buf = io.StringIO()
         w = csv.writer(buf)
-        w.writerow(["# 4THealth+ Device Review"])
+        w.writerow(["# 4THealth+ Audit Review"])
         w.writerow([f"# ADOM: {adom}"])
         w.writerow([f"# Generated: {generated_at}"])
         w.writerow([])
@@ -957,7 +957,7 @@ def _build_pdf_html_dr(
 </style>
 </head>
 <body>
-<h1>4THealth+ Device Review Scheduler</h1>
+<h1>4THealth+ Audit Review Scheduler</h1>
 <div class="meta">
   ADOM: {_esc(adom)} &nbsp;|&nbsp;
   Devices scanned: {len(results)} &nbsp;|&nbsp;
@@ -1068,6 +1068,6 @@ def init_scheduler(app) -> None:
     app_log(
         "INFO",
         "device_review_scheduler",
-        f"Device Review scheduler started with "
+        f"Audit Review scheduler started with "
         f"{sum(1 for j in jobs if j.get('enabled'))} active jobs",
     )

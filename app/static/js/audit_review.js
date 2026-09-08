@@ -61,7 +61,7 @@ let _drAiAssistAvailable = false;
 
 async function checkAiSummaryAvailability() {
   try {
-    const resp = await fetch('/api/device-review/ai-summary-status');
+    const resp = await fetch('/api/audit-review/ai-summary-status');
     const data = await resp.json();
     _drAiAssistAvailable = !!data.available;
   } catch (e) {
@@ -98,7 +98,7 @@ function showAiSummaryBoxIfAvailable(adom, results, checks) {
           detail: r.detail,
         })),
       }));
-      const resp = await fetch('/api/device-review/ai-summary', {
+      const resp = await fetch('/api/audit-review/ai-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adom, results: slimResults, checks }),
@@ -298,7 +298,7 @@ async function onAdomChange(adom) {
 
   document.getElementById('drDeviceLoading').style.display = '';
   try {
-    const resp = await fetch(`/api/device-review/adoms/${encodeURIComponent(adom)}/devices`);
+    const resp = await fetch(`/api/audit-review/adoms/${encodeURIComponent(adom)}/devices`);
     if (resp.status === 401) { location.href = '/login'; return; }
     const data = await resp.json();
     if (Array.isArray(data)) {
@@ -351,7 +351,7 @@ async function runAnalysis() {
     showProgress(i, deviceList.length, device);
 
     try {
-      const resp = await fetch('/api/device-review/run/device', {
+      const resp = await fetch('/api/audit-review/run/device', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ adom, device, checks, check_params: checkParams }),
@@ -833,3 +833,615 @@ document.getElementById('drChecks').addEventListener('change', updateParamsPanel
 loadAdoms();
 updateParamsPanel();
 checkAiSummaryAvailability();
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Hygiene Analysis section
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Hygiene Analysis state ─────────────────────────────────────────────────── */
+let allFindings        = [];
+let checkLabels        = {};
+let hygieneCurrentPage = 1;
+let hygienePageSize    = 25;
+let hygieneFilterText  = '';
+let filterCheck        = '';
+let hygieneMeta        = null;
+let pkgPaths           = {};
+let _hygieneAiExplainAvailable = false;
+
+async function checkHygieneAiExplainAvailability() {
+  try {
+    const resp = await fetch('/api/hygiene/ai-explain-status');
+    const data = await resp.json();
+    _hygieneAiExplainAvailable = !!data.available;
+  } catch (e) {
+    _hygieneAiExplainAvailable = false;
+  }
+}
+
+/* ── Hygiene package loader ─────────────────────────────────────────────────── */
+async function loadHygienePackages(adom) {
+  const sel = document.getElementById('hygienePackage');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  sel.disabled = true;
+  pkgPaths = {};
+  document.getElementById('hygieneRunBtn').disabled = true;
+  try {
+    const resp = await fetch(`/api/hygiene/adoms/${encodeURIComponent(adom)}/packages`);
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const pkgs = await resp.json();
+    sel.innerHTML = '<option value="">— select package —</option>';
+    if (Array.isArray(pkgs)) {
+      pkgs.forEach(p => {
+        pkgPaths[p.name] = p.path || p.name;
+        const opt = document.createElement('option');
+        opt.value = p.name; opt.textContent = p.name;
+        sel.appendChild(opt);
+      });
+    }
+    sel.disabled = false;
+  } catch (_) {
+    sel.innerHTML = '<option value="">Failed to load packages</option>';
+  }
+}
+
+/* ── Run hygiene analysis ───────────────────────────────────────────────────── */
+async function runHygieneAnalysis() {
+  const adom    = document.getElementById('hygieneAdom').value;
+  const pkg     = document.getElementById('hygienePackage').value;
+  const path    = pkgPaths[pkg] || pkg;
+  const checked = [...document.querySelectorAll('input[name=hygiene_check]:checked')].map(i => i.value);
+
+  if (!adom || !pkg) return;
+
+  const errEl = document.getElementById('hygieneError');
+  errEl.style.display = 'none';
+  document.getElementById('hygieneResults').style.display = 'none';
+  document.getElementById('hygieneRunBtn').disabled = true;
+  document.getElementById('hygieneRunning').style.display = '';
+
+  try {
+    const resp = await fetch('/api/hygiene/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adom, package: pkg, path, checks: checked }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      showHygieneError(data.error || 'Analysis failed.');
+      return;
+    }
+
+    allFindings        = data.findings || [];
+    hygieneMeta        = data;
+    hygieneCurrentPage = 1;
+    hygieneFilterText  = '';
+    filterCheck        = '';
+    document.getElementById('hygieneFilter').value      = '';
+    document.getElementById('hygieneCheckFilter').value = '';
+    document.getElementById('hygieneLastRunLabel').textContent =
+      `Last run: ${new Date().toLocaleString()} — ${data.policy_count} policies analysed`;
+
+    populateCheckFilter(data.checks_run);
+    renderHygieneTable();
+    document.getElementById('hygieneResults').style.display = '';
+  } catch (err) {
+    showHygieneError(err.message);
+  } finally {
+    document.getElementById('hygieneRunBtn').disabled = false;
+    document.getElementById('hygieneRunning').style.display = 'none';
+  }
+}
+
+function showHygieneError(msg) {
+  const el = document.getElementById('hygieneError');
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+/* ── Check filter dropdown population ──────────────────────────────────────── */
+function populateCheckFilter(checksRun) {
+  const sel = document.getElementById('hygieneCheckFilter');
+  sel.innerHTML = '<option value="">All checks</option>';
+  checksRun.forEach(key => {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = checkLabels[key] || key;
+    sel.appendChild(opt);
+  });
+}
+
+/* ── Hygiene filtering ──────────────────────────────────────────────────────── */
+function hygieneFiltered() {
+  return allFindings.filter(f => {
+    if (filterCheck && f.check !== filterCheck) return false;
+    if (!hygieneFilterText) return true;
+    const q = hygieneFilterText.toLowerCase();
+    return (
+      f.policy_name.toLowerCase().includes(q) ||
+      f.policy_id.toLowerCase().includes(q)   ||
+      (checkLabels[f.check] || f.check).toLowerCase().includes(q) ||
+      f.detail.toLowerCase().includes(q)
+    );
+  });
+}
+
+/* ── Render hygiene table ───────────────────────────────────────────────────── */
+function renderHygieneTable() {
+  const rows  = hygieneFiltered();
+  const total = Math.ceil(rows.length / hygienePageSize) || 1;
+  hygieneCurrentPage = Math.min(hygieneCurrentPage, total);
+  const slice = rows.slice((hygieneCurrentPage - 1) * hygienePageSize, hygieneCurrentPage * hygienePageSize);
+
+  const meta = hygieneMeta || {};
+  document.getElementById('hygieneSummary').textContent =
+    `${rows.length === allFindings.length
+      ? allFindings.length
+      : `${rows.length} of ${allFindings.length}`
+    } finding${allFindings.length !== 1 ? 's' : ''} across ${meta.policy_count || '?'} policies` +
+    (meta.package ? ` in "${meta.package}"` : '');
+
+  document.getElementById('hygieneCount').textContent =
+    `${rows.length} finding${rows.length !== 1 ? 's' : ''} — page ${hygieneCurrentPage} of ${total}`;
+
+  const BADGE_COLORS = {
+    unnamed:          '#6366f1',
+    unlogged:         '#f59e0b',
+    shadow:           '#ef4444',
+    disabled:         '#64748b',
+    expired:          '#dc2626',
+    unhit:            '#0ea5e9',
+    over_permissive:  '#f97316',
+  };
+
+  const SEVERITY_COLORS = { critical: '#ef4444', high: '#f97316' };
+
+  const tbody = document.getElementById('hygieneTbody');
+
+  const ruleCard = (r, title) => `
+    <div class="shadow-rule-card">
+      <div class="shadow-rule-title">${esc(title)}</div>
+      <div class="shadow-rule-grid">
+        <span class="shadow-rule-label">ID</span><span>${esc(r.id)}</span>
+        <span class="shadow-rule-label">Name</span><span>${esc(r.name || '—')}</span>
+        <span class="shadow-rule-label">Status</span><span style="font-weight:600;color:${r.status==='enable'?'#22c55e':'var(--text-muted)'}">${esc(r.status || '—')}</span>
+        <span class="shadow-rule-label">Action</span><span style="font-weight:600;color:${r.action==='deny'||r.action==='block'?'#ef4444':'#22c55e'}">${esc(r.action)}</span>
+        <span class="shadow-rule-label">Source</span><span>${esc((r.srcaddr||[]).join(', ') || 'any')}</span>
+        <span class="shadow-rule-label">Destination</span><span>${esc((r.dstaddr||[]).join(', ') || 'any')}</span>
+        <span class="shadow-rule-label">Service</span><span>${esc((r.service||[]).join(', ') || 'any')}</span>
+        ${r.srcintf && r.srcintf.length ? `<span class="shadow-rule-label">Src Interface</span><span>${esc(r.srcintf.join(', '))}</span>` : ''}
+        ${r.dstintf && r.dstintf.length ? `<span class="shadow-rule-label">Dst Interface</span><span>${esc(r.dstintf.join(', '))}</span>` : ''}
+        ${r.fsso_groups && r.fsso_groups.length ? `<span class="shadow-rule-label">AD Groups</span><span>${esc(r.fsso_groups.join(', '))}</span>` : ''}
+        ${r.comment ? `<span class="shadow-rule-label">Comment</span><span style="color:var(--text-muted)">${esc(r.comment)}</span>` : ''}
+      </div>
+    </div>`;
+
+  const rowsHtml = slice.map((f, i) => {
+    const color  = SEVERITY_COLORS[f.severity] || BADGE_COLORS[f.check] || '#94a3b8';
+    const label  = checkLabels[f.check] || f.check;
+    const rowId  = `finding-detail-${hygieneCurrentPage}-${i}`;
+    const isShadow       = f.check === 'shadow' && f.shadow_rule && f.shadowing_rule;
+    const hasRuleDetail  = isShadow || !!f.rule_detail;
+    const hasDetail      = hasRuleDetail || _hygieneAiExplainAvailable;
+    const expandTitle = hasRuleDetail ? 'Show rule details' : 'Explain with AI';
+    const expandBtn = hasDetail
+      ? ` <button class="shadow-expand-btn" data-target="${rowId}" title="${expandTitle}" aria-expanded="false">&#9660;</button>`
+      : '';
+    const mainRow = `<tr class="${hasDetail ? 'shadow-finding-row' : ''}" ${hasDetail ? `data-target="${rowId}"` : ''}>
+      <td style="font-size:.8rem;color:var(--text-muted)">${esc(String(f.seq || '—'))}</td>
+      <td><strong>${esc(f.policy_name)}</strong>${f.policy_id && f.policy_id !== f.policy_name ? `<br><span style="font-size:.75rem;color:var(--text-muted)">id: ${esc(f.policy_id)}</span>` : ''}</td>
+      <td><span class="hygiene-badge" style="background:${color}20;color:${color};border-color:${color}40">${esc(label)}</span></td>
+      <td style="font-size:.82rem">${esc(f.detail)}${expandBtn}</td>
+    </tr>`;
+
+    if (!hasDetail) return mainRow;
+
+    let detailContent;
+    if (isShadow) {
+      detailContent = ruleCard(f.shadow_rule, 'Shadowed Rule (hidden — never hit)') +
+                      ruleCard(f.shadowing_rule, 'Shadowing Rule (earlier — intercepts traffic)');
+    } else if (f.rule_detail) {
+      detailContent = ruleCard(f.rule_detail, 'Rule Details');
+    } else {
+      detailContent = '';
+    }
+
+    // Absolute index into hygieneFiltered() (not the per-page slice index `i`), so
+    // the delegated click handler can look the finding back up correctly
+    // regardless of which page is currently rendered.
+    const findingIdx = (hygieneCurrentPage - 1) * hygienePageSize + i;
+    const explainBlock = _hygieneAiExplainAvailable ? `
+      <div class="hygiene-ai-explain" style="margin-top:8px">
+        <button class="btn btn-secondary hygiene-explain-btn" type="button" data-finding-idx="${findingIdx}">Explain</button>
+        <div class="hygiene-explain-output" style="margin-top:6px;font-size:.85rem;line-height:1.5;white-space:pre-wrap"></div>
+      </div>` : '';
+
+    const detailRow = `<tr id="${rowId}" class="shadow-detail-row" style="display:none">
+      <td colspan="4">
+        <div class="shadow-detail-wrap">${detailContent}${explainBlock}</div>
+      </td>
+    </tr>`;
+    return mainRow + detailRow;
+  }).join('') || `<tr><td colspan="4" class="empty-state" style="padding:.85rem 1rem">No findings match your filter.</td></tr>`;
+
+  tbody.innerHTML = rowsHtml;
+  renderHygienePagination(total);
+}
+
+/* ── Hygiene pagination ─────────────────────────────────────────────────────── */
+function renderHygienePagination(total) {
+  const pg = document.getElementById('hygienePagination');
+  if (total <= 1) { pg.innerHTML = ''; return; }
+
+  function btn(label, page, disabled, active) {
+    return `<button class="pg-btn${active ? ' active' : ''}" data-hpage="${page}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+  }
+  let html = btn('&laquo;&laquo;', 1, hygieneCurrentPage === 1, false);
+  html += btn('&lsaquo;', hygieneCurrentPage - 1, hygieneCurrentPage === 1, false);
+  const s = Math.max(1, hygieneCurrentPage - 2), e = Math.min(total, s + 4);
+  for (let i = s; i <= e; i++) html += btn(i, i, false, i === hygieneCurrentPage);
+  html += btn('&rsaquo;', hygieneCurrentPage + 1, hygieneCurrentPage === total, false);
+  html += btn('&raquo;&raquo;', total, hygieneCurrentPage === total, false);
+  pg.innerHTML = html;
+}
+
+/* ── Find Unused Objects ────────────────────────────────────────────────────── */
+async function runFindUnused() {
+    const adom = document.getElementById('hygieneAdom').value;
+    const pkg  = document.getElementById('hygienePackage').value;
+    if (!adom || !pkg) return;
+
+    const btn     = document.getElementById('findUnusedBtn');
+    const spinner = document.getElementById('unusedSpinner');
+    const panel   = document.getElementById('unusedObjectsPanel');
+    const content = document.getElementById('unusedObjectsContent');
+
+    btn.disabled = true;
+    spinner.style.display = '';
+    panel.style.display = '';
+    content.innerHTML = '<div class="text-muted py-3 text-center">Scanning objects…</div>';
+
+    try {
+        const path   = pkgPaths[pkg] || pkg;
+        const scope  = document.getElementById('unusedScope')?.value || 'all';
+        const params = new URLSearchParams({ adom, pkg: path, scope });
+        const resp = await fetch(`/api/hygiene/unused-objects?${params}`);
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            content.innerHTML = `<div class="alert alert-danger mb-0">${esc(err.error || 'Failed to check unused objects.')}</div>`;
+            return;
+        }
+        const data = await resp.json();
+        renderUnusedObjects(data);
+    } catch (err) {
+        content.innerHTML = `<div class="alert alert-danger mb-0">${esc(err.message)}</div>`;
+    } finally {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+    }
+}
+
+/* ── Unused Objects state ────────────────────────────────────────────────── */
+let unusedAllRows  = [];
+let unusedFiltered = [];
+let unusedPage     = 1;
+let unusedPageSize = 25;
+let unusedFilter   = '';
+
+function renderUnusedObjects(data) {
+    window._unusedObjectsData = data;
+    const totalUnused = data.unused_addresses.length + data.unused_services.length;
+
+    document.getElementById('unusedCsvBtn').style.display = totalUnused ? '' : 'none';
+    document.getElementById('unusedJsonBtn').style.display = totalUnused ? '' : 'none';
+
+    if (totalUnused === 0) {
+        unusedAllRows = [];
+        document.getElementById('unusedObjectsContent').innerHTML =
+            '<div class="alert alert-success mb-0">No unused objects found in this package.</div>';
+        return;
+    }
+
+    unusedAllRows = [
+        ...data.unused_addresses.map(o => ({ name: o.name, category: 'address', type: o.type, detail: o.detail || '' })),
+        ...data.unused_services.map(o  => ({ name: o.name, category: 'service', type: o.type, detail: o.detail || '' })),
+    ];
+    unusedPage   = 1;
+    unusedFilter = '';
+    renderUnusedTable();
+}
+
+function renderUnusedTable() {
+    const content = document.getElementById('unusedObjectsContent');
+    const data    = window._unusedObjectsData;
+    if (!data) return;
+
+    const q = unusedFilter.toLowerCase();
+    unusedFiltered = q
+        ? unusedAllRows.filter(r => r.name.toLowerCase().includes(q) || r.detail.toLowerCase().includes(q))
+        : unusedAllRows.slice();
+
+    const total = Math.ceil(unusedFiltered.length / unusedPageSize) || 1;
+    unusedPage  = Math.min(Math.max(1, unusedPage), total);
+    const slice = unusedFiltered.slice((unusedPage - 1) * unusedPageSize, unusedPage * unusedPageSize);
+
+    const psOpts = [10, 25, 50, 100].map(n =>
+        `<option value="${n}"${n === unusedPageSize ? ' selected' : ''}>${n}</option>`).join('');
+
+    function pgb(lbl, pg, dis, act) {
+        return `<button class="pg-btn${act ? ' active' : ''}" data-uopage="${pg}"${dis ? ' disabled' : ''}>${lbl}</button>`;
+    }
+    const s = Math.max(1, unusedPage - 2), e = Math.min(total, s + 4);
+    let pgHtml = pgb('&laquo;&laquo;', 1, unusedPage === 1, false);
+    pgHtml += pgb('&lsaquo;', unusedPage - 1, unusedPage === 1, false);
+    for (let i = s; i <= e; i++) pgHtml += pgb(i, i, false, i === unusedPage);
+    pgHtml += pgb('&rsaquo;', unusedPage + 1, unusedPage === total, false);
+    pgHtml += pgb('&raquo;&raquo;', total, unusedPage === total, false);
+
+    const rows = slice.map(o => {
+        const bc  = o.category === 'address' ? 'bg-primary' : 'bg-secondary';
+        const lbl = o.type === 'group' ? (o.category === 'address' ? 'address group' : 'service group') : o.category;
+        return `<tr><td>${esc(o.name)}</td><td><span class="badge ${bc}">${esc(lbl)}</span></td></tr>`;
+    }).join('');
+
+    const showPag = unusedFiltered.length > 10;
+    content.innerHTML = `
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <input type="text" id="unusedFilterInput" class="form-control form-control-sm" style="max-width:260px"
+                placeholder="Filter by name or IP…" value="${esc(unusedFilter)}">
+            <span class="text-muted small ms-auto">
+                ${unusedFiltered.length} of ${unusedAllRows.length} object(s) &mdash; ${esc(data.checked_at)}
+            </span>
+        </div>
+        <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Object Name</th><th>Type</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+        ${showPag ? `<div class="d-flex align-items-center justify-content-between mt-2 flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-1">
+                <label class="text-muted small me-1">Per page:</label>
+                <select id="unusedPageSizeSelect" class="form-select form-select-sm" style="width:auto">${psOpts}</select>
+            </div>
+            <div class="pg-bar">${pgHtml}</div>
+            <div class="text-muted small">Page ${unusedPage} of ${total}</div>
+        </div>` : ''}`;
+
+    const fi = document.getElementById('unusedFilterInput');
+    fi.addEventListener('input', function() {
+        unusedFilter = this.value;
+        unusedPage   = 1;
+        renderUnusedTable();
+    });
+    if (unusedFilter) { fi.focus(); fi.setSelectionRange(fi.value.length, fi.value.length); }
+    const psSel = document.getElementById('unusedPageSizeSelect');
+    if (psSel) psSel.addEventListener('change', function() {
+        unusedPageSize = parseInt(this.value, 10);
+        unusedPage     = 1;
+        renderUnusedTable();
+    });
+}
+
+function exportUnusedCsv() {
+    const data = window._unusedObjectsData;
+    if (!data || !unusedAllRows.length) return;
+    const rows = unusedFiltered.length ? unusedFiltered : unusedAllRows;
+    const csvRows = [['Name', 'Category', 'Type'], ...rows.map(o => [o.name, o.category, o.type])];
+    const csv = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const pkg = (data.pkg || 'pkg').replace(/\//g, '_');
+    download(`unused-objects-${data.adom}-${pkg}.csv`, csv, 'text/csv');
+}
+
+function exportUnusedJson() {
+    const data = window._unusedObjectsData;
+    if (!data || !unusedAllRows.length) return;
+    const rows    = unusedFiltered.length ? unusedFiltered : unusedAllRows;
+    const payload = { adom: data.adom, pkg: data.pkg, checked_at: data.checked_at,
+                      filter: unusedFilter || null, objects: rows };
+    download(`unused-objects-${data.adom}.json`, JSON.stringify(payload, null, 2), 'application/json');
+}
+
+/* ── Hygiene exports ────────────────────────────────────────────────────────── */
+function exportHygieneCsv() {
+  const rows = hygieneFiltered();
+  const header = ['Seq', 'Policy ID', 'Policy Name', 'Check', 'Detail'];
+  const lines  = [header.join(',')];
+  rows.forEach(f => {
+    lines.push([
+      f.seq,
+      `"${String(f.policy_id).replace(/"/g, '""')}"`,
+      `"${String(f.policy_name).replace(/"/g, '""')}"`,
+      `"${(checkLabels[f.check] || f.check).replace(/"/g, '""')}"`,
+      `"${String(f.detail).replace(/"/g, '""')}"`,
+    ].join(','));
+  });
+  download('hygiene_report.csv', lines.join('\r\n'), 'text/csv');
+}
+
+function exportHygieneJson() {
+  const payload = {
+    meta: hygieneMeta,
+    generated: new Date().toISOString(),
+    findings: hygieneFiltered().map(f => ({ ...f, check_label: checkLabels[f.check] || f.check })),
+  };
+  download('hygiene_report.json', JSON.stringify(payload, null, 2), 'application/json');
+}
+
+function exportHygienePdf() {
+  const rows = hygieneFiltered();
+  const meta = hygieneMeta || {};
+  const ts = new Date().toLocaleString();
+  const title = `Rule Review — ${meta.adom || ''} / ${meta.package || ''}`;
+
+  const tableRows = rows.map(f => `
+    <tr>
+      <td>${esc(String(f.seq || '—'))}</td>
+      <td>${esc(f.policy_name)}<br><small>${esc(f.policy_id)}</small></td>
+      <td>${esc(checkLabels[f.check] || f.check)}</td>
+      <td>${esc(f.detail)}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${esc(title)}</title>
+<style>
+  body{font-family:sans-serif;font-size:11px;color:#1a2133;margin:1.5cm}
+  h1{font-size:16px;margin-bottom:4px}
+  .meta{font-size:10px;color:#5a6478;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse}
+  th{background:#eef1f5;text-align:left;padding:5px 8px;font-size:10px;text-transform:uppercase;border-bottom:2px solid #d0d7e2}
+  td{padding:4px 8px;border-bottom:1px solid #d0d7e2;vertical-align:top}
+  small{color:#5a6478}
+  @media print{body{margin:1cm}}
+</style></head><body>
+<h1>${esc(title)}</h1>
+<div class="meta">Generated ${ts} &bull; ${rows.length} findings &bull; ${meta.policy_count || '?'} policies analysed</div>
+<table>
+  <thead><tr><th>#</th><th>Rule</th><th>Check</th><th>Detail</th></tr></thead>
+  <tbody>${tableRows}</tbody>
+</table>
+</body></html>`;
+
+  const win = window.open('', '_blank');
+  if (win) { win.document.write(html); win.document.close(); win.focus(); win.print(); }
+}
+
+/* ── Capture check labels from the rendered checkboxes ─────────────────────── */
+function captureCheckLabels() {
+  document.querySelectorAll('input[name=hygiene_check]').forEach(inp => {
+    const label = inp.closest('label');
+    if (label) checkLabels[inp.value] = label.textContent.trim();
+  });
+}
+
+/* ── AI Explain (single finding) ──────────────────────────────────────────── */
+async function runFindingExplain(btn) {
+  const idx = parseInt(btn.dataset.findingIdx, 10);
+  const finding = hygieneFiltered()[idx];
+  const out = btn.nextElementSibling;
+  if (!finding || !out) return;
+  btn.disabled = true;
+  btn.textContent = 'Explaining…';
+  out.textContent = '';
+  try {
+    const resp = await fetch('/api/hygiene/explain-finding', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(finding),
+    });
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const data = await resp.json();
+    out.textContent = data.narrative || ('AI explanation unavailable: ' + (data.narrative_error || data.error || 'unknown error'));
+  } catch (e) {
+    out.textContent = 'AI explanation request failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Explain';
+  }
+}
+
+/* ── ADOM loader for Hygiene Analysis selector ──────────────────────────────── */
+async function loadHygieneAdoms() {
+  try {
+    const resp = await fetch('/api/adoms');
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const adoms = await resp.json();
+    if (!Array.isArray(adoms)) return;
+    const sel = document.getElementById('hygieneAdom');
+    if (!sel) return;
+    adoms.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.name; opt.textContent = a.name;
+      sel.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
+/* ── Hygiene Analysis event listeners ─────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', function () {
+  loadHygieneAdoms();
+  captureCheckLabels();
+  checkHygieneAiExplainAvailability();
+
+  document.getElementById('hygieneAdom').addEventListener('change', function () {
+    if (this.value) loadHygienePackages(this.value);
+    else {
+      const sel = document.getElementById('hygienePackage');
+      sel.innerHTML = '<option value="">— select package —</option>';
+      sel.disabled = true;
+      document.getElementById('hygieneRunBtn').disabled = true;
+      document.getElementById('findUnusedBtn').disabled = true;
+    }
+  });
+
+  document.getElementById('hygienePackage').addEventListener('change', function () {
+    document.getElementById('hygieneRunBtn').disabled = !this.value;
+    document.getElementById('findUnusedBtn').disabled = !this.value;
+  });
+
+  document.getElementById('hygieneRunBtn').addEventListener('click', runHygieneAnalysis);
+
+  document.getElementById('hygieneFilter').addEventListener('input', function () {
+    hygieneFilterText  = this.value;
+    hygieneCurrentPage = 1;
+    renderHygieneTable();
+  });
+
+  document.getElementById('hygienePageSize').addEventListener('change', function () {
+    hygienePageSize    = parseInt(this.value, 10);
+    hygieneCurrentPage = 1;
+    renderHygieneTable();
+  });
+
+  document.getElementById('hygieneCheckFilter').addEventListener('change', function () {
+    filterCheck        = this.value;
+    hygieneCurrentPage = 1;
+    renderHygieneTable();
+  });
+
+  document.getElementById('hygienePagination').addEventListener('click', e => {
+    const btn = e.target.closest('[data-hpage]');
+    if (!btn || btn.disabled) return;
+    hygieneCurrentPage = parseInt(btn.dataset.hpage, 10);
+    renderHygieneTable();
+  });
+
+  document.getElementById('hygieneTbody').addEventListener('click', e => {
+    const expandBtn = e.target.closest('.shadow-expand-btn');
+    if (expandBtn) {
+      const targetId = expandBtn.dataset.target;
+      const detailRow = document.getElementById(targetId);
+      if (!detailRow) return;
+      const open = detailRow.style.display !== 'none';
+      detailRow.style.display = open ? 'none' : '';
+      expandBtn.setAttribute('aria-expanded', String(!open));
+      expandBtn.innerHTML = open ? '&#9660;' : '&#9650;';
+      return;
+    }
+
+    const explainBtn = e.target.closest('.hygiene-explain-btn');
+    if (explainBtn) runFindingExplain(explainBtn);
+  });
+
+  document.getElementById('hygieneCloseBtn').addEventListener('click', () => {
+    document.getElementById('hygieneResults').style.display = 'none';
+    allFindings = [];
+    document.getElementById('hygienePackage').value = '';
+    document.getElementById('hygienePackage').disabled = true;
+    document.getElementById('hygieneAdom').value = '';
+    document.getElementById('hygieneRunBtn').disabled = true;
+  });
+
+  document.getElementById('exportCsv').addEventListener('click', exportHygieneCsv);
+  document.getElementById('exportJson').addEventListener('click', exportHygieneJson);
+  document.getElementById('exportPdf').addEventListener('click', exportHygienePdf);
+
+  document.getElementById('findUnusedBtn')?.addEventListener('click', runFindUnused);
+  document.getElementById('unusedCsvBtn')?.addEventListener('click', exportUnusedCsv);
+  document.getElementById('unusedJsonBtn')?.addEventListener('click', exportUnusedJson);
+
+  document.getElementById('unusedObjectsContent')?.addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-uopage]');
+    if (!btn || btn.disabled) return;
+    unusedPage = parseInt(btn.dataset.uopage, 10);
+    renderUnusedTable();
+  });
+});

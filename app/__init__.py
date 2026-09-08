@@ -12,7 +12,7 @@ _BLUEPRINT_MODULES = [
     "app.routes.api_routes",
     "app.routes.admin_routes",
     "app.routes.hygiene_routes",
-    "app.routes.device_review_routes",
+    "app.routes.audit_review_routes",
     "app.routes.psirt_routes",
     "app.routes.rule_review_routes",
     "app.routes.zone_routes",
@@ -180,7 +180,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             with app.app_context():
                 init_dr_scheduler(app)
         except Exception as exc:
-            app.logger.warning("Device Review scheduler failed to start: %s", exc)
+            app.logger.warning("Audit Review scheduler failed to start: %s", exc)
 
     if not app.config.get("TESTING") and not app.config.get("_RH_SCHEDULER_STARTED"):
         app.config["_RH_SCHEDULER_STARTED"] = True

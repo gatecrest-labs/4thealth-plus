@@ -62,26 +62,26 @@ _VALID_EXTRACTION_JSON = json.dumps({
 
 def test_extract_status_reports_disabled_by_default(client):
     with patch("app.routes.psirt_routes.get_setting", return_value=False):
-        resp = client.get("/api/device-review/psirt/extract-status")
+        resp = client.get("/api/audit-review/psirt/extract-status")
     assert resp.status_code == 200
     assert resp.get_json()["available"] is False
 
 
 def test_extract_status_reports_enabled(client):
     with patch("app.routes.psirt_routes.get_setting", return_value=True):
-        resp = client.get("/api/device-review/psirt/extract-status")
+        resp = client.get("/api/audit-review/psirt/extract-status")
     assert resp.get_json()["available"] is True
 
 
 def test_extract_returns_503_when_disabled(client):
     with patch("app.routes.psirt_routes.get_setting", return_value=False):
-        resp = _post(client, "/api/device-review/psirt/extract", {"email_text": "some advisory"})
+        resp = _post(client, "/api/audit-review/psirt/extract", {"email_text": "some advisory"})
     assert resp.status_code == 503
 
 
 def test_extract_requires_email_text(client):
     with patch("app.routes.psirt_routes.get_setting", return_value=True):
-        resp = _post(client, "/api/device-review/psirt/extract", {"email_text": ""})
+        resp = _post(client, "/api/audit-review/psirt/extract", {"email_text": ""})
     assert resp.status_code == 400
 
 
@@ -89,7 +89,7 @@ def test_extract_happy_path(client):
     fake_provider = _FakeProvider(_VALID_EXTRACTION_JSON)
     with patch("app.routes.psirt_routes.get_setting", return_value=True), \
          patch("app.routes.psirt_routes.get_provider", return_value=fake_provider):
-        resp = _post(client, "/api/device-review/psirt/extract", {"email_text": "PSIRT advisory text"})
+        resp = _post(client, "/api/audit-review/psirt/extract", {"email_text": "PSIRT advisory text"})
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["advisory"]["advisory_id"] == "FG-IR-24-001"
@@ -99,14 +99,14 @@ def test_extract_malformed_llm_output_returns_422(client):
     fake_provider = _FakeProvider('{"advisory_id": ""}')  # missing required fields
     with patch("app.routes.psirt_routes.get_setting", return_value=True), \
          patch("app.routes.psirt_routes.get_provider", return_value=fake_provider):
-        resp = _post(client, "/api/device-review/psirt/extract", {"email_text": "garbled text"})
+        resp = _post(client, "/api/audit-review/psirt/extract", {"email_text": "garbled text"})
     assert resp.status_code == 422
     data = resp.get_json()
     assert data["field"] == "advisory_id"
 
 
 def test_assess_device_requires_adom_and_device(client):
-    resp = _post(client, "/api/device-review/psirt/assess/device", {"advisory": {}})
+    resp = _post(client, "/api/audit-review/psirt/assess/device", {"advisory": {}})
     assert resp.status_code == 400
 
 
@@ -125,7 +125,7 @@ def test_assess_device_happy_path(client):
         "enrichment_degraded": False,
     }
     with patch("app.routes.psirt_routes.make_client", return_value=cm):
-        resp = _post(client, "/api/device-review/psirt/assess/device",
+        resp = _post(client, "/api/audit-review/psirt/assess/device",
                       {"adom": "Corp", "device": "FW01", "advisory": advisory_payload})
     assert resp.status_code == 200
     data = resp.get_json()
@@ -135,11 +135,11 @@ def test_assess_device_happy_path(client):
 
 def test_assess_device_checks_adom_access(client):
     with patch("app.groups.user_can_access_adom", return_value=False), \
-         patch("app.groups.get_allowed_tabs", return_value={"device_review"}):
+         patch("app.groups.get_allowed_tabs", return_value={"audit_review"}):
         with client.session_transaction() as sess:
             sess["user"] = "viewer1"
             sess["role"] = "viewer"
-        resp = _post(client, "/api/device-review/psirt/assess/device",
+        resp = _post(client, "/api/audit-review/psirt/assess/device",
                       {"adom": "Restricted", "device": "FW01", "advisory": {}})
     assert resp.status_code == 403
 
@@ -166,7 +166,7 @@ def test_assess_bulk_star_unrestricted_user_reaches_engine_with_star_scope(clien
     # legitimately returns None here — no need to mock it separately.
     with patch("app.routes.psirt_routes.make_client", return_value=cm), \
          patch("app.routes.psirt_routes.psirt_assess", return_value=fake_result) as mock_assess:
-        resp = _post(client, "/api/device-review/psirt/assess",
+        resp = _post(client, "/api/audit-review/psirt/assess",
                       {"adom": "*", "advisory": _STAR_ADVISORY_PAYLOAD})
     assert resp.status_code == 200
     mock_assess.assert_called_once()
@@ -178,11 +178,11 @@ def test_assess_bulk_star_restricted_user_no_adoms_returns_clean_403(client):
     """Finding #2: a restricted user with zero accessible ADOMs must get a
     clean 403 JSON error, not an unhandled 500 from merged.to_dict() on None."""
     with patch("app.groups.get_allowed_adoms", return_value=[]), \
-         patch("app.groups.get_allowed_tabs", return_value={"device_review"}):
+         patch("app.groups.get_allowed_tabs", return_value={"audit_review"}):
         with client.session_transaction() as sess:
             sess["user"] = "viewer1"
             sess["role"] = "viewer"
-        resp = _post(client, "/api/device-review/psirt/assess",
+        resp = _post(client, "/api/audit-review/psirt/assess",
                       {"adom": "*", "advisory": _STAR_ADVISORY_PAYLOAD})
     assert resp.status_code == 403
     data = resp.get_json()
@@ -232,11 +232,11 @@ def test_assess_bulk_star_restricted_user_merges_two_adoms(client):
     with patch("app.routes.psirt_routes.make_client", return_value=cm), \
          patch("app.routes.psirt_routes._http_client", return_value=mock_http), \
          patch("app.groups.get_allowed_adoms", return_value=["Corp", "Branch"]), \
-         patch("app.groups.get_allowed_tabs", return_value={"device_review"}):
+         patch("app.groups.get_allowed_tabs", return_value={"audit_review"}):
         with client.session_transaction() as sess:
             sess["user"] = "viewer1"
             sess["role"] = "viewer"
-        resp = _post(client, "/api/device-review/psirt/assess",
+        resp = _post(client, "/api/audit-review/psirt/assess",
                       {"adom": "*", "advisory": advisory_payload})
 
     assert resp.status_code == 200
@@ -276,7 +276,7 @@ def test_report_returns_html(client):
         "out_of_scope_products": [], "priority": "high", "priority_rationale": "CVSS 8.1",
         "kev_hit": False, "degraded": False, "warnings": [],
     }
-    resp = _post(client, "/api/device-review/psirt/report", {"assessment": assessment_payload})
+    resp = _post(client, "/api/audit-review/psirt/report", {"assessment": assessment_payload})
     assert resp.status_code == 200
     assert b"FG-IR-24-001" in resp.data
     assert b"FW01" in resp.data

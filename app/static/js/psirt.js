@@ -1,4 +1,4 @@
-/* PSIRT Advisory Assessment — Device Review tab section */
+/* PSIRT Advisory Assessment — Audit Review tab section */
 
 let psirtExtracted = null;   // last extracted Advisory dict, before/after edits
 let psirtAssessment = null;  // last completed PsirtAssessment dict
@@ -22,7 +22,7 @@ async function loadPsirtAdoms() {
 /* ── Availability check ───────────────────────────────────────────────────── */
 async function checkPsirtAvailability() {
   try {
-    const resp = await fetch('/api/device-review/psirt/extract-status');
+    const resp = await fetch('/api/audit-review/psirt/extract-status');
     const data = await resp.json();
     const available = !!data.available;
     document.getElementById('psirtExtractBtn').disabled = !available;
@@ -66,11 +66,11 @@ async function runPsirtExtract() {
     if (usingFile) {
       const fd = new FormData();
       fd.append('file', fileInput.files[0]);
-      resp = await fetch('/api/device-review/psirt/extract', { method: 'POST', body: fd });
+      resp = await fetch('/api/audit-review/psirt/extract', { method: 'POST', body: fd });
     } else {
       const emailText = document.getElementById('psirtEmailText').value.trim();
       if (!emailText) { errEl.textContent = 'Paste the advisory text or choose a file.'; errEl.style.display = ''; return; }
-      resp = await fetch('/api/device-review/psirt/extract', {
+      resp = await fetch('/api/audit-review/psirt/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email_text: emailText }),
@@ -183,7 +183,7 @@ async function runPsirtAssessment() {
   showPsirtIndeterminateProgress('Scanning fleet — this may take a while…');
 
   try {
-    const resp = await fetch('/api/device-review/psirt/assess', {
+    const resp = await fetch('/api/audit-review/psirt/assess', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adom, advisory }),
@@ -282,7 +282,7 @@ function escHtml(s) {
 /* ── HTML report ───────────────────────────────────────────────────────────── */
 document.getElementById('psirtReportBtn').addEventListener('click', async () => {
   if (!psirtAssessment) return;
-  const resp = await fetch('/api/device-review/psirt/report', {
+  const resp = await fetch('/api/audit-review/psirt/report', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ assessment: psirtAssessment }),

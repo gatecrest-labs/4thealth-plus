@@ -1405,12 +1405,12 @@ function getCSRF() {
   return document.querySelector('meta[name="csrf-token"]')?.content || '';
 }
 
-/* ── Device Review: Scheduled Jobs ─────────────────────────────────────────── */
+/* ── Audit Review: Scheduled Jobs ──────────────────────────────────────────── */
 
 let _drJobs = [];
 
 async function loadDRJobs() {
-  const res = await fetch('/admin/api/device-review/jobs');
+  const res = await fetch('/admin/api/audit-review/jobs');
   _drJobs = res.ok ? await res.json() : [];
   renderDRJobsTable();
 }
@@ -1461,7 +1461,7 @@ async function loadDRJobAdoms(selectedAdom) {
 }
 
 function showDRJobForm(job) {
-  document.getElementById('drJobFormTitle').textContent = job ? 'Edit Device Review Job' : 'New Device Review Job';
+  document.getElementById('drJobFormTitle').textContent = job ? 'Edit Audit Review Job' : 'New Audit Review Job';
   document.getElementById('drJobFormId').value      = job ? job.id : '';
   document.getElementById('drJobFormName').value    = job ? (job.name||'') : '';
   document.getElementById('drJobFormAdom').value    = job ? job.adom : '';
@@ -1596,7 +1596,7 @@ async function saveDRJob() {
     enabled:      document.getElementById('drJobFormEnabled').checked,
     ai_summary_enabled: document.getElementById('drJobFormAiSummaryEnabled').checked,
   };
-  const url    = id ? `/admin/api/device-review/jobs/${id}` : '/admin/api/device-review/jobs';
+  const url    = id ? `/admin/api/audit-review/jobs/${id}` : '/admin/api/audit-review/jobs';
   const method = id ? 'PUT' : 'POST';
   const res    = await fetch(url, { method,
     headers: {'Content-Type':'application/json','X-CSRF-Token': getCSRF()},
@@ -1612,8 +1612,8 @@ async function saveDRJob() {
 }
 
 async function deleteDRJob(id) {
-  if (!confirm('Delete this Device Review job?')) return;
-  await fetch(`/admin/api/device-review/jobs/${id}`, { method: 'DELETE',
+  if (!confirm('Delete this Audit Review job?')) return;
+  await fetch(`/admin/api/audit-review/jobs/${id}`, { method: 'DELETE',
     headers: {'X-CSRF-Token': getCSRF()} });
   loadDRJobs();
 }
@@ -1621,7 +1621,7 @@ async function deleteDRJob(id) {
 async function runDRJobNow(id) {
   const btn = document.getElementById(`drRunBtn-${id}`);
   if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
-  const runRes = await fetch(`/admin/api/device-review/jobs/${id}/run`, { method: 'POST',
+  const runRes = await fetch(`/admin/api/audit-review/jobs/${id}/run`, { method: 'POST',
     headers: {'X-CSRF-Token': getCSRF()} });
   if (!runRes.ok) {
     if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
@@ -1629,7 +1629,7 @@ async function runDRJobNow(id) {
   }
   const poll = setInterval(async () => {
     try {
-      const res  = await fetch(`/admin/api/device-review/jobs/${id}/status`);
+      const res  = await fetch(`/admin/api/audit-review/jobs/${id}/status`);
       const data = await res.json();
       if (!data.running) {
         clearInterval(poll);

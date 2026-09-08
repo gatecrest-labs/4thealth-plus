@@ -33,7 +33,7 @@ def build_rollup(results: list[dict]) -> dict:
     """Aggregate a bulk_device_review_adom()-shaped result list into fleet counts.
 
     results: list of {device, ip, rows, error} as returned by
-    app.routes.device_review_routes.bulk_device_review_adom(). Devices with
+    app.routes.audit_review_routes.bulk_device_review_adom(). Devices with
     a non-None "error" contribute no rows and are excluded from
     devices_reviewed/devices_with_failures (they weren't actually reviewed).
     """

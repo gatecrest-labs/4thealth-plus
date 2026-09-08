@@ -1,29 +1,29 @@
-"""PSIRT Advisory Assessment — new section on the Device Review tab.
+"""PSIRT Advisory Assessment — new section on the Audit Review tab.
 
 API (JSON):
-  GET  /api/device-review/psirt/extract-status
+  GET  /api/audit-review/psirt/extract-status
        returns: { available: bool }  (reads ai_assist_enabled, same flag as
        every other AI-Assist feature in this repo)
 
-  POST /api/device-review/psirt/extract
+  POST /api/audit-review/psirt/extract
        body: { email_text: str }  (or multipart with a "file" field — .eml/.txt)
        returns: { advisory: {...Advisory.to_dict()...} }
        or 422 { field, error } if the LLM's extraction was missing/malformed
        a required field — never a silent guess.
 
-  POST /api/device-review/psirt/assess/device
+  POST /api/audit-review/psirt/assess/device
        body: { adom, device, advisory: {...} }
        Single-device evaluation — used by the frontend's per-device
-       progress loop (mirrors /api/device-review/run/device).
+       progress loop (mirrors /api/audit-review/run/device).
        returns: { finding: {...DeviceFinding.to_dict()...} }
 
-  POST /api/device-review/psirt/assess
+  POST /api/audit-review/psirt/assess
        body: { adom: "<name>" | "*", advisory: {...} }
        Bulk entry point (adom="*" resolves to every ADOM the requesting
        user can access via app.groups.get_allowed_adoms).
        returns: {...PsirtAssessment.to_dict()...}
 
-  POST /api/device-review/psirt/report
+  POST /api/audit-review/psirt/report
        body: { assessment: {...PsirtAssessment.to_dict() shape...} }
        Renders the already-computed assessment to HTML — never recomputes.
        returns: HTML document (Content-Type: text/html)
@@ -90,8 +90,8 @@ def _http_client():
 # ── extract-status ───────────────────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/psirt/extract-status")
-@tab_required("device_review")
+@bp.route("/api/audit-review/psirt/extract-status")
+@tab_required("audit_review")
 def psirt_extract_status():
     return jsonify({"available": get_setting("ai_assist_enabled", False)})
 
@@ -99,8 +99,8 @@ def psirt_extract_status():
 # ── extract ───────────────────────────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/psirt/extract", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/psirt/extract", methods=["POST"])
+@tab_required("audit_review")
 def psirt_extract():
     if not get_setting("ai_assist_enabled", False):
         return jsonify({"error": "AI Assist is not enabled"}), 503
@@ -141,8 +141,8 @@ def psirt_extract():
 # ── assess: single device (progress-loop entry point) ─────────────────────────
 
 
-@bp.route("/api/device-review/psirt/assess/device", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/psirt/assess/device", methods=["POST"])
+@tab_required("audit_review")
 def psirt_assess_device():
     # NOTE: not currently called by the frontend (psirt.js only calls the
     # bulk /assess endpoint below and drives its own per-device UI off the
@@ -192,8 +192,8 @@ def psirt_assess_device():
 # ── assess: bulk (adom="*" resolves to every accessible ADOM) ─────────────────
 
 
-@bp.route("/api/device-review/psirt/assess", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/psirt/assess", methods=["POST"])
+@tab_required("audit_review")
 def psirt_assess_bulk():
     data = request.get_json(silent=True) or {}
     adom = (data.get("adom") or "").strip()
@@ -332,8 +332,8 @@ def psirt_assess_bulk():
 # ── report ──────────────────────────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/psirt/report", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/psirt/report", methods=["POST"])
+@tab_required("audit_review")
 def psirt_report():
     data = request.get_json(silent=True) or {}
     assessment = data.get("assessment")
