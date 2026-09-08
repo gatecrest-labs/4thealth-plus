@@ -252,7 +252,7 @@
   <!-- SMTP Configuration -->
   <div class="admin-panel-header">
     <h3>SMTP Configuration</h3>
-    <p class="admin-panel-desc">Global email settings used by all scheduled jobs (Config-Delta, Device Review, and Rule Hygiene).</p>
+    <p class="admin-panel-desc">Global email settings used by all scheduled jobs (Config-Delta, Audit Review, and Rule Hygiene).</p>
   </div>
   <div style="max-width:520px">
     <div class="form-row">
@@ -373,16 +373,16 @@
     </table>
   </div>
 
-  <!-- Device Review Scheduled Jobs -->
+  <!-- Audit Review Scheduled Jobs -->
   <div class="admin-panel-header" style="margin-top:2rem">
-    <h3>Device Review Jobs</h3>
+    <h3>Audit Review Jobs</h3>
     <p class="admin-panel-desc">Each job runs CIS hardening checks against all devices in an ADOM and emails a report.</p>
   </div>
   <button class="btn-primary" onclick="showDRJobForm()" style="margin-bottom:12px">+ Add Job</button>
 
   <!-- Add/Edit inline form -->
   <div id="drJobForm" class="job-form-panel" style="display:none">
-    <h4 style="margin:0 0 12px" id="drJobFormTitle">New Device Review Job</h4>
+    <h4 style="margin:0 0 12px" id="drJobFormTitle">New Audit Review Job</h4>
     <input type="hidden" id="drJobFormId">
     <div class="form-row">
       <label>Name</label>
@@ -452,7 +452,7 @@
     </div>
   </div>
 
-  <!-- Device Review Jobs table -->
+  <!-- Audit Review Jobs table -->
   <div style="overflow-x:auto;margin-top:12px">
     <table class="admin-table" id="drJobsTable">
       <thead>
@@ -1080,7 +1080,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=9"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=10"></script>
 <script>
   const DR_CHECK_DEFS = {{ checks_meta | tojson }};
 </script>

@@ -32,6 +32,7 @@ services:
       - ./config_diff_jobs.json:/app/config_diff_jobs.json:rw
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
       - ./device_review_rollup.json:/app/device_review_rollup.json:rw
+      - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
       - ./hygiene_rollup.json:/app/hygiene_rollup.json:rw
       - ./summary_history.json:/app/summary_history.json:rw
       - ./certs:/app/certs:ro

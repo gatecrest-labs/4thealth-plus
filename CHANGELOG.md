@@ -4,6 +4,31 @@ All notable changes to 4THealth+ are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Renamed "Device Review" tab to "Audit Review"** and merged the Rule
+  Review tab's Hygiene Analysis section into it. Internal tab key
+  `device_review` → `audit_review`; URL `/device-review` → `/audit-review`.
+  Audit Review now has three sections: **Device Review** (CIS/interface
+  audit), **Hygiene Analysis** (policy package hygiene checks, moved from
+  Rule Review), and **PSIRT Advisory Assessment** (unchanged location).
+  Rule Review keeps Policy Rules, Object Lookup, Interface Lookup, and NAT
+  Lookup.
+- `/api/hygiene/adoms/<adom>/packages` (and `/packages/raw`) now accept
+  either the `rule_hygiene` or `audit_review` tab key, since the package
+  selector is shared by both pages; `/api/hygiene/run`,
+  `/api/hygiene/unused-objects`, `/api/hygiene/ai-explain-status`, and
+  `/api/hygiene/explain-finding` are now gated to `audit_review` only.
+- Admin → Scheduled: "Device Review Jobs" section renamed to "Audit Review
+  Jobs"; API path `/admin/api/device-review/jobs*` →
+  `/admin/api/audit-review/jobs*`. Scheduled email subjects and reports
+  updated from "Device Review" to "Audit Review". The underlying scheduler
+  module, job file (`device_review_jobs.json`), and check-engine module
+  (`app/device_review.py`) keep their filenames for backward compatibility.
+- `tab_required` decorator now accepts multiple permission keys
+  (`tab_required(*tab_keys)`), passing if the user has any of them.
+- **Migration:** groups with `device_review` in `allowed_tabs` must be
+  updated to `audit_review` (Admin → Groups & Permissions).
+
 ### Added
 - **"Exempt" comment whitelist (Rule Hygiene):** add the word "Exempt"
   anywhere in a rule's comment (case-insensitive) and every hygiene check

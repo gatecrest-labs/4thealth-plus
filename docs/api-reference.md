@@ -27,14 +27,17 @@ All endpoints require an authenticated session (HTTP 401 otherwise).
 | GET | `/api/hygiene/ai-explain-status` | Is AI Explain available (`ai_assist_enabled`)? |
 | POST | `/api/hygiene/explain-finding` | Explain one hygiene finding; body is the finding object itself; returns `{narrative, narrative_error}`, never a 500 |
 
-## Device Review
+## Audit Review
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/device-review/adoms/<adom>/devices` | List devices in an ADOM for the Device Review tab |
-| POST | `/api/device-review/run` | Run selected security checks against chosen devices |
-| GET | `/api/device-review/ai-summary-status` | Is AI Summary available (`ai_assist_enabled`)? |
-| POST | `/api/device-review/ai-summary` | Summarize an already-computed run; body: `{adom, results, checks}`; returns `{narrative, narrative_error}` |
+| GET | `/api/audit-review/adoms/<adom>/devices` | List devices in an ADOM for the Audit Review tab |
+| POST | `/api/audit-review/run` | Run selected CIS/interface-protocol checks against chosen devices |
+| POST | `/api/audit-review/run/device` | Run checks against a single device (drives the per-device progress loop) |
+| GET | `/api/audit-review/ai-summary-status` | Is AI Summary available (`ai_assist_enabled`)? |
+| POST | `/api/audit-review/ai-summary` | Summarize an already-computed run; body: `{adom, results, checks}`; returns `{narrative, narrative_error}` |
+
+The Hygiene Analysis section of this tab reuses the `/api/hygiene/*` endpoints listed above (re-gated to the `audit_review` tab key alongside `rule_hygiene` where applicable — see `app/routes/hygiene_routes.py`).
 
 ## Rule Validation
 

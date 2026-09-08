@@ -21,7 +21,7 @@ FortiManager has no single "total rule count" API. The job enumerates every ADOM
 
 ## Rule Review
 
-Two sections on a single page: a full **Policy Rules** viewer and a **Hygiene Analysis** panel. All analysis is read-only.
+Four independent sections on a single page: **Policy Rules**, **Object Lookup**, **Interface Lookup**, and **NAT Lookup**. All analysis is read-only. (The **Hygiene Analysis** panel that used to live here moved to the [Audit Review](#audit-review) tab.)
 
 ### Policy Rules
 
@@ -31,9 +31,61 @@ Two sections on a single page: a full **Policy Rules** viewer and a **Hygiene An
 4. Page through rules using 10 / 25 / 50 / 100 per-page pagination.
 5. Export as **CSV**, **JSON**, or **PDF** — each export includes a filter context header.
 
+---
+
+## Audit Review
+
+Three sections on a single page: **Device Review** (management-interface + CIS hardening checks), **Hygiene Analysis** (policy rule checks, moved here from Rule Review), and **PSIRT Advisory Assessment**. All analysis is read-only.
+
+### Device Review
+
+Runs configurable security checks against the management-plane interfaces of every device in a selected ADOM.
+
+#### Workflow
+
+1. Select an ADOM — the device grid loads with all devices selected by default.
+2. Filter or deselect devices using the searchable grid.
+3. Choose which checks to run (all enabled by default).
+4. Click **Run Analysis** — findings appear in a filterable, paginated table.
+5. Export results as **CSV**, **JSON**, or **PDF** (PDF includes ADOM, timestamp, and device count — suitable as compliance evidence).
+
+#### Result Values
+
+| Result | Meaning |
+|---|---|
+| `INSECURE` | Red — cleartext protocol (HTTP, Telnet) is enabled |
+| `FAIL` | Red — CIS check failed (server missing, sync disabled, etc.) |
+| `WARN` | Yellow — CIS host check — service is active but configured servers do not match expected (NTP, Syslog, FortiAnalyzer, DNS); effectively unreachable for Interface Protocols (unknown protocols default to informational) |
+| `CONFIG_MISSING` | Yellow — CIS check ran but no expected values supplied; device value shown for information |
+| `PASS` | Green — CIS check passed |
+| `INFO` | Blue — informational finding (e.g. PING enabled) |
+
+**Protocol Severity Override:** Protocol classifications (secure/insecure/informational) can be customised without code changes. Copy `protocol_severity.example.json` to `protocol_severity.json` at the project root and edit values. Valid values: `secure`, `insecure`, `info`, `null`. Changes take effect on app restart. Interfaces with only informational protocols (e.g. `ping`, `fgfm`) report **INFO**. The **WARN** result is effectively unused for Interface Protocols — unknown protocols default to `None` (informational), so WARN is unreachable in practice.
+
+**CIS Host Checks (NTP, Syslog, FortiAnalyzer, DNS):** These checks return **WARN** (amber) when the service is active but the configured servers do not exactly match the expected addresses. **FAIL** is reserved for when the service is completely disabled or unconfigured. IP addresses and FQDNs are both matched via DNS resolution.
+
+#### AI Summary
+
+*Admin-gated (`ai_assist_enabled` in Admin → AI Assist).* After running an analysis, a **Summarize with AI** button generates a short plain-English summary of the results — overall posture and which devices/checks need attention first — from the aggregated check counts plus the FAIL/INSECURE findings (capped, never the full per-interface result set). The same summary is generated automatically (best-effort) for scheduled Audit Review email/PDF reports when the flag is enabled.
+
+#### Adding a New Check
+
+The check registry in `app/device_review.py` is the single place to add checks:
+
+```python
+{
+    "key":          "my_check",
+    "name":         "Display Name",
+    "description":  "One-line summary",
+    "data_keys":    ["interfaces"],       # which device data blobs to fetch
+    "params_schema": [],                  # [] = binary, or list of input descriptors
+    "run":          _my_check_function,   # callable(device_name, device_data, params) -> list[Row]
+}
+```
+
 ### Hygiene Analysis
 
-1. Select an **ADOM** and **Policy Package** (independent from the viewer selectors above).
+1. Select an **ADOM** and **Policy Package** (independent from the Device Review selectors above).
 2. Choose the checks to run (all enabled by default).
 3. Click **Run Analysis**.
 4. Filter by text or check category, and export findings as **CSV**, **JSON**, or **PDF**.
@@ -64,53 +116,9 @@ This closes the loop with Hygiene Fix's over-permissive "Exempt (keep enabled)" 
 
 *Admin-gated (`ai_assist_enabled` in Admin → AI Assist).* Each finding row can be expanded to reveal an **Explain** button. One click sends that single finding (never the whole result set) to the configured LLM, which returns a plain-English explanation of why it matters plus a suggested FortiOS CLI remediation snippet — the LLM never runs or overrides a check, and the snippet is a suggestion for a human reviewer, not something the app applies automatically.
 
----
+### PSIRT Advisory Assessment
 
-## Device Review
-
-Runs configurable security checks against the management-plane interfaces of every device in a selected ADOM.
-
-### Workflow
-
-1. Select an ADOM — the device grid loads with all devices selected by default.
-2. Filter or deselect devices using the searchable grid.
-3. Choose which checks to run (all enabled by default).
-4. Click **Run Analysis** — findings appear in a filterable, paginated table.
-5. Export results as **CSV**, **JSON**, or **PDF** (PDF includes ADOM, timestamp, and device count — suitable as compliance evidence).
-
-### Result Values
-
-| Result | Meaning |
-|---|---|
-| `INSECURE` | Red — cleartext protocol (HTTP, Telnet) is enabled |
-| `FAIL` | Red — CIS check failed (server missing, sync disabled, etc.) |
-| `WARN` | Yellow — CIS host check — service is active but configured servers do not match expected (NTP, Syslog, FortiAnalyzer, DNS); effectively unreachable for Interface Protocols (unknown protocols default to informational) |
-| `CONFIG_MISSING` | Yellow — CIS check ran but no expected values supplied; device value shown for information |
-| `PASS` | Green — CIS check passed |
-| `INFO` | Blue — informational finding (e.g. PING enabled) |
-
-**Protocol Severity Override:** Protocol classifications (secure/insecure/informational) can be customised without code changes. Copy `protocol_severity.example.json` to `protocol_severity.json` at the project root and edit values. Valid values: `secure`, `insecure`, `info`, `null`. Changes take effect on app restart. Interfaces with only informational protocols (e.g. `ping`, `fgfm`) report **INFO**. The **WARN** result is effectively unused for Interface Protocols — unknown protocols default to `None` (informational), so WARN is unreachable in practice.
-
-**CIS Host Checks (NTP, Syslog, FortiAnalyzer, DNS):** These checks return **WARN** (amber) when the service is active but the configured servers do not exactly match the expected addresses. **FAIL** is reserved for when the service is completely disabled or unconfigured. IP addresses and FQDNs are both matched via DNS resolution.
-
-### AI Summary
-
-*Admin-gated (`ai_assist_enabled` in Admin → AI Assist).* After running an analysis, a **Summarize with AI** button generates a short plain-English summary of the results — overall posture and which devices/checks need attention first — from the aggregated check counts plus the FAIL/INSECURE findings (capped, never the full per-interface result set). The same summary is generated automatically (best-effort) for scheduled Device Review email/PDF reports when the flag is enabled.
-
-### Adding a New Check
-
-The check registry in `app/device_review.py` is the single place to add checks:
-
-```python
-{
-    "key":          "my_check",
-    "name":         "Display Name",
-    "description":  "One-line summary",
-    "data_keys":    ["interfaces"],       # which device data blobs to fetch
-    "params_schema": [],                  # [] = binary, or list of input descriptors
-    "run":          _my_check_function,   # callable(device_name, device_data, params) -> list[Row]
-}
-```
+Paste or upload (`.eml`/`.txt`) a Fortinet PSIRT advisory email. An LLM extracts structured fields — advisory ID, CVE IDs, affected version ranges, workaround text, severity, exploitation wording — into an editable review form; this is the only LLM touchpoint in the feature. Everything downstream is deterministic: the app scans the selected ADOM (or every accessible ADOM) for affected firmware and whether a documented workaround is already applied, then computes a priority from CVSS band, Fortinet's exploitation wording, and CISA KEV catalog membership. No persistence — each assessment is a one-off analysis, downloadable as a standalone HTML report. Admin-gated by the same `ai_assist_enabled` flag as the rest of AI Assist.
 
 ---
 
@@ -174,7 +182,7 @@ While an "Export All" bulk export is running, the browser will prompt for confir
 
 Admins can configure weekly scheduled Config-Delta exports in **Admin → Config-Diff**. Each job specifies an ADOM, day of week, time, export format (PDF/CSV/JSON), and an email recipient. Jobs run server-side via APScheduler and email the full diff report as an attachment with a summary in the email body. Run history (last 30 days by default) is visible per job.
 
-Device Review scheduled reports include a **Host Summary** table at the top of both the email body and the attached file, showing per-device counts for each result type (PASS, FAIL, INSECURE, WARN, CONFIG_MISSING, INFO, Total). The existing per-check aggregate summary remains in the email body below the host summary.
+Audit Review scheduled reports include a **Host Summary** table at the top of both the email body and the attached file, showing per-device counts for each result type (PASS, FAIL, INSECURE, WARN, CONFIG_MISSING, INFO, Total). The existing per-check aggregate summary remains in the email body below the host summary.
 
 ### AI Summary
 
@@ -458,7 +466,7 @@ Above the sub-tab bar, three **host resource graphs** (CPU/Memory/Disk) show the
 
 ### AI Assist Toggle
 
-A single `ai_assist_enabled` flag gates every AI feature in the app — Rule Validation's AI Assist, Device Review's AI Summary, Config-Delta's AI Summary, Rule Hygiene's AI Explain, and the Admin AI Trend Summary below. Toggle it in **Admin → AI Assist**, which also shows an AI usage/cost chart (calls, tokens, estimated cost) sourced from every LLM call the app has made.
+A single `ai_assist_enabled` flag gates every AI feature in the app — Rule Validation's AI Assist, Audit Review's AI Summary/AI Explain/PSIRT extraction, Config-Delta's AI Summary, and the Admin AI Trend Summary below. Toggle it in **Admin → AI Assist**, which also shows an AI usage/cost chart (calls, tokens, estimated cost) sourced from every LLM call the app has made.
 
 ### AI Trend Summary
 

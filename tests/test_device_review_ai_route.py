@@ -1,4 +1,4 @@
-"""Tests for POST /api/device-review/ai-summary."""
+"""Tests for POST /api/audit-review/ai-summary."""
 import json
 import time
 from unittest.mock import patch
@@ -36,7 +36,7 @@ def _post(client, url, payload):
 
 def test_ai_summary_disabled_returns_503(client):
     with patch("app.app_settings.get_setting", return_value=False):
-        resp = _post(client, "/api/device-review/ai-summary", {
+        resp = _post(client, "/api/audit-review/ai-summary", {
             "adom": "CorpADOM", "results": [{"device": "fw-01", "rows": [], "error": None}],
         })
     assert resp.status_code == 503
@@ -44,7 +44,7 @@ def test_ai_summary_disabled_returns_503(client):
 
 def test_ai_summary_missing_results_returns_400(client):
     with patch("app.app_settings.get_setting", return_value=True):
-        resp = _post(client, "/api/device-review/ai-summary", {"adom": "CorpADOM"})
+        resp = _post(client, "/api/audit-review/ai-summary", {"adom": "CorpADOM"})
     assert resp.status_code == 400
 
 
@@ -58,7 +58,7 @@ def test_ai_summary_success(client):
     ]
     with patch("app.app_settings.get_setting", return_value=True), \
          patch("app.device_review_ai.build_narrative", return_value="Summary text") as mock_build:
-        resp = _post(client, "/api/device-review/ai-summary", {
+        resp = _post(client, "/api/audit-review/ai-summary", {
             "adom": "CorpADOM", "results": fake_results, "checks": ["trusted_hosts"],
         })
     assert resp.status_code == 200
@@ -70,7 +70,7 @@ def test_ai_summary_success(client):
 
 def test_ai_summary_malformed_results_returns_400(client):
     with patch("app.app_settings.get_setting", return_value=True):
-        resp = _post(client, "/api/device-review/ai-summary", {
+        resp = _post(client, "/api/audit-review/ai-summary", {
             "adom": "CorpADOM", "results": ["not-a-dict"],
         })
     assert resp.status_code == 400
@@ -82,7 +82,7 @@ def test_ai_summary_narration_failure_returns_200_with_error(client):
     fake_results = [{"device": "fw-01", "rows": [], "error": None}]
     with patch("app.app_settings.get_setting", return_value=True), \
          patch("app.device_review_ai.build_narrative", side_effect=RuntimeError("API down")):
-        resp = _post(client, "/api/device-review/ai-summary", {
+        resp = _post(client, "/api/audit-review/ai-summary", {
             "adom": "CorpADOM", "results": fake_results,
         })
     assert resp.status_code == 200
