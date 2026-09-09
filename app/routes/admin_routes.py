@@ -32,6 +32,7 @@ App settings (JSON):
   PUT    /admin/api/settings         {"external_api_enabled": bool, "ai_assist_enabled": bool}
   GET    /admin/api/ai-usage         bucketed AI Assist call/cost history (?range= or ?start=&end=)
   GET    /admin/api/host-metrics     bucketed host CPU/mem/disk history (?range=1h|4h|12h|1d|7d|14d)
+  GET    /admin/api/login-metrics    bucketed login success/failure history (?range=1h|4h|12h|1d|7d|14d)
 
 External API tokens (JSON):
   GET    /admin/api/tokens           list tokens (hashes never returned)
@@ -359,6 +360,16 @@ def api_host_metrics():
     """Bucketed CPU/mem/disk history for the host running this app.
     ?range=1h|4h|12h|1d|7d|14d (default 1h)."""
     from app.host_metrics import get_metrics
+
+    return jsonify(get_metrics(request.args.get("range", "1h")))
+
+
+@bp.route("/api/login-metrics")
+@_admin_required
+def api_login_metrics():
+    """Bucketed login success/failure history.
+    ?range=1h|4h|12h|1d|7d|14d (default 1h)."""
+    from app.login_metrics import get_metrics
 
     return jsonify(get_metrics(request.args.get("range", "1h")))
 

@@ -1371,6 +1371,8 @@ def hygiene_run():
 
     addr_resolver = None
     svc_resolver = None
+    addr_groups: list = []
+    svc_groups: list = []
 
     try:
         with make_client() as client:
@@ -1409,9 +1411,13 @@ def hygiene_run():
                                 int(pid), p.get("_hitcount") or 0
                             )
 
-            # For the shadow and redundant checks, fetch address and service objects so the
-            # check engine can detect IP-containment shadowing and equivalence.
-            if "shadow" in valid_checks or "redundant" in valid_checks:
+            # For shadow, redundant, and broken_refs checks fetch address/service
+            # objects — shadow/redundant use resolvers for IP-containment analysis;
+            # broken_refs uses the raw group lists to detect empty groups.
+            _needs_objects = any(
+                k in valid_checks for k in ("shadow", "redundant", "broken_refs")
+            )
+            if _needs_objects:
                 try:
                     addr_objects = client.get_address_objects(adom)
                     addr_groups = client.get_address_groups(adom)
@@ -1426,6 +1432,8 @@ def hygiene_run():
                     # Object fetch failure is non-fatal — fall back to name-only matching.
                     addr_resolver = None
                     svc_resolver = None
+                    addr_groups = []
+                    svc_groups = []
 
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
@@ -1438,6 +1446,8 @@ def hygiene_run():
         pkg_settings=pkg_settings,
         addr_resolver=addr_resolver,
         svc_resolver=svc_resolver,
+        addr_groups=addr_groups,
+        svc_groups=svc_groups,
     )
 
     # Build a lookup so each finding can carry its rule's detail fields.
@@ -1575,7 +1585,13 @@ def _hygiene_for_pkg(
                 svc_resolver = None
 
             findings = run_checks(
-                policies, active_checks, pkg_settings, addr_resolver, svc_resolver
+                policies,
+                active_checks,
+                pkg_settings,
+                addr_resolver,
+                svc_resolver,
+                addr_groups=addr_groups,
+                svc_groups=svc_groups,
             )
 
             unused_objects = None

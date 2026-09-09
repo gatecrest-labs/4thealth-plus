@@ -92,7 +92,7 @@ app/
   config.py            # Reads .env into a Config object
   auth.py              # Session-based login; bcrypt password verify against users.json
   fmg_client.py        # FortiManager JSON-RPC client (context manager: auto login/logout)
-  hygiene.py           # Rule hygiene check engine (9 checks: unnamed, unlogged, shadow, disabled, expired, unhit, missing security profile, redundant, over-permissive)
+  hygiene.py           # Rule hygiene check engine (10 checks: unnamed, unlogged, shadow, disabled, expired, unhit, missing security profile, redundant, over-permissive, broken references)
   hygiene_ai.py        # AI Explain for a single Rule Hygiene finding — narrates one already-computed finding, never re-runs a check
   device_review.py     # Audit Review check engine — interface protocol checks; add new checks here
   rule_review.py       # Policy analysis + route-tracing engine; zone policy integration
@@ -208,7 +208,7 @@ features.
 Three-section layout with unified tab access (internal key: `audit_review`; the page merges what used to be the separate Device Review tab with the Rule Review tab's Hygiene Analysis section):
 
 1. **Device Review** (top) — runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
-2. **Hygiene Analysis** (middle) — select ADOM + package, run 9 checks, filter/export findings (CSV/JSON/PDF).
+2. **Hygiene Analysis** (middle) — select ADOM + package, run 10 checks, filter/export findings (CSV/JSON/PDF).
 3. **PSIRT Advisory Assessment** (bottom) — see below.
 
 **Device Review workflow:**
@@ -303,7 +303,7 @@ Assist (Admin → AI Assist) — there is no separate Audit Review toggle.
 4. Append an entry to `CHECKS` with the appropriate `data_keys` and empty `params_schema`.
 No template or frontend JS changes are needed for binary checks.
 
-**Hygiene Analysis section** — select ADOM + package, run 9 checks, filter/export findings (CSV/JSON/PDF). Uses the same `/api/hygiene/*` endpoints as the Rule Review tab's Policy Rules section (package listing is shared; `run` and `unused-objects` are gated to `audit_review` only, since this is the section's new home).
+**Hygiene Analysis section** — select ADOM + package, run 10 checks, filter/export findings (CSV/JSON/PDF). Uses the same `/api/hygiene/*` endpoints as the Rule Review tab's Policy Rules section (package listing is shared; `run` and `unused-objects` are gated to `audit_review` only, since this is the section's new home). The `broken_refs` check flags rules referencing the FortiOS `"none"` deleted-object sentinel or empty address/service groups — it re-fetches `addr_groups`/`svc_groups` (the same call `shadow`/`redundant` already make) only when selected.
 - **Find Unused Objects** button (next to Run Analysis) scans the selected package and lists address/address-group/service/service-group objects not referenced by any policy rule (BFS group-member expansion catches indirect references; FortiGuard/built-in objects like `all`/`ANY`/`g-*`/`ISDB-*` are excluded). A scope selector (All / Local only / Global only) controls whether the shared Global-ADOM object pool is included — services and service groups have no global pool, so `scope=global` always returns empty for those. Results are filterable/paginated (10/25/50/100) with CSV/JSON export. Backend: `GET /api/hygiene/unused-objects?adom=&pkg=&scope=`, logic in `app/hygiene.py::find_unused_objects()`.
 
 **AI Explain endpoints:**

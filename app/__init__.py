@@ -130,6 +130,12 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         init_host_metrics_scheduler(app)
 
+    if not app.config.get("TESTING") and not app.config.get("_LOGIN_METRICS_STARTED"):
+        app.config["_LOGIN_METRICS_STARTED"] = True
+        from app.login_metrics import init_scheduler as init_login_metrics_scheduler
+
+        init_login_metrics_scheduler(app)
+
     if not app.config.get("TESTING") and not app.config.get("_AI_USAGE_PRUNE_STARTED"):
         app.config["_AI_USAGE_PRUNE_STARTED"] = True
         from app.ai_usage import init_scheduler as init_ai_usage_scheduler
