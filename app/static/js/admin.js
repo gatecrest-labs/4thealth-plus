@@ -13,7 +13,10 @@
       if (btn.dataset.panel === 'map-regions' && !_mapRegionsLoaded) loadMapRegions();
       if (btn.dataset.panel === 'external-api' && !_extApiLoaded) loadExtApi();
       if (btn.dataset.panel === 'ai-assist' && !_aiAssistLoaded) loadAiAssist();
-      if (btn.dataset.panel === 'scheduled') { loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); }
+      if (btn.dataset.panel === 'scheduled') {
+        loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs();
+        _wireJobPageSizes();
+      }
       if (btn.dataset.panel === 'backup') { window.loadBackupConfig(); window.loadBackupJobs(); }
       if (btn.dataset.panel === 'zone-policy' && !_zonePolicyLoaded) loadZonePolicyEdit();
     });
@@ -1310,6 +1313,45 @@ const _DAY_CODES = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const _DAY_LABELS = {SUN:'Sun',MON:'Mon',TUE:'Tue',WED:'Wed',THU:'Thu',FRI:'Fri',SAT:'Sat'};
 
 let _cdiffJobs = [];
+let _cdiffPage = 0, _cdiffPageSize = 10;
+
+let _drPage = 0, _drPageSize = 10;
+let _rhJobs = [];
+let _rhPage = 0, _rhPageSize = 10;
+
+function renderPager(id, page, totalPages, onNav) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (totalPages <= 1) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  const prev = page - 1, next = page + 1, last = totalPages - 1;
+  el.innerHTML = `
+    <button class="pg-btn" data-p="0" ${page===0?'disabled':''}>&#171;</button>
+    <button class="pg-btn" data-p="${prev}" ${page===0?'disabled':''}>&#8249;</button>
+    <span style="font-size:.82rem;padding:0 .5rem;color:var(--text-muted)">Page ${page+1} of ${totalPages}</span>
+    <button class="pg-btn" data-p="${next}" ${page>=last?'disabled':''}>&#8250;</button>
+    <button class="pg-btn" data-p="${last}" ${page>=last?'disabled':''}>&#187;</button>
+  `;
+  el.querySelectorAll('.pg-btn:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => onNav(+btn.dataset.p));
+  });
+}
+
+function _wireJobPageSizes() {
+  const defs = [
+    { id: 'jobsPageSize',   get: () => _cdiffPageSize, set: v => { _cdiffPageSize = v; _cdiffPage = 0; renderJobsTable(); } },
+    { id: 'drJobsPageSize', get: () => _drPageSize,    set: v => { _drPageSize = v;    _drPage = 0;    renderDRJobsTable(); } },
+    { id: 'rhJobsPageSize', get: () => _rhPageSize,    set: v => { _rhPageSize = v;    _rhPage = 0;    renderRHJobsTable(); } },
+  ];
+  defs.forEach(({ id, get, set }) => {
+    const sel = document.getElementById(id);
+    if (sel && !sel._paged) {
+      sel._paged = true;
+      sel.value = String(get());
+      sel.addEventListener('change', () => set(+sel.value));
+    }
+  });
+}
 
 async function loadJobs() {
   const res = await fetch('/admin/api/config-diff/jobs');
@@ -1320,32 +1362,42 @@ async function loadJobs() {
 function renderJobsTable() {
   const tbody = document.getElementById('jobsTableBody');
   if (!tbody) return;
-  if (!_cdiffJobs.length) {
+  const total = _cdiffJobs.length;
+  const pageCount = Math.max(1, Math.ceil(total / _cdiffPageSize));
+  if (_cdiffPage >= pageCount) _cdiffPage = pageCount - 1;
+  const start = _cdiffPage * _cdiffPageSize;
+  const slice = total ? _cdiffJobs.slice(start, start + _cdiffPageSize) : [];
+  const countEl = document.getElementById('jobsCount');
+
+  if (!total) {
     tbody.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted);text-align:center">No scheduled jobs.</td></tr>';
-    return;
+    if (countEl) countEl.textContent = '';
+  } else {
+    tbody.innerHTML = slice.map(j => {
+      const last = j.runs && j.runs[0];
+      const ts   = last ? new Date(last.ran_at).toLocaleString() : '—';
+      const badge = !last ? '<span style="color:var(--text-muted)">Never</span>'
+        : last.status === 'ok'
+          ? '<span style="color:#166534;font-weight:600">OK</span>'
+          : `<span style="color:var(--danger);font-weight:600" title="${escH(last.error||'')}">ERROR</span>`;
+      return `<tr>
+        <td>${escH(j.adom)}</td>
+        <td>${(j.days_of_week||[]).map(d=>_DAY_LABELS[d]||d).join(', ')}</td>
+        <td>${escH(j.time)}</td>
+        <td>${escH(j.format === 'pdf' ? 'HTML' : j.format.toUpperCase())}</td>
+        <td>${escH(j.email)}</td>
+        <td style="font-size:11px">${ts}</td>
+        <td>${badge}</td>
+        <td>
+          <button class="btn-sm" onclick="editJob('${j.id}')">Edit</button>
+          <button class="btn-sm" style="color:var(--danger)" onclick="deleteJob('${j.id}')">Delete</button>
+          <button class="btn-sm" id="runBtn-${j.id}" onclick="runJobNow('${j.id}')">Run Now</button>
+        </td>
+      </tr>`;
+    }).join('');
+    if (countEl) countEl.textContent = `Showing ${start+1}–${Math.min(start+_cdiffPageSize, total)} of ${total}`;
   }
-  tbody.innerHTML = _cdiffJobs.map(j => {
-    const last = j.runs && j.runs[0];
-    const ts   = last ? new Date(last.ran_at).toLocaleString() : '—';
-    const badge = !last ? '<span style="color:var(--text-muted)">Never</span>'
-      : last.status === 'ok'
-        ? '<span style="color:#166534;font-weight:600">OK</span>'
-        : `<span style="color:var(--danger);font-weight:600" title="${escH(last.error||'')}">ERROR</span>`;
-    return `<tr>
-      <td>${escH(j.adom)}</td>
-      <td>${(j.days_of_week||[]).map(d=>_DAY_LABELS[d]||d).join(', ')}</td>
-      <td>${escH(j.time)}</td>
-      <td>${escH(j.format === 'pdf' ? 'HTML' : j.format.toUpperCase())}</td>
-      <td>${escH(j.email)}</td>
-      <td style="font-size:11px">${ts}</td>
-      <td>${badge}</td>
-      <td>
-        <button class="btn-sm" onclick="editJob('${j.id}')">Edit</button>
-        <button class="btn-sm" style="color:var(--danger)" onclick="deleteJob('${j.id}')">Delete</button>
-        <button class="btn-sm" id="runBtn-${j.id}" onclick="runJobNow('${j.id}')">Run Now</button>
-      </td>
-    </tr>`;
-  }).join('');
+  renderPager('jobsPager', _cdiffPage, pageCount, p => { _cdiffPage = p; renderJobsTable(); });
 }
 
 function escH(s) {
@@ -1462,7 +1514,7 @@ function getCSRF() {
   return document.querySelector('meta[name="csrf-token"]')?.content || '';
 }
 
-/* ── Audit Review: Scheduled Jobs ──────────────────────────────────────────── */
+/* ── Device Review: Scheduled Jobs ──────────────────────────────────────────── */
 
 let _drJobs = [];
 
@@ -1475,37 +1527,47 @@ async function loadDRJobs() {
 function renderDRJobsTable() {
   const tbody = document.getElementById('drJobsTableBody');
   if (!tbody) return;
-  if (!_drJobs.length) {
-    tbody.innerHTML = '<tr><td colspan="10" style="color:var(--text-muted);text-align:center">No scheduled jobs.</td></tr>';
-    return;
-  }
+  const total = _drJobs.length;
+  const pageCount = Math.max(1, Math.ceil(total / _drPageSize));
+  if (_drPage >= pageCount) _drPage = pageCount - 1;
+  const start = _drPage * _drPageSize;
+  const slice = total ? _drJobs.slice(start, start + _drPageSize) : [];
+  const countEl = document.getElementById('drJobsCount');
   const totalChecks = (DR_CHECK_DEFS || []).length;
-  tbody.innerHTML = _drJobs.map(j => {
-    const last  = j.runs && j.runs[0];
-    const ts    = last ? new Date(last.ran_at).toLocaleString() : '—';
-    const badge = !last
-      ? '<span style="color:var(--text-muted)">Never</span>'
-      : last.status === 'ok'
-        ? `<span style="color:#166534;font-weight:600" title="Findings: ${last.total_findings||0} | Fails: ${last.fail_count||0}">OK</span>`
-        : `<span style="color:var(--danger);font-weight:600" title="${escH(last.error||'')}">ERROR</span>`;
-    const checksCount = j.checks && j.checks.length ? `${j.checks.length} / ${totalChecks}` : `All (${totalChecks})`;
-    return `<tr>
-      <td>${escH(j.name||'')}</td>
-      <td>${escH(j.adom)}</td>
-      <td>${(j.days_of_week||[]).map(d=>_DAY_LABELS[d]||d).join(', ')}</td>
-      <td>${escH(j.time)}</td>
-      <td>${escH(checksCount)}</td>
-      <td>${escH(j.format === 'pdf' ? 'HTML' : (j.format||'').toUpperCase())}</td>
-      <td>${escH(j.email)}</td>
-      <td style="font-size:11px">${ts}</td>
-      <td>${badge}</td>
-      <td>
-        <button class="btn-sm" onclick="editDRJob('${j.id}')">Edit</button>
-        <button class="btn-sm" style="color:var(--danger)" onclick="deleteDRJob('${j.id}')">Delete</button>
-        <button class="btn-sm" id="drRunBtn-${j.id}" onclick="runDRJobNow('${j.id}')">Run Now</button>
-      </td>
-    </tr>`;
-  }).join('');
+
+  if (!total) {
+    tbody.innerHTML = '<tr><td colspan="10" style="color:var(--text-muted);text-align:center">No scheduled jobs.</td></tr>';
+    if (countEl) countEl.textContent = '';
+  } else {
+    tbody.innerHTML = slice.map(j => {
+      const last  = j.runs && j.runs[0];
+      const ts    = last ? new Date(last.ran_at).toLocaleString() : '—';
+      const badge = !last
+        ? '<span style="color:var(--text-muted)">Never</span>'
+        : last.status === 'ok'
+          ? `<span style="color:#166534;font-weight:600" title="Findings: ${last.total_findings||0} | Fails: ${last.fail_count||0}">OK</span>`
+          : `<span style="color:var(--danger);font-weight:600" title="${escH(last.error||'')}">ERROR</span>`;
+      const checksCount = j.checks && j.checks.length ? `${j.checks.length} / ${totalChecks}` : `All (${totalChecks})`;
+      return `<tr>
+        <td>${escH(j.name||'')}</td>
+        <td>${escH(j.adom)}</td>
+        <td>${(j.days_of_week||[]).map(d=>_DAY_LABELS[d]||d).join(', ')}</td>
+        <td>${escH(j.time)}</td>
+        <td>${escH(checksCount)}</td>
+        <td>${escH(j.format === 'pdf' ? 'HTML' : (j.format||'').toUpperCase())}</td>
+        <td>${escH(j.email)}</td>
+        <td style="font-size:11px">${ts}</td>
+        <td>${badge}</td>
+        <td>
+          <button class="btn-sm" onclick="editDRJob('${j.id}')">Edit</button>
+          <button class="btn-sm" style="color:var(--danger)" onclick="deleteDRJob('${j.id}')">Delete</button>
+          <button class="btn-sm" id="drRunBtn-${j.id}" onclick="runDRJobNow('${j.id}')">Run Now</button>
+        </td>
+      </tr>`;
+    }).join('');
+    if (countEl) countEl.textContent = `Showing ${start+1}–${Math.min(start+_drPageSize, total)} of ${total}`;
+  }
+  renderPager('drJobsPager', _drPage, pageCount, p => { _drPage = p; renderDRJobsTable(); });
 }
 
 async function loadDRJobAdoms(selectedAdom) {
@@ -1518,7 +1580,7 @@ async function loadDRJobAdoms(selectedAdom) {
 }
 
 function showDRJobForm(job) {
-  document.getElementById('drJobFormTitle').textContent = job ? 'Edit Audit Review Job' : 'New Audit Review Job';
+  document.getElementById('drJobFormTitle').textContent = job ? 'Edit Device Review Job' : 'New Device Review Job';
   document.getElementById('drJobFormId').value      = job ? job.id : '';
   document.getElementById('drJobFormName').value    = job ? (job.name||'') : '';
   document.getElementById('drJobFormAdom').value    = job ? job.adom : '';
@@ -1669,7 +1731,7 @@ async function saveDRJob() {
 }
 
 async function deleteDRJob(id) {
-  if (!confirm('Delete this Audit Review job?')) return;
+  if (!confirm('Delete this Device Review job?')) return;
   await fetch(`/admin/api/audit-review/jobs/${id}`, { method: 'DELETE',
     headers: {'X-CSRF-Token': getCSRF()} });
   loadDRJobs();
@@ -1710,40 +1772,55 @@ const _RH_CHECK_KEYS = [
 
 async function loadRHJobs() {
   const res = await fetch('/admin/api/rule-hygiene/jobs');
-  const jobs = await res.json();
+  _rhJobs = res.ok ? await res.json() : [];
+  renderRHJobsTable();
+}
+
+function renderRHJobsTable() {
   const tbody = document.getElementById('rhJobsTableBody');
-  if (!jobs.length) {
+  if (!tbody) return;
+  const total = _rhJobs.length;
+  const pageCount = Math.max(1, Math.ceil(total / _rhPageSize));
+  if (_rhPage >= pageCount) _rhPage = pageCount - 1;
+  const start = _rhPage * _rhPageSize;
+  const slice = total ? _rhJobs.slice(start, start + _rhPageSize) : [];
+  const countEl = document.getElementById('rhJobsCount');
+
+  if (!total) {
     tbody.innerHTML = '<tr><td colspan="11" style="color:var(--text-muted);text-align:center">No scheduled jobs.</td></tr>';
-    return;
+    if (countEl) countEl.textContent = '';
+  } else {
+    tbody.innerHTML = slice.map(j => {
+      const lastRun = j.runs && j.runs[0];
+      const lastRunStr = lastRun
+        ? `${lastRun.ran_at.slice(0,16).replace('T',' ')} — ${lastRun.status}`
+        : '—';
+      const activeChecks = (j.checks && j.checks.length) ? j.checks.length + ' checks' : 'All checks';
+      const days = (j.days_of_week || []).join(', ');
+      const enabledBadge = j.enabled
+        ? '<span class="badge badge-green">Enabled</span>'
+        : '<span class="badge badge-gray">Disabled</span>';
+      return `<tr>
+        <td>${escH(j.name)}</td>
+        <td>${escH(j.adom)}</td>
+        <td>${escH(days)}</td>
+        <td>${escH(j.time)}</td>
+        <td>${escH(activeChecks)}</td>
+        <td>${escH(j.format || 'html')}</td>
+        <td>${escH(j.batch_size || 20)}</td>
+        <td>${escH(j.email)}</td>
+        <td style="font-size:11px">${escH(lastRunStr)}</td>
+        <td>${enabledBadge}</td>
+        <td>
+          <button class="btn-sm" onclick="showRHJobForm('${j.id}')">Edit</button>
+          <button class="btn-sm" id="rhRunBtn-${j.id}" onclick="runRHJobNow('${j.id}')">Run Now</button>
+          <button class="btn-sm btn-danger" onclick="deleteRHJob('${j.id}')">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+    if (countEl) countEl.textContent = `Showing ${start+1}–${Math.min(start+_rhPageSize, total)} of ${total}`;
   }
-  tbody.innerHTML = jobs.map(j => {
-    const lastRun = j.runs && j.runs[0];
-    const lastRunStr = lastRun
-      ? `${lastRun.ran_at.slice(0,16).replace('T',' ')} — ${lastRun.status}`
-      : '—';
-    const activeChecks = (j.checks && j.checks.length) ? j.checks.length + ' checks' : 'All checks';
-    const days = (j.days_of_week || []).join(', ');
-    const enabledBadge = j.enabled
-      ? '<span class="badge badge-green">Enabled</span>'
-      : '<span class="badge badge-gray">Disabled</span>';
-    return `<tr>
-      <td>${escH(j.name)}</td>
-      <td>${escH(j.adom)}</td>
-      <td>${escH(days)}</td>
-      <td>${escH(j.time)}</td>
-      <td>${escH(activeChecks)}</td>
-      <td>${escH(j.format || 'html')}</td>
-      <td>${escH(j.batch_size || 20)}</td>
-      <td>${escH(j.email)}</td>
-      <td style="font-size:11px">${escH(lastRunStr)}</td>
-      <td>${enabledBadge}</td>
-      <td>
-        <button class="btn-sm" onclick="showRHJobForm('${j.id}')">Edit</button>
-        <button class="btn-sm" id="rhRunBtn-${j.id}" onclick="runRHJobNow('${j.id}')">Run Now</button>
-        <button class="btn-sm btn-danger" onclick="deleteRHJob('${j.id}')">Delete</button>
-      </td>
-    </tr>`;
-  }).join('');
+  renderPager('rhJobsPager', _rhPage, pageCount, p => { _rhPage = p; renderRHJobsTable(); });
 }
 
 function showRHJobForm(id) {

@@ -177,15 +177,13 @@
   </div>
 
   <!-- Token management -->
-  <div class="admin-panel-header" style="margin-top:1rem">
-    <div>
-      <h4 style="margin:0">Bearer Tokens</h4>
-      <p class="text-muted" style="font-size:.82rem;margin-top:.2rem">
-        Each token grants read-only access to the Zone Policy external endpoints.
-        A token's value is shown <strong>once</strong> at creation time — store it securely.
-      </p>
-    </div>
-    <button class="btn btn-primary" id="btnNewToken">+ New Token</button>
+  <div class="rr-section-label" style="margin-top:1.5rem">Bearer Tokens</div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.75rem">
+    <p class="text-muted" style="font-size:.82rem;margin:0">
+      Each token grants read-only access to the Zone Policy external endpoints.
+      A token's value is shown <strong>once</strong> at creation time — store it securely.
+    </p>
+    <button class="btn btn-primary" id="btnNewToken" style="margin-left:1rem;flex-shrink:0">+ New Token</button>
   </div>
 
   <div class="table-wrapper">
@@ -258,10 +256,8 @@
 <div class="admin-panel" id="panel-scheduled">
 
   <!-- SMTP Configuration -->
-  <div class="admin-panel-header">
-    <h3>SMTP Configuration</h3>
-    <p class="admin-panel-desc">Global email settings used by all scheduled jobs (Config-Delta, Audit Review, and Rule Hygiene).</p>
-  </div>
+  <div class="rr-section-label">SMTP Configuration</div>
+  <p class="admin-panel-desc" style="margin-bottom:1rem">Global email settings used by all scheduled jobs (Config-Delta, Device Review, and Rule Hygiene).</p>
   <div style="max-width:520px">
     <div class="form-row">
       <label>Host</label>
@@ -308,10 +304,8 @@
   </div>
 
   <!-- Scheduled Jobs -->
-  <div class="admin-panel-header" style="margin-top:2rem">
-    <h3>Configuration-Delta Jobs</h3>
-    <p class="admin-panel-desc">Each job fetches Config-Delta diffs for an entire ADOM and emails the results.</p>
-  </div>
+  <div class="rr-section-label" style="margin-top:2rem">Configuration-Delta Jobs</div>
+  <p class="admin-panel-desc" style="margin-bottom:1rem">Each job fetches Config-Delta diffs for an entire ADOM and emails the results.</p>
   <button class="btn-primary" onclick="showJobForm()" style="margin-bottom:12px">+ Add Job</button>
 
   <!-- Add/Edit inline form -->
@@ -367,6 +361,17 @@
   </div>
 
   <!-- Jobs table -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 4px">
+    <span id="jobsCount" style="font-size:.82rem;color:var(--text-muted)"></span>
+    <div style="display:flex;align-items:center;gap:.5rem;font-size:.82rem">
+      <span style="color:var(--text-muted)">Per page:</span>
+      <select id="jobsPageSize" style="padding:.2rem .4rem;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);font-size:.82rem">
+        <option value="10" selected>10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+      </select>
+    </div>
+  </div>
   <div style="overflow-x:auto">
     <table class="admin-table" id="jobsTable">
       <thead>
@@ -380,17 +385,16 @@
       </tbody>
     </table>
   </div>
+  <div class="pagination" id="jobsPager" style="display:none"></div>
 
-  <!-- Audit Review Scheduled Jobs -->
-  <div class="admin-panel-header" style="margin-top:2rem">
-    <h3>Audit Review Jobs</h3>
-    <p class="admin-panel-desc">Each job runs CIS hardening checks against all devices in an ADOM and emails a report.</p>
-  </div>
+  <!-- Device Review Scheduled Jobs -->
+  <div class="rr-section-label" style="margin-top:2rem">Device Review Jobs</div>
+  <p class="admin-panel-desc" style="margin-bottom:1rem">Each job runs CIS hardening checks against all devices in an ADOM and emails a report.</p>
   <button class="btn-primary" onclick="showDRJobForm()" style="margin-bottom:12px">+ Add Job</button>
 
   <!-- Add/Edit inline form -->
   <div id="drJobForm" class="job-form-panel" style="display:none">
-    <h4 style="margin:0 0 12px" id="drJobFormTitle">New Audit Review Job</h4>
+    <h4 style="margin:0 0 12px" id="drJobFormTitle">New Device Review Job</h4>
     <input type="hidden" id="drJobFormId">
     <div class="form-row">
       <label>Name</label>
@@ -460,8 +464,19 @@
     </div>
   </div>
 
-  <!-- Audit Review Jobs table -->
-  <div style="overflow-x:auto;margin-top:12px">
+  <!-- Device Review Jobs table -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 4px">
+    <span id="drJobsCount" style="font-size:.82rem;color:var(--text-muted)"></span>
+    <div style="display:flex;align-items:center;gap:.5rem;font-size:.82rem">
+      <span style="color:var(--text-muted)">Per page:</span>
+      <select id="drJobsPageSize" style="padding:.2rem .4rem;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);font-size:.82rem">
+        <option value="10" selected>10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+      </select>
+    </div>
+  </div>
+  <div style="overflow-x:auto;margin-top:4px">
     <table class="admin-table" id="drJobsTable">
       <thead>
         <tr>
@@ -474,12 +489,11 @@
       </tbody>
     </table>
   </div>
+  <div class="pagination" id="drJobsPager" style="display:none"></div>
 
   <!-- Rule Hygiene Scheduled Jobs -->
-  <div class="admin-panel-header" style="margin-top:2rem">
-    <h3>Rule Hygiene Jobs</h3>
-    <p class="admin-panel-desc">Each job runs rule hygiene checks against all policy packages in an ADOM and emails per-package reports as zip attachments.</p>
-  </div>
+  <div class="rr-section-label" style="margin-top:2rem">Rule Hygiene Jobs</div>
+  <p class="admin-panel-desc" style="margin-bottom:1rem">Each job runs rule hygiene checks against all policy packages in an ADOM and emails per-package reports as zip attachments.</p>
   <button class="btn-primary" onclick="showRHJobForm()" style="margin-bottom:12px">+ Add Job</button>
 
   <!-- Add/Edit inline form -->
@@ -592,7 +606,18 @@
   </div>
 
   <!-- Rule Hygiene Jobs table -->
-  <div style="overflow-x:auto;margin-top:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 4px">
+    <span id="rhJobsCount" style="font-size:.82rem;color:var(--text-muted)"></span>
+    <div style="display:flex;align-items:center;gap:.5rem;font-size:.82rem">
+      <span style="color:var(--text-muted)">Per page:</span>
+      <select id="rhJobsPageSize" style="padding:.2rem .4rem;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);font-size:.82rem">
+        <option value="10" selected>10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+      </select>
+    </div>
+  </div>
+  <div style="overflow-x:auto;margin-top:4px">
     <table class="admin-table" id="rhJobsTable">
       <thead>
         <tr>
@@ -605,6 +630,7 @@
       </tbody>
     </table>
   </div>
+  <div class="pagination" id="rhJobsPager" style="display:none"></div>
 
 </div>
 
@@ -616,9 +642,7 @@
   </div>
 
   <!-- Panel 1: Settings -->
-  <div class="admin-panel-header" style="margin-top:1.5rem">
-    <h3>Backup Settings</h3>
-  </div>
+  <div class="rr-section-label" style="margin-top:1.5rem">Backup Settings</div>
   <form id="backupSettingsForm">
     <div class="form-row">
       <label for="backupPassword">Backup Password</label>
@@ -645,9 +669,7 @@
   </form>
 
   <!-- Panel 2: Remote Transfer -->
-  <div class="admin-panel-header" style="margin-top:2rem">
-    <h3>Remote Transfer (FTP/SFTP/SCP)</h3>
-  </div>
+  <div class="rr-section-label" style="margin-top:2rem">Remote Transfer (FTP/SFTP/SCP)</div>
   <form id="backupFtpForm">
     <div class="form-row">
       <label>
@@ -694,10 +716,8 @@
   </form>
 
   <!-- Panel 3: One-Time Backup -->
-  <div class="admin-panel-header" style="margin-top:2rem">
-    <h3>One-Time Backup</h3>
-    <p class="admin-panel-desc">The backup is saved to the backup directory on the server and downloaded to your browser. Remote transfer is not triggered for manual backups.</p>
-  </div>
+  <div class="rr-section-label" style="margin-top:2rem">One-Time Backup</div>
+  <p class="admin-panel-desc" style="margin-bottom:1rem">The backup is saved to the backup directory on the server and downloaded to your browser. Remote transfer is not triggered for manual backups.</p>
   <div style="display:flex;align-items:center;gap:1rem">
     <button class="btn btn-primary" id="backupRunNowBtn">Create Backup Now</button>
     <span id="backupRunNowSpinner" style="display:none">Creating backup…</span>
@@ -705,9 +725,7 @@
   <div id="backupLastManual" style="margin-top:0.75rem;font-size:0.875rem;color:var(--text-muted);display:none"></div>
 
   <!-- Panel 4: Scheduled Backups -->
-  <div class="admin-panel-header" style="margin-top:2rem">
-    <h3>Scheduled Backups</h3>
-  </div>
+  <div class="rr-section-label" style="margin-top:2rem">Scheduled Backups</div>
   <button class="btn btn-sm" id="backupAddJobBtn" style="margin-bottom:0.75rem">+ Add Job</button>
 
   <div id="backupJobForm" class="admin-form-panel" style="display:none;margin-bottom:1rem">
@@ -1092,7 +1110,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=10"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=11"></script>
 <script>
   const DR_CHECK_DEFS = {{ checks_meta | tojson }};
 </script>
