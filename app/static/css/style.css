@@ -2788,11 +2788,8 @@ a:hover { text-decoration: underline; }
 }
 .hm-cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem;
-}
-@media (max-width: 900px) {
-  .hm-cards { grid-template-columns: 1fr; }
 }
 .hm-card {
   padding: .75rem;
@@ -2842,6 +2839,42 @@ a:hover { text-decoration: underline; }
   transition: opacity .15s ease;
 }
 .hm-svg:hover .hm-dot { opacity: 1; }
+.hm-area-success { fill: var(--success); opacity: .12; }
+.hm-line-success {
+  fill: none;
+  stroke: var(--success);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.hm-dot-success { fill: var(--success); opacity: 0; transition: opacity .15s ease; }
+.hm-svg:hover .hm-dot-success { opacity: 1; }
+.hm-area-fail { fill: var(--danger); opacity: .12; }
+.hm-line-fail {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.hm-dot-fail { fill: var(--danger); opacity: 0; transition: opacity .15s ease; }
+.hm-svg:hover .hm-dot-fail { opacity: 1; }
+.hm-legend {
+  display: flex;
+  gap: .75rem;
+  font-size: .7rem;
+  color: var(--text-muted);
+  margin-bottom: .3rem;
+}
+.hm-legend-item { display: flex; align-items: center; gap: .3rem; }
+.hm-legend-swatch {
+  width: .55rem;
+  height: .55rem;
+  border-radius: 2px;
+  display: inline-block;
+}
 .hm-axis {
   display: flex;
   gap: 2px;

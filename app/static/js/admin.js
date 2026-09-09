@@ -915,17 +915,74 @@
     el.innerHTML = `<div class="hm-svg-wrap">${svg}</div><div class="hm-axis">${axis}</div>`;
   }
 
+  function renderHmDualChart(el, successSeries, failSeries, showDate) {
+    if (!successSeries.length) {
+      el.innerHTML = '<div class="text-muted" style="padding:1rem 0">No data yet.</div>';
+      return;
+    }
+    const n = successSeries.length;
+    const rawMax = Math.max(
+      1,
+      ...successSeries.map(p => p.v || 0),
+      ...failSeries.map(p => p.v || 0)
+    );
+    const xAt = i => n === 1 ? HM_VB_W / 2 : (i / (n - 1)) * HM_VB_W;
+    const yAt = v => HM_VB_H - (v / rawMax) * HM_VB_H;
+
+    function seriesSvg(series, cssSuffix) {
+      const vals = series.map(p => p.v == null ? null : Math.max(0, p.v));
+      const pts = vals.map((v, i) => v == null ? null : `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`);
+      const linePts = pts.filter(p => p !== null).join(' ');
+      const areaPts = linePts ? `0,${HM_VB_H} ${linePts} ${HM_VB_W},${HM_VB_H}` : '';
+      const dots = vals.map((v, i) => {
+        if (v == null) return '';
+        const title = `${hmAxisLabel(series[i].ts, true)}: ${v}`;
+        return `<circle class="hm-dot-${cssSuffix}" cx="${xAt(i).toFixed(2)}" cy="${yAt(v).toFixed(2)}" r="1.6">
+          <title>${esc(title)}</title>
+        </circle>`;
+      }).join('');
+      return `${areaPts ? `<polygon class="hm-area-${cssSuffix}" points="${areaPts}"></polygon>` : ''}
+        ${linePts ? `<polyline class="hm-line-${cssSuffix}" points="${linePts}"></polyline>` : ''}
+        ${dots}`;
+    }
+
+    const svg = `<svg class="hm-svg" viewBox="0 0 ${HM_VB_W} ${HM_VB_H}" preserveAspectRatio="none">
+      ${seriesSvg(successSeries, 'success')}
+      ${seriesSvg(failSeries, 'fail')}
+    </svg>`;
+
+    const tickIdxs = [...new Set([0, 0.25, 0.5, 0.75, 1].map(f =>
+      Math.min(n - 1, Math.round(f * (n - 1)))
+    ))];
+    const axis = successSeries.map((p, i) =>
+      `<div class="hm-tick">${tickIdxs.includes(i) ? esc(hmAxisLabel(p.ts, showDate)) : ''}</div>`
+    ).join('');
+
+    el.innerHTML = `<div class="hm-svg-wrap">${svg}</div><div class="hm-axis">${axis}</div>`;
+  }
+
   async function loadHostMetrics(range) {
     document.querySelectorAll('.hm-range-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.range === range));
 
-    const res = await fetch('/admin/api/host-metrics?range=' + encodeURIComponent(range));
-    if (!res.ok) return;
-    const data = await res.json();
     const showDate = range === '7d' || range === '14d';
-    HM_CHARTS.forEach(({ key, el }) => {
-      renderHmChart(document.getElementById(el), data[key] || [], showDate);
-    });
+
+    const res = await fetch('/admin/api/host-metrics?range=' + encodeURIComponent(range));
+    if (res.ok) {
+      const data = await res.json();
+      HM_CHARTS.forEach(({ key, el }) => {
+        renderHmChart(document.getElementById(el), data[key] || [], showDate);
+      });
+    }
+
+    const loginEl = document.getElementById('hmLoginChart');
+    if (loginEl) {
+      const loginRes = await fetch('/admin/api/login-metrics?range=' + encodeURIComponent(range));
+      if (loginRes.ok) {
+        const loginData = await loginRes.json();
+        renderHmDualChart(loginEl, loginData.success || [], loginData.failed || [], showDate);
+      }
+    }
   }
 
   document.querySelectorAll('.hm-range-btn').forEach(btn => {
