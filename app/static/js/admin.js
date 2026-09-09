@@ -1705,7 +1705,7 @@ async function runDRJobNow(id) {
 const _RH_CHECK_KEYS = [
   'unnamed','unlogged','shadow','disabled',
   'expired','unhit','missing_security_profile','redundant',
-  'over_permissive'
+  'over_permissive','broken_refs'
 ];
 
 async function loadRHJobs() {

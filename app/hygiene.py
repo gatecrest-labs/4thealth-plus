@@ -38,6 +38,7 @@ CHECKS: dict[str, str] = {
     "missing_security_profile": "Missing Security Profiles (accept rules without UTM)",
     "redundant": "Redundant Rules (duplicate scope of an earlier rule)",
     "over_permissive": "Over-Permissive Rules (accept rules with 2+ unrestricted dimensions)",
+    "broken_refs": "Broken References (deleted objects or empty groups in rules)",
 }
 
 
@@ -678,6 +679,79 @@ def check_over_permissive(policies: list[dict]) -> list[dict]:
     return findings
 
 
+def check_broken_refs(
+    policies: list[dict],
+    addr_groups: list[dict] | None = None,
+    svc_groups: list[dict] | None = None,
+) -> list[dict]:
+    """Flag rules that reference deleted objects or empty groups.
+
+    Two cases:
+    - srcaddr / dstaddr / service contains the literal name "none" — FortiOS
+      replaces deleted object references with this sentinel value.
+    - srcaddr / dstaddr references an address group with no members, or
+      service references a service group with no members.
+    """
+
+    def _empty_group_names(groups: list[dict] | None) -> frozenset[str]:
+        if not groups:
+            return frozenset()
+        empty = set()
+        for g in groups:
+            if not isinstance(g, dict):
+                continue
+            name = g.get("name", "")
+            if not name:
+                continue
+            members = g.get("member") or []
+            if not members:
+                empty.add(name)
+        return frozenset(empty)
+
+    empty_addr_groups = _empty_group_names(addr_groups)
+    empty_svc_groups = _empty_group_names(svc_groups)
+
+    findings = []
+    for idx, p in enumerate(policies):
+        if _is_policy_block(p):
+            continue
+
+        issues: list[str] = []
+
+        for field_label, field_keys in (
+            ("source", ("srcaddr", "src_addr")),
+            ("destination", ("dstaddr", "dst_addr")),
+        ):
+            raw = None
+            for k in field_keys:
+                raw = p.get(k)
+                if raw is not None:
+                    break
+            for item in _addr_list(raw or []):
+                if item.lower() == "none":
+                    issues.append(f'{field_label}: deleted object placeholder "none"')
+                elif item in empty_addr_groups:
+                    issues.append(f'{field_label}: empty group "{item}"')
+
+        for item in _addr_list(p.get("service") or p.get("services") or []):
+            if item.lower() == "none":
+                issues.append('service: deleted object placeholder "none"')
+            elif item in empty_svc_groups:
+                issues.append(f'service: empty group "{item}"')
+
+        if issues:
+            findings.append(
+                {
+                    "policy_id": str(p.get("policyid", idx + 1)),
+                    "policy_name": _name(p),
+                    "seq": _seq(p, idx),
+                    "check": "broken_refs",
+                    "detail": "; ".join(issues),
+                }
+            )
+    return findings
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 _CHECK_FNS = {
@@ -690,6 +764,7 @@ _CHECK_FNS = {
     "missing_security_profile": check_security_profile_gap,
     "redundant": check_redundant_rules,
     "over_permissive": check_over_permissive,
+    "broken_refs": check_broken_refs,
 }
 
 
@@ -699,6 +774,8 @@ def run_checks(
     pkg_settings: dict | None = None,
     addr_resolver: dict[str, frozenset | None] | None = None,
     svc_resolver: dict[str, frozenset | None] | None = None,
+    addr_groups: list[dict] | None = None,
+    svc_groups: list[dict] | None = None,
 ) -> list[dict]:
     """Run the requested checks against the policy list.  Returns combined findings.
 
@@ -722,6 +799,12 @@ def run_checks(
             results.extend(
                 check_redundant_rules(
                     policies, addr_resolver=addr_resolver, svc_resolver=svc_resolver
+                )
+            )
+        elif key == "broken_refs":
+            results.extend(
+                check_broken_refs(
+                    policies, addr_groups=addr_groups, svc_groups=svc_groups
                 )
             )
         else:
