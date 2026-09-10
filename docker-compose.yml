@@ -1,4 +1,12 @@
 services:
+  test-smtp:
+    image: mailhog/mailhog
+    container_name: test-smtp
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   app:
     build: .
     image: 4thealth-plus:latest
