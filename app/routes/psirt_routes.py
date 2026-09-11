@@ -1,32 +1,43 @@
-"""PSIRT Advisory Assessment — new section on the Device Review tab.
+"""PSIRT Advisory Assessment — new section on the Audit Review tab.
 
 API (JSON):
-  GET  /api/device-review/psirt/extract-status
+  GET  /api/audit-review/psirt/extract-status
        returns: { available: bool }  (reads ai_assist_enabled, same flag as
        every other AI-Assist feature in this repo)
 
-  POST /api/device-review/psirt/extract
+  POST /api/audit-review/psirt/extract
        body: { email_text: str }  (or multipart with a "file" field — .eml/.txt)
        returns: { advisory: {...Advisory.to_dict()...} }
        or 422 { field, error } if the LLM's extraction was missing/malformed
        a required field — never a silent guess.
 
-  POST /api/device-review/psirt/assess/device
+  POST /api/audit-review/psirt/assess/device
        body: { adom, device, advisory: {...} }
        Single-device evaluation — used by the frontend's per-device
-       progress loop (mirrors /api/device-review/run/device).
+       progress loop (mirrors /api/audit-review/run/device).
        returns: { finding: {...DeviceFinding.to_dict()...} }
 
-  POST /api/device-review/psirt/assess
+  POST /api/audit-review/psirt/assess
        body: { adom: "<name>" | "*", advisory: {...} }
        Bulk entry point (adom="*" resolves to every ADOM the requesting
        user can access via app.groups.get_allowed_adoms).
        returns: {...PsirtAssessment.to_dict()...}
 
-  POST /api/device-review/psirt/report
+  POST /api/audit-review/psirt/report
        body: { assessment: {...PsirtAssessment.to_dict() shape...} }
        Renders the already-computed assessment to HTML — never recomputes.
        returns: HTML document (Content-Type: text/html)
+
+  GET  /api/audit-review/psirt/advisories?open_only=true
+       Persisted advisories (see app.psirt_store), each with its latest
+       assessment summary merged in — feeds the "Open PSIRT Advisories"
+       panel and its Close button.
+       returns: { advisories: [...] }
+
+  POST /api/audit-review/psirt/advisories/<advisory_id>/close
+       Sets closed_at so this advisory stops counting in the executive
+       summary's fleet exposure rollup. Does not re-run or delete anything.
+       returns: { closed: true } or 404 if the advisory was never saved
 """
 
 from __future__ import annotations
@@ -36,6 +47,7 @@ from email import policy as email_policy
 
 from flask import Blueprint, jsonify, request, session
 
+from app import psirt_store
 from app.app_settings import get_setting
 from app.config import Config
 from app.decorators import check_adom_access, tab_required
@@ -90,8 +102,8 @@ def _http_client():
 # ── extract-status ───────────────────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/psirt/extract-status")
-@tab_required("device_review")
+@bp.route("/api/audit-review/psirt/extract-status")
+@tab_required("audit_review")
 def psirt_extract_status():
     return jsonify({"available": get_setting("ai_assist_enabled", False)})
 
@@ -99,8 +111,8 @@ def psirt_extract_status():
 # ── extract ───────────────────────────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/psirt/extract", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/psirt/extract", methods=["POST"])
+@tab_required("audit_review")
 def psirt_extract():
     if not get_setting("ai_assist_enabled", False):
         return jsonify({"error": "AI Assist is not enabled"}), 503
@@ -141,8 +153,8 @@ def psirt_extract():
 # ── assess: single device (progress-loop entry point) ─────────────────────────
 
 
-@bp.route("/api/device-review/psirt/assess/device", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/psirt/assess/device", methods=["POST"])
+@tab_required("audit_review")
 def psirt_assess_device():
     # NOTE: not currently called by the frontend (psirt.js only calls the
     # bulk /assess endpoint below and drives its own per-device UI off the
@@ -192,8 +204,8 @@ def psirt_assess_device():
 # ── assess: bulk (adom="*" resolves to every accessible ADOM) ─────────────────
 
 
-@bp.route("/api/device-review/psirt/assess", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/psirt/assess", methods=["POST"])
+@tab_required("audit_review")
 def psirt_assess_bulk():
     data = request.get_json(silent=True) or {}
     adom = (data.get("adom") or "").strip()
@@ -326,14 +338,21 @@ def psirt_assess_bulk():
     except Exception as exc:
         return internal_api_error("psirt", exc)
 
-    return jsonify(result.to_dict())
+    result_dict = result.to_dict()
+    try:
+        psirt_store.save_assessment_result(result_dict)
+    except Exception:
+        # Persistence is best-effort — a storage hiccup must never cost the
+        # user the assessment they just waited on.
+        pass
+    return jsonify(result_dict)
 
 
 # ── report ──────────────────────────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/psirt/report", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/psirt/report", methods=["POST"])
+@tab_required("audit_review")
 def psirt_report():
     data = request.get_json(silent=True) or {}
     assessment = data.get("assessment")
@@ -344,3 +363,33 @@ def psirt_report():
     except Exception as exc:
         return internal_api_error("psirt", exc)
     return html, 200, {"Content-Type": "text/html"}
+
+
+# ── persisted advisories: list + close ──────────────────────────────────────
+
+
+@bp.route("/api/audit-review/psirt/advisories")
+@tab_required("audit_review")
+def psirt_list_advisories():
+    open_only = (request.args.get("open_only", "") or "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    try:
+        advisories = psirt_store.list_advisories(open_only=open_only)
+    except Exception as exc:
+        return internal_api_error("psirt", exc)
+    return jsonify({"advisories": advisories})
+
+
+@bp.route("/api/audit-review/psirt/advisories/<advisory_id>/close", methods=["POST"])
+@tab_required("audit_review")
+def psirt_close_advisory(advisory_id: str):
+    try:
+        closed = psirt_store.close_advisory(advisory_id)
+    except Exception as exc:
+        return internal_api_error("psirt", exc)
+    if not closed:
+        return jsonify({"error": f"No saved advisory {advisory_id!r}"}), 404
+    return jsonify({"closed": True})

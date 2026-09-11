@@ -92,9 +92,9 @@ app/
   config.py            # Reads .env into a Config object
   auth.py              # Session-based login; bcrypt password verify against users.json
   fmg_client.py        # FortiManager JSON-RPC client (context manager: auto login/logout)
-  hygiene.py           # Rule hygiene check engine (9 checks: unnamed, unlogged, shadow, disabled, expired, unhit, missing security profile, redundant, over-permissive)
+  hygiene.py           # Rule hygiene check engine (10 checks: unnamed, unlogged, shadow, disabled, expired, unhit, missing security profile, redundant, over-permissive, broken references)
   hygiene_ai.py        # AI Explain for a single Rule Hygiene finding — narrates one already-computed finding, never re-runs a check
-  device_review.py     # Device Review check engine — interface protocol checks; add new checks here
+  device_review.py     # Audit Review check engine — interface protocol checks; add new checks here
   rule_review.py       # Policy analysis + route-tracing engine; zone policy integration
   zone_db.py           # Zone policy DB engine — loads policy_db.json, runs queries, validates, handles CRUD
   summary_job.py       # Background job: managed firewall + rule counts; nightly APScheduler
@@ -112,7 +112,7 @@ app/
     hygiene_routes.py         # /hygiene page + /api/hygiene/* endpoints
     rule_review_routes.py     # /rule-review page + /api/rule-review/* endpoints
     zone_routes.py            # /zone-policy page + /api/zone/* endpoints
-    device_review_routes.py   # /device-review page + /api/device-review/* endpoints
+    audit_review_routes.py    # /audit-review page + /api/audit-review/* endpoints
     admin_routes.py           # /admin page + /admin/api/* group/user/log/ADOM/settings/token endpoints
     pending_changes_routes.py # /pending-changes page + /api/pending-changes/* endpoints
     external_api_routes.py    # /external/api/* bearer-token endpoints for FW-Analyst integration
@@ -172,9 +172,8 @@ Sessions expire after 1 hour. `COOKIE_SECURE` is automatically set when SSL is a
 
 `GET /hygiene` → `hygiene.html` + `hygiene.js`
 
-Two-section layout (tab displays as "Rule Review" in the nav; internal key remains `rule_hygiene`):
-1. **Policy Rules** (top) — select ADOM + package, rule table loads automatically. Features:
-   - Independent ADOM/package selectors from the Hygiene Analysis section below
+Four sections, each with its own ADOM selector, working independently (tab displays as "Rule Review" in the nav; internal key remains `rule_hygiene`):
+1. **Policy Rules** — select ADOM + package, rule table loads automatically. Features:
    - Full-text regex search across name, ID, comment, source, destination, service, interfaces
    - Field-scoped filter dropdown (search within a single column)
    - Address groups and service groups expand inline (click the triangle) to show member objects; group member lists over 10 entries paginate (10/25/50/100 per page)
@@ -182,10 +181,13 @@ Two-section layout (tab displays as "Rule Review" in the nav; internal key remai
    - Interface badges (source = blue, destination = green)
    - Page size 10/25/50/100 with `<< < … > >>` pagination
    - Export (CSV/JSON/PDF) — each export includes a filter header block at the top (package, ADOM, timestamp, search terms, total/filtered counts)
-2. **Hygiene Analysis** (below) — select ADOM + package, run 9 checks, filter/export findings (CSV/JSON/PDF).
-   - **Find Unused Objects** button (next to Run Analysis) scans the selected package and lists address/address-group/service/service-group objects not referenced by any policy rule (BFS group-member expansion catches indirect references; FortiGuard/built-in objects like `all`/`ANY`/`g-*`/`ISDB-*` are excluded). A scope selector (All / Local only / Global only) controls whether the shared Global-ADOM object pool is included — services and service groups have no global pool, so `scope=global` always returns empty for those. Results are filterable/paginated (10/25/50/100) with CSV/JSON export. Backend: `GET /api/hygiene/unused-objects?adom=&pkg=&scope=`, logic in `app/hygiene.py::find_unused_objects()`.
+2. **Object Lookup** — search address/service objects and groups by name; "Where Used" traces direct and group-indirect policy references.
+3. **Interface Lookup** — find which firewall interface(s) in an ADOM are assigned a given IP.
+4. **NAT Lookup** — search VIP and IP Pool objects by IP.
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
+
+The **Hygiene Analysis** section that used to live at the bottom of this page (rule checks, Find Unused Objects, AI Explain) now lives on the **Audit Review** tab — see below. The `/api/hygiene/*` endpoints it uses are unchanged; only the tab gating and UI location moved.
 
 **Exempt whitelist:** any rule whose comment field contains "exempt"
 (case-insensitive substring, `app/hygiene.py::_is_exempt()`) is filtered out
@@ -199,22 +201,17 @@ below) writes a `[HygieneFix EXEMPT YYYY-MM-DD]` comment tag, which this
 same substring match then recognizes — closing the loop between the two
 features.
 
-**AI Explain endpoints:**
-- `GET  /api/hygiene/ai-explain-status` — reports whether AI Explain is available (reads the `ai_assist_enabled` app-settings flag)
-- `POST /api/hygiene/explain-finding` — body is a single finding object; narrates it via `app/hygiene_ai.py`; returns `{narrative, narrative_error}`, never a 500
+### Audit Review tab
 
-AI Explain ("Explain" button on individual Hygiene Analysis findings) reuses
-the same `ai_assist_enabled` app-settings flag as Rule Validation's AI
-Assist and Device Review's AI Summary (Admin → AI Assist) — there is no
-separate Rule Review toggle.
+`GET /audit-review` → `audit_review.html` + `audit_review.js`
 
-### Device Review tab
+Three-section layout with unified tab access (internal key: `audit_review`; the page merges what used to be the separate Device Review tab with the Rule Review tab's Hygiene Analysis section):
 
-`GET /device-review` → `device_review.html` + `device_review.js`
+1. **Device Review** (top) — runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
+2. **Hygiene Analysis** (middle) — select ADOM + package, run 10 checks, filter/export findings (CSV/JSON/PDF).
+3. **PSIRT Advisory Assessment** (bottom) — see below.
 
-Runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
-
-**Workflow:**
+**Device Review workflow:**
 1. Select ADOM → device list loads automatically.
 2. Choose which checks to run (all checked by default).
 3. For parameterised CIS checks, a **Check Parameters** panel appears — enter expected IPs before running.
@@ -289,27 +286,39 @@ A `Row` dict must contain: `device`, `interface` (or `"system"` for device-level
 `CHECKS_META` (serialisable — no `run` key) is passed to both the page template and the frontend as `CHECK_DEFS`, driving the params panel UI dynamically.
 
 **API endpoints:**
-- `GET  /api/device-review/adoms/<adom>/devices` — list devices in an ADOM
-- `POST /api/device-review/run/device` — body: `{ adom, device, checks, check_params }` — single device (used by progress loop)
-- `POST /api/device-review/run` — body: `{ adom, devices, checks, check_params }` — bulk run; `devices: []` means all, `checks` absent means all, `check_params` maps check key → param dict
-- `GET  /api/device-review/ai-summary-status` — reports whether AI Summary is available (reads the `ai_assist_enabled` app-settings flag)
-- `POST /api/device-review/ai-summary` — body: `{ adom, results, checks }` — narrates an already-computed run; returns `{ narrative, narrative_error }`, never a 500
+- `GET  /api/audit-review/adoms/<adom>/devices` — list devices in an ADOM
+- `POST /api/audit-review/run/device` — body: `{ adom, device, checks, check_params }` — single device (used by progress loop)
+- `POST /api/audit-review/run` — body: `{ adom, devices, checks, check_params }` — bulk run; `devices: []` means all, `checks` absent means all, `check_params` maps check key → param dict
+- `GET  /api/audit-review/ai-summary-status` — reports whether AI Summary is available (reads the `ai_assist_enabled` app-settings flag)
+- `POST /api/audit-review/ai-summary` — body: `{ adom, results, checks }` — narrates an already-computed run; returns `{ narrative, narrative_error }`, never a 500
 
 AI Summary ("Summarize with AI" on the Device Review results table) reuses
 the same `ai_assist_enabled` app-settings flag as Rule Validation's AI
-Assist (Admin → AI Assist) — there is no separate Device Review toggle.
+Assist (Admin → AI Assist) — there is no separate Audit Review toggle.
 
 **Adding a new CIS check (binary example):**
 1. Add a proxy method to `fmg_client.py` if new device data is needed.
-2. Add a fetch branch in `_fetch_device_data()` in `device_review_routes.py` for the new `data_key`.
+2. Add a fetch branch in `_fetch_device_data()` in `audit_review_routes.py` for the new `data_key`.
 3. Write `_run_my_check(device_name, device_data, params) -> list[Row]` in `device_review.py`.
 4. Append an entry to `CHECKS` with the appropriate `data_keys` and empty `params_schema`.
 No template or frontend JS changes are needed for binary checks.
 
+**Hygiene Analysis section** — select ADOM + package, run 10 checks, filter/export findings (CSV/JSON/PDF). Uses the same `/api/hygiene/*` endpoints as the Rule Review tab's Policy Rules section (package listing is shared; `run` and `unused-objects` are gated to `audit_review` only, since this is the section's new home). The `broken_refs` check flags rules referencing the FortiOS `"none"` deleted-object sentinel or empty address/service groups — it re-fetches `addr_groups`/`svc_groups` (the same call `shadow`/`redundant` already make) only when selected.
+- **Find Unused Objects** button (next to Run Analysis) scans the selected package and lists address/address-group/service/service-group objects not referenced by any policy rule (BFS group-member expansion catches indirect references; FortiGuard/built-in objects like `all`/`ANY`/`g-*`/`ISDB-*` are excluded). A scope selector (All / Local only / Global only) controls whether the shared Global-ADOM object pool is included — services and service groups have no global pool, so `scope=global` always returns empty for those. Results are filterable/paginated (10/25/50/100) with CSV/JSON export. Backend: `GET /api/hygiene/unused-objects?adom=&pkg=&scope=`, logic in `app/hygiene.py::find_unused_objects()`.
+
+**AI Explain endpoints:**
+- `GET  /api/hygiene/ai-explain-status` — reports whether AI Explain is available (reads the `ai_assist_enabled` app-settings flag)
+- `POST /api/hygiene/explain-finding` — body is a single finding object; narrates it via `app/hygiene_ai.py`; returns `{narrative, narrative_error}`, never a 500
+
+AI Explain ("Explain" button on individual Hygiene Analysis findings) reuses
+the same `ai_assist_enabled` app-settings flag as Rule Validation's AI
+Assist and Audit Review's own AI Summary (Admin → AI Assist) — there is no
+separate toggle for it.
+
 #### PSIRT Advisory Assessment
 
-New section on the same `/device-review` page (below the CIS checks table),
-not a separate nav tab. Paste or upload (`.eml`/`.txt`) a Fortinet PSIRT
+New section on the same `/audit-review` page (below the Hygiene Analysis
+section), not a separate nav tab. Paste or upload (`.eml`/`.txt`) a Fortinet PSIRT
 advisory email; an LLM extracts structured fields (advisory ID, CVE IDs,
 affected version ranges, workaround text, severity, exploitation wording)
 into an editable review form — the only LLM touchpoint in this feature.
@@ -339,11 +348,11 @@ every other AI-Assist feature in this repo (Admin → AI Assist) — no
 separate PSIRT toggle.
 
 **API endpoints:**
-- `GET  /api/device-review/psirt/extract-status`
-- `POST /api/device-review/psirt/extract` — body `{ email_text }` or multipart file upload
-- `POST /api/device-review/psirt/assess/device` — body `{ adom, device, advisory }`
-- `POST /api/device-review/psirt/assess` — body `{ adom: "<name>" | "*", advisory }`
-- `POST /api/device-review/psirt/report` — body `{ assessment }`, returns HTML
+- `GET  /api/audit-review/psirt/extract-status`
+- `POST /api/audit-review/psirt/extract` — body `{ email_text }` or multipart file upload
+- `POST /api/audit-review/psirt/assess/device` — body `{ adom, device, advisory }`
+- `POST /api/audit-review/psirt/assess` — body `{ adom: "<name>" | "*", advisory }`
+- `POST /api/audit-review/psirt/report` — body `{ assessment }`, returns HTML
 
 No persistence — each assessment is a one-off analysis, same as NAT Lookup
 and Rule Validation's AI Assist.
@@ -563,12 +572,12 @@ Table rows show a single compact badge (highest-priority state). The diff panel 
 
 AI Summary ("Summarize with AI" on the Config-Delta diff panel) reuses the
 same `ai_assist_enabled` app-settings flag as Rule Validation's AI Assist,
-Device Review's AI Summary, and Rule Hygiene's AI Explain (Admin → AI
+Audit Review's AI Summary, and Rule Hygiene's AI Explain (Admin → AI
 Assist) — there is no separate Config-Delta toggle.
 
 ### Scheduled Exports
 
-Two scheduler modules support recurring exports: Config-Delta diffs (`app/config_diff_scheduler.py`) and Device Review CIS audit results (`app/device_review_scheduler.py`). Both are APScheduler-based, persist jobs in gitignored JSON files, and are registered in `app/__init__.py` alongside other background schedulers.
+Two scheduler modules support recurring exports: Config-Delta diffs (`app/config_diff_scheduler.py`) and Audit Review CIS audit results (`app/device_review_scheduler.py`). Both are APScheduler-based, persist jobs in gitignored JSON files, and are registered in `app/__init__.py` alongside other background schedulers.
 
 #### Config-Delta Scheduled Jobs
 
@@ -584,7 +593,7 @@ Two scheduler modules support recurring exports: Config-Delta diffs (`app/config
 
 **AI Summary:** When `ai_assist_enabled` is on AND the job's own `ai_summary_enabled` field (default `true`) is also on, reports include an AI-generated summary section (best-effort — silently omitted if narration fails, never blocks report delivery). The section is also omitted entirely when no device in the run has any actual diff changes (e.g. a fully in-sync ADOM), so a no-op run never triggers an LLM call or shows empty prose. A narration failure is recorded as `ai_narrative_error` on the run history entry in `config_diff_jobs.json`. Per-job `ai_summary_enabled` lets a job be scheduled without incurring any LLM token cost even while the global AI Assist flag stays on for other features — toggled via the "AI Summary" checkbox on the job form in Admin → Scheduled.
 
-#### Device Review Scheduled Jobs
+#### Audit Review Scheduled Jobs
 
 `app/device_review_scheduler.py` — APScheduler-based scheduler mirroring `config_diff_scheduler.py`.
 
@@ -613,18 +622,18 @@ Persists jobs in `device_review_jobs.json` (gitignored; copy `device_review_jobs
 `email`: comma-separated string — `smtp_client._parse_recipients()` handles splitting.
 `ai_summary_enabled`: default `true`; when `false`, the scheduled run never calls the LLM for its AI Summary section even if `ai_assist_enabled` is globally on — set per-job in Admin → Scheduled to avoid unwanted token spend on jobs that don't need narration.
 
-**`bulk_device_review_adom(adom, checks, check_params, max_workers=4)`** in `app/routes/device_review_routes.py` — session-free entry point for the scheduler. Uses `ThreadPoolExecutor(max_workers=4)`.
+**`bulk_device_review_adom(adom, checks, check_params, max_workers=4)`** in `app/routes/audit_review_routes.py` — session-free entry point for the scheduler. Uses `ThreadPoolExecutor(max_workers=4)`.
 
 **Admin API endpoints** (all `admin_required`):
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/admin/api/device-review/jobs` | List all Device Review scheduled jobs |
-| `POST` | `/admin/api/device-review/jobs` | Create a new job |
-| `PUT` | `/admin/api/device-review/jobs/<id>` | Update an existing job |
-| `DELETE` | `/admin/api/device-review/jobs/<id>` | Delete a job |
-| `POST` | `/admin/api/device-review/jobs/<id>/run` | Trigger an immediate run |
-| `GET` | `/admin/api/device-review/jobs/<id>/status` | Get last run status / history |
+| `GET` | `/admin/api/audit-review/jobs` | List all Audit Review scheduled jobs |
+| `POST` | `/admin/api/audit-review/jobs` | Create a new job |
+| `PUT` | `/admin/api/audit-review/jobs/<id>` | Update an existing job |
+| `DELETE` | `/admin/api/audit-review/jobs/<id>` | Delete a job |
+| `POST` | `/admin/api/audit-review/jobs/<id>/run` | Trigger an immediate run |
+| `GET` | `/admin/api/audit-review/jobs/<id>/status` | Get last run status / history |
 
 **Scheduled report output:** Email reports include a **per-host summary table** at the top of both the email body and the attached file (HTML, CSV, and JSON formats), showing per-device counts for each result type: Device | PASS | FAIL | INSECURE | WARN | CONFIG_MISSING | INFO | Total. The per-check aggregate summary follows below the host summary in the email body. When `ai_assist_enabled` is on AND the job's own `ai_summary_enabled` field (default `true`) is also on, reports also include an AI-generated summary section (best-effort — silently omitted if narration fails, never blocks report delivery). Toggled via the "AI Summary" checkbox on the job form in Admin → Scheduled.
 
@@ -683,7 +692,7 @@ Provides read-only zone policy access to external programs (e.g. FW-Analyst) via
 - `POST /external/api/zone/query` — same payload/response as internal `/api/zone/query`
 - `GET  /external/api/zone/zones` — zone list
 - `GET  /external/api/zone/policies` — policy list
-- `GET  /external/api/executive/summary` — fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance %, pending config-diff count, firewall online count/total); backed by `app/executive_summary_cache.py`, which runs TWO independent scheduled sweeps at different cadences — a cheap device sweep (online count, version compliance, pending diffs; default every 15 min, `EXEC_SUMMARY_REFRESH_MINUTES`) and an expensive hygiene sweep (downloads every policy in every ADOM; default every 60 min, `EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES` — raise this in large environments to reduce FMG load). Each sweep only updates its own fields in the shared store, so a slow hygiene sweep never blanks out fresh device data.
+- `GET  /external/api/executive/summary` — fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance %, pending config-diff count, firewall online count/total); backed by `app/executive_summary_cache.py`, which runs TWO independent scheduled sweeps at different cadences — a cheap device sweep (online count, version compliance, pending diffs; default every 15 min, `EXEC_SUMMARY_REFRESH_MINUTES`) and an expensive hygiene sweep (downloads every policy in every ADOM; default every 60 min, `EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES` — raise this in large environments to reduce FMG load). Each sweep only updates its own fields in the shared store, so a slow hygiene sweep never blanks out fresh device data. The payload also includes `lifecycle` (hardware EOS, from the device sweep), `change_control` (admin audit-log aggregation, hourly), `psirt` (persisted advisory exposure), and `device_backup` (see below) — each sourced from its own independent module/cadence, not the device sweep's 15-min loop.
 
 **CSRF:** `/external/api/` requests are exempt from CSRF validation (bearer token is the auth mechanism, no session cookie exists).
 
@@ -691,6 +700,7 @@ Provides read-only zone policy access to external programs (e.g. FW-Analyst) via
 - `app/app_settings.py` — atomic read/write of `app_settings.json` (feature flags)
 - `app/api_tokens.py` — token create/list/revoke/validate; tokens stored as SHA-256 hashes
 - `app/executive_summary_cache.py` — background sweep computing the four executive-summary metrics; same pending|running|ok|error store pattern as `summary_job.py`
+- `app/device_backup_cache.py` — daily sweep (`DEVICE_BACKUP_REFRESH_HOUR`/`_MINUTE`, default 02:00 local) computing device configuration backup age fleet-wide, feeding the `device_backup` executive-summary key: `{devices_backup_ok, devices_backup_stale_7d, devices_backup_never, collected_at}`. One `FMGClient.get_devices(adom)` call plus one `FMGClient.get_adom_revisions(adom)` call per non-forti\* ADOM (not per device — the revision endpoint is ADOM-scoped and returns every device's revisions in one list). `get_adom_revisions()`/`get_device_last_revision()` in `app/fmg_client.py` wrap `GET /dvmdb/adom/<adom>/revision` — confirmed live against a lab FMG-VM64-KVM (v7.6.7-build3737) on 2026-09-11; each revision's `name` field embeds the device name as a literal `<device>-` prefix (e.g. `FortiWiFi-71G-New_2026-08-27-07-03-18-PDT`), used to match revisions to devices. Only one real revision was observed in the lab (single device, single snapshot) — see `docs/superpowers/specs/2026-09-10-device-backup-age-spike.md` for the original spike and its resolution. Persisted to `device_backup.json` (gitignored, project root) after every successful sweep, same atomic-write/single-latest-record pattern as `app/change_control_cache.py`; a failed sweep leaves the prior result in place.
 
 **Admin endpoints added to `admin_routes.py`:**
 - `GET/PUT /admin/api/settings` — get/set `external_api_enabled` and `executive_compliant_versions`
@@ -764,7 +774,7 @@ narrates them via the configured LLM provider
 narrative_error }` — narration failure degrades to `narrative: null` with
 `narrative_error` set, never a 500. `503` if AI Assist is disabled. Reuses
 the same `ai_assist_enabled` app-settings flag as Rule Validation's AI
-Assist, Device Review's AI Summary, Rule Hygiene's AI Explain, and
+Assist, Audit Review's AI Summary, Rule Hygiene's AI Explain, and
 Config-Delta's AI Summary (Admin → AI Assist) — there is no separate
 host-metrics toggle.
 

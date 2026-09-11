@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 
 def test_bulk_device_review_adom_aggregates(app_ctx):
     """bulk_device_review_adom returns one entry per device with rows and no error."""
-    from app.routes.device_review_routes import bulk_device_review_adom
+    from app.routes.audit_review_routes import bulk_device_review_adom
 
     mock_client = MagicMock()
     mock_client.__enter__ = lambda s: s
@@ -20,8 +20,8 @@ def test_bulk_device_review_adom_aggregates(app_ctx):
         "protocols": [], "has_insecure": False, "has_secure": False,
     }
 
-    with patch("app.routes.device_review_routes.make_client", return_value=mock_client):
-        with patch("app.routes.device_review_routes.run_checks", return_value=[fake_row]):
+    with patch("app.routes.audit_review_routes.make_client", return_value=mock_client):
+        with patch("app.routes.audit_review_routes.run_checks", return_value=[fake_row]):
             results = bulk_device_review_adom(
                 "TEST", ["ntp_config"], {}, max_workers=2
             )

@@ -672,6 +672,48 @@ class FMGClient:
         except Exception:
             return []
 
+    def get_adom_revisions(self, adom: str) -> list:
+        """Return the ADOM's device-config revision history from dvmdb.
+
+        Confirmed live against a real FMG-VM64-KVM (v7.6.7-build3737) on
+        2026-09-11 — GET /dvmdb/adom/<adom>/revision returns one entry per
+        device-config snapshot, e.g.:
+            {"oid": 182, "version": 1,
+             "name": "FortiWiFi-71G-New_2026-08-27-07-03-18-PDT",
+             "desc": "", "created_by": "adminakw",
+             "created_time": 1787839429, "locked": 0}
+        This is a per-ADOM resource (one call covers every device in that
+        ADOM), NOT a per-device path — /dvmdb/adom/<adom>/device/<name>/revision
+        does not exist (confirmed: returns status code -3, "Object does not
+        exist"). "name" embeds the device name as a literal prefix followed
+        by "-" (see get_device_last_revision()). Only one real revision was
+        observed in the lab (a single device, single snapshot) — the prefix
+        convention is inferred from that one sample and not cross-checked
+        against multiple revision-creation reasons (e.g. a later re-backup
+        vs. an initial "New" snapshot); revisit if a real fleet run ever
+        shows a "name" that doesn't match this shape.
+        """
+        return self._get(f"/dvmdb/adom/{adom}/revision") or []
+
+    def get_device_last_revision(self, adom: str, device: str) -> dict | None:
+        """Return the most recent config-revision record for one device, or
+        None if the device has never been backed up (not merely stale).
+
+        Matches by requiring the revision's "name" to start with
+        "<device>-" — see get_adom_revisions() for the confirmed shape and
+        its one-sample caveat.
+        """
+        revisions = self.get_adom_revisions(adom)
+        prefix = f"{device}-"
+        matches = [
+            r
+            for r in revisions
+            if isinstance(r, dict) and str(r.get("name", "")).startswith(prefix)
+        ]
+        if not matches:
+            return None
+        return max(matches, key=lambda r: r.get("created_time") or 0)
+
     def get_package_info(self, adom: str, device: str, vdom: str = "root") -> dict:
         """Return policy package info for a device/vdom.
 

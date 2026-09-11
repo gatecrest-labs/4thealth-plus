@@ -96,6 +96,9 @@ def login():
         ip = request.remote_addr or ""
         if _is_rate_limited(ip, username):
             app_log("WARN", "auth", "Login rate-limited", username=username, remote=ip)
+            from app import login_metrics as _lm
+
+            _lm.record_event(False)
             flash(
                 "Too many failed attempts. Please wait before trying again.", "danger"
             )
@@ -119,6 +122,9 @@ def login():
                 username=username,
                 role=session["role"],
             )
+            from app import login_metrics as _lm
+
+            _lm.record_event(True)
             next_url = request.args.get("next", "").strip()
             if next_url and _safe_redirect(next_url):
                 return redirect(next_url)
@@ -126,6 +132,9 @@ def login():
 
         _record_failure(ip, username)
         app_log("WARN", "auth", "Failed login attempt", username=username, remote=ip)
+        from app import login_metrics as _lm
+
+        _lm.record_event(False)
         flash("Invalid credentials.", "danger")
         return render_template("login.html"), 401
     return render_template("login.html")

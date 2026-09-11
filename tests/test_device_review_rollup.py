@@ -60,3 +60,31 @@ def test_append_run_and_get_latest(tmp_path, monkeypatch):
     dr_rollup.append_run(record)
 
     assert dr_rollup.get_latest() == record
+
+
+def test_get_latest_by_adom_picks_newest_per_adom(tmp_path, monkeypatch):
+    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+
+    # append_run prepends -- append oldest first so history ends up newest-first.
+    dr_rollup.append_run({"ran_at": "2026-08-28T06:00:00Z", "adom": "Corp", "devices_with_failures": 5})
+    dr_rollup.append_run({"ran_at": "2026-08-29T06:00:00Z", "adom": "Branch", "devices_with_failures": 1})
+    dr_rollup.append_run({"ran_at": "2026-08-30T06:00:00Z", "adom": "Corp", "devices_with_failures": 2})
+
+    by_adom = dr_rollup.get_latest_by_adom()
+
+    assert by_adom["Corp"]["devices_with_failures"] == 2  # the newer Corp run, not the older one
+    assert by_adom["Branch"]["devices_with_failures"] == 1
+
+
+def test_get_latest_by_adom_skips_records_with_no_adom(tmp_path, monkeypatch):
+    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+
+    dr_rollup.append_run({"ran_at": "2026-08-28T06:00:00Z", "devices_with_failures": 5})  # legacy, no "adom"
+
+    assert dr_rollup.get_latest_by_adom() == {}
+
+
+def test_get_latest_by_adom_empty_when_no_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+
+    assert dr_rollup.get_latest_by_adom() == {}

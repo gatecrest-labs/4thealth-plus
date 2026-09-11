@@ -12,7 +12,7 @@ _BLUEPRINT_MODULES = [
     "app.routes.api_routes",
     "app.routes.admin_routes",
     "app.routes.hygiene_routes",
-    "app.routes.device_review_routes",
+    "app.routes.audit_review_routes",
     "app.routes.psirt_routes",
     "app.routes.rule_review_routes",
     "app.routes.zone_routes",
@@ -130,6 +130,12 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         init_host_metrics_scheduler(app)
 
+    if not app.config.get("TESTING") and not app.config.get("_LOGIN_METRICS_STARTED"):
+        app.config["_LOGIN_METRICS_STARTED"] = True
+        from app.login_metrics import init_scheduler as init_login_metrics_scheduler
+
+        init_login_metrics_scheduler(app)
+
     if not app.config.get("TESTING") and not app.config.get("_AI_USAGE_PRUNE_STARTED"):
         app.config["_AI_USAGE_PRUNE_STARTED"] = True
         from app.ai_usage import init_scheduler as init_ai_usage_scheduler
@@ -180,7 +186,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             with app.app_context():
                 init_dr_scheduler(app)
         except Exception as exc:
-            app.logger.warning("Device Review scheduler failed to start: %s", exc)
+            app.logger.warning("Audit Review scheduler failed to start: %s", exc)
 
     if not app.config.get("TESTING") and not app.config.get("_RH_SCHEDULER_STARTED"):
         app.config["_RH_SCHEDULER_STARTED"] = True
@@ -207,6 +213,48 @@ def create_app(test_config: dict | None = None) -> Flask:
                 init_backup_scheduler(app)
         except Exception as exc:
             app.logger.warning("Backup scheduler failed to start: %s", exc)
+
+    if not app.config.get("TESTING") and not app.config.get(
+        "_PSIRT_REASSESS_SCHEDULER_STARTED"
+    ):
+        app.config["_PSIRT_REASSESS_SCHEDULER_STARTED"] = True
+        try:
+            from app.psirt_reassess_scheduler import (
+                init_scheduler as init_psirt_reassess_scheduler,
+            )
+
+            with app.app_context():
+                init_psirt_reassess_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("PSIRT re-assessment scheduler failed to start: %s", exc)
+
+    if not app.config.get("TESTING") and not app.config.get(
+        "_CHANGE_CONTROL_SCHEDULER_STARTED"
+    ):
+        app.config["_CHANGE_CONTROL_SCHEDULER_STARTED"] = True
+        try:
+            from app.change_control_cache import (
+                init_scheduler as init_change_control_scheduler,
+            )
+
+            with app.app_context():
+                init_change_control_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Change-control scheduler failed to start: %s", exc)
+
+    if not app.config.get("TESTING") and not app.config.get(
+        "_DEVICE_BACKUP_SCHEDULER_STARTED"
+    ):
+        app.config["_DEVICE_BACKUP_SCHEDULER_STARTED"] = True
+        try:
+            from app.device_backup_cache import (
+                init_scheduler as init_device_backup_scheduler,
+            )
+
+            with app.app_context():
+                init_device_backup_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Device backup scheduler failed to start: %s", exc)
 
     @app.context_processor
     def inject_session_globals():

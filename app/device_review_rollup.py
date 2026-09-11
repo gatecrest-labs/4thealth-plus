@@ -33,7 +33,7 @@ def build_rollup(results: list[dict]) -> dict:
     """Aggregate a bulk_device_review_adom()-shaped result list into fleet counts.
 
     results: list of {device, ip, rows, error} as returned by
-    app.routes.device_review_routes.bulk_device_review_adom(). Devices with
+    app.routes.audit_review_routes.bulk_device_review_adom(). Devices with
     a non-None "error" contribute no rows and are excluded from
     devices_reviewed/devices_with_failures (they weren't actually reviewed).
     """
@@ -86,6 +86,27 @@ def get_latest() -> dict | None:
     """Return the most recent rollup record, or None if no history exists."""
     history = get_history()
     return history[0] if history else None
+
+
+def get_latest_by_adom() -> dict[str, dict]:
+    """Return the most recent rollup record for each ADOM that has one,
+    keyed by ADOM name — {adom: {devices_reviewed, devices_with_failures,
+    findings_by_severity, top_failing_checks, ran_at}}.
+
+    Each scheduled Device Review job targets one ADOM
+    (device_review_scheduler.py's job["adom"]), so history naturally
+    contains at most one run per job per firing — this just picks each
+    ADOM's newest entry out of the (at most _MAX_RUNS, newest-first) shared
+    history. Records persisted before this function existed have no
+    "adom" key and are skipped, not misattributed to any ADOM.
+    """
+    result: dict[str, dict] = {}
+    for record in get_history():
+        adom = record.get("adom")
+        if not adom or adom in result:
+            continue
+        result[adom] = record
+    return result
 
 
 def append_run(record: dict) -> None:
