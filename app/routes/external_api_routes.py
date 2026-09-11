@@ -134,6 +134,80 @@ def _device_review_rollup() -> dict | None:
     }
 
 
+def _change_control(summary: dict) -> dict:
+    """Change-control metrics.
+
+    devices_out_of_sync comes from the device sweep already read into
+    `summary` by the caller (freshness: summary["device_sweep_collected_at"]).
+    admin_changes_24h/admin_changes_by_user come from the separate hourly
+    audit-log sweep in app.change_control_cache, which has its own
+    collected_at — used as this object's own collected_at, since the
+    devices_out_of_sync half is already covered by the top-level
+    device_sweep_collected_at field.
+
+    oldest_pending_change_days is intentionally omitted: see the docstring
+    at the top of app/executive_summary_cache.py for why no per-device
+    modification timestamp is currently available from FortiManager's
+    dvmdb device object in this codebase's confirmed API knowledge.
+    """
+    from app.change_control_cache import get_latest as get_change_control_latest
+
+    latest = get_change_control_latest()
+    return {
+        "devices_out_of_sync": summary.get("devices_out_of_sync"),
+        "admin_changes_24h": latest["admin_changes_24h"] if latest else None,
+        "admin_changes_by_user": latest["admin_changes_by_user"] if latest else [],
+        "collected_at": latest["collected_at"] if latest else None,
+    }
+
+
+def _lifecycle(summary: dict) -> dict:
+    """Hardware end-of-support exposure, sourced from the device sweep's
+    lifecycle counts (app.executive_summary_cache._lifecycle_counts(),
+    matched against app.model_eos). Shares device_sweep_collected_at as
+    its own collected_at since both come from the same sweep."""
+    return {
+        "devices_hw_eos": summary.get("devices_hw_eos"),
+        "devices_hw_eos_12m": summary.get("devices_hw_eos_12m"),
+        "models_unknown": summary.get("models_unknown") or [],
+        "collected_at": summary.get("device_sweep_collected_at"),
+    }
+
+
+def _device_backup() -> dict:
+    """Device configuration backup age, from the daily
+    app.device_backup_cache sweep — see that module and
+    app.fmg_client.FMGClient.get_adom_revisions() for the confirmed FMG
+    revision-history endpoint. None counts (never swept yet) rather than 0,
+    same "unknown never renders as a false negative" convention as
+    app.model_eos."""
+    from app.device_backup_cache import get_latest
+
+    latest = get_latest()
+    if latest is None:
+        return {
+            "devices_backup_ok": None,
+            "devices_backup_stale_7d": None,
+            "devices_backup_never": None,
+            "collected_at": None,
+        }
+    return {
+        "devices_backup_ok": latest.get("devices_backup_ok"),
+        "devices_backup_stale_7d": latest.get("devices_backup_stale_7d"),
+        "devices_backup_never": latest.get("devices_backup_never"),
+        "collected_at": latest.get("collected_at"),
+    }
+
+
+def _psirt_rollup() -> dict:
+    """Fleet PSIRT exposure — see app.psirt_store.compute_psirt_rollup()
+    for how open_advisories/devices_*/kev_exposed_devices/top_advisory/
+    mean_days_to_remediate_90d are derived from psirt.db."""
+    from app import psirt_store
+
+    return psirt_store.compute_psirt_rollup()
+
+
 def _hygiene_rollup() -> dict | None:
     """Latest persisted rule-hygiene rollup, in the in-memory field shape.
 
@@ -272,7 +346,7 @@ def ext_executive_summary():
         "last_backup_status": _last_backup_status(),
         "status": summary.get("status"),
         "last_updated": summary.get("last_updated"),
-        "schema_version": 1,
+        "schema_version": 2,
         "device_sweep_status": summary.get("device_sweep_status"),
         "hygiene_sweep_status": summary.get("hygiene_sweep_status"),
         "device_sweep_collected_at": summary.get("device_sweep_collected_at"),
@@ -280,6 +354,12 @@ def ext_executive_summary():
         "rule_count_collected_at": summary.get("hygiene_sweep_collected_at"),
         "device_review": _device_review_rollup(),
         "rule_hygiene": summary.get("rule_hygiene") or _hygiene_rollup(),
+        "psirt": _psirt_rollup(),
+        "change_control": _change_control(summary),
+        "lifecycle": _lifecycle(summary),
+        "device_backup": _device_backup(),
+        "by_adom": summary.get("by_adom") or {},
+        "infra": summary.get("infra") or [],
     }
 
     ai_enabled = get_setting("ai_assist_enabled", False)

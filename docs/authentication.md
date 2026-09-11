@@ -24,7 +24,7 @@ Local accounts in `users.json` serve as a fallback for all remote auth methods. 
 
 ### Role and Tab Summary
 
-| Role | Dashboard | Firewalls | Device Versions | Rule Review | Rule Validation | Zone Policy | Device Review | Map (Beta) | Admin page | Raw/Debug endpoints |
+| Role | Dashboard | Firewalls | Device Versions | Rule Review | Rule Validation | Zone Policy | Audit Review | Map (Beta) | Admin page | Raw/Debug endpoints |
 |------|-----------|-----------|-----------------|-------------|-----------------|-------------|---------------|------------|------------|---------------------|
 | admin | Always | Always | Always | Always | Always | Always | Always | Always | YES | YES |
 | viewer | Per group | Per group | Per group | Per group | Per group | Per group | Per group | Per group | NO | NO |

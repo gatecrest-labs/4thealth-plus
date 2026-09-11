@@ -1,19 +1,19 @@
-"""Device Review tab — read-only interface protocol and CIS hardening analysis.
+"""Audit Review tab — read-only interface protocol and CIS hardening analysis.
 
 Page:
-  GET  /device-review
+  GET  /audit-review
 
 API (JSON, all read-only):
-  GET  /api/device-review/adoms/<adom>/devices
+  GET  /api/audit-review/adoms/<adom>/devices
        returns: [{name, ip, platform, version, serial, status}, ...]
 
-  POST /api/device-review/run/device
+  POST /api/audit-review/run/device
        body: { adom, device, checks: [str, ...], check_params: {key: {…}} }
        Single-device run — used by the frontend to drive a per-device progress
        loop for large ADOMs.
        returns: { device, rows: [Row, ...] }
 
-  POST /api/device-review/run
+  POST /api/audit-review/run
        body: { adom, devices: [str, ...], checks: [str, ...],
                check_params: {key: {…}} }
              devices: []  means all devices in the ADOM
@@ -37,31 +37,33 @@ from app.decorators import check_adom_access, tab_required
 from app.device_review import _CHECKS_BY_KEY, CHECKS_META, run_checks
 from app.fmg_client import FMGError
 from app.fmg_helpers import make_client
+from app.hygiene import CHECKS as HYGIENE_CHECKS
 from app.security import internal_api_error, upstream_api_error
 
-bp = Blueprint("device_review", __name__)
+bp = Blueprint("audit_review", __name__)
 
-registry.register("device_review", "Device Review", "device_review.device_review_page")
+registry.register("audit_review", "Audit Review", "audit_review.audit_review_page")
 
 
 # ── Page ──────────────────────────────────────────────────────────────────────
 
 
-@bp.route("/device-review")
-@tab_required("device_review")
-def device_review_page():
+@bp.route("/audit-review")
+@tab_required("audit_review")
+def audit_review_page():
     return render_template(
-        "device_review.html",
+        "audit_review.html",
         user=session["user"],
-        checks=CHECKS_META,
+        dr_checks=CHECKS_META,
+        hygiene_checks=HYGIENE_CHECKS,
     )
 
 
 # ── API: list devices in an ADOM ──────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/adoms/<adom>/devices")
-@tab_required("device_review")
+@bp.route("/api/audit-review/adoms/<adom>/devices")
+@tab_required("audit_review")
 def device_review_devices(adom: str):
     if err := check_adom_access(adom):
         return err
@@ -103,9 +105,9 @@ def device_review_devices(adom: str):
             )
         return jsonify(devices)
     except FMGError as exc:
-        return upstream_api_error("device_review", exc)
+        return upstream_api_error("audit_review", exc)
     except Exception as exc:
-        return internal_api_error("device_review", exc)
+        return internal_api_error("audit_review", exc)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -211,8 +213,8 @@ def _fetch_device_data(
 # ── API: single-device run (used by the per-device progress loop) ─────────────
 
 
-@bp.route("/api/device-review/run/device", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/run/device", methods=["POST"])
+@tab_required("audit_review")
 def device_review_run_one():
     data = request.get_json(silent=True) or {}
     adom = (data.get("adom") or "").strip()
@@ -242,9 +244,9 @@ def device_review_run_one():
                     device_meta = {}
             device_data = _fetch_device_data(client, adom, device, needed, device_meta)
     except FMGError as exc:
-        return upstream_api_error("device_review", exc)
+        return upstream_api_error("audit_review", exc)
     except Exception as exc:
-        return internal_api_error("device_review", exc)
+        return internal_api_error("audit_review", exc)
 
     rows = run_checks(device, device_data, check_keys, check_params)
     return jsonify({"device": device, "rows": rows})
@@ -277,7 +279,7 @@ def bulk_device_review_adom(
     except Exception as exc:
         app_log(
             "ERROR",
-            "device_review_routes",
+            "audit_review_routes",
             f"bulk_device_review_adom: get_devices failed for {adom}: {exc}",
         )
         return []
@@ -295,7 +297,7 @@ def bulk_device_review_adom(
         except Exception as exc:
             app_log(
                 "ERROR",
-                "device_review_routes",
+                "audit_review_routes",
                 f"bulk_device_review_adom: check failed for {name}: {exc}",
             )
             return {"device": name, "ip": ip, "rows": [], "error": str(exc)}
@@ -313,8 +315,8 @@ def bulk_device_review_adom(
 # ── API: bulk run checks ──────────────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/run", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/run", methods=["POST"])
+@tab_required("audit_review")
 def device_review_run():
     data = request.get_json(silent=True) or {}
     adom = (data.get("adom") or "").strip()
@@ -339,9 +341,9 @@ def device_review_run():
         with make_client() as client:
             all_devices = client.get_devices(adom)
     except FMGError as exc:
-        return upstream_api_error("device_review", exc)
+        return upstream_api_error("audit_review", exc)
     except Exception as exc:
-        return internal_api_error("device_review", exc)
+        return internal_api_error("audit_review", exc)
 
     if devices:
         device_set = {d.lower() for d in devices}
@@ -403,16 +405,16 @@ def device_review_run():
 # ── AI Summary ─────────────────────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/ai-summary-status")
-@tab_required("device_review")
+@bp.route("/api/audit-review/ai-summary-status")
+@tab_required("audit_review")
 def dr_ai_summary_status():
     from app.app_settings import get_setting
 
     return jsonify({"available": get_setting("ai_assist_enabled", False)})
 
 
-@bp.route("/api/device-review/ai-summary", methods=["POST"])
-@tab_required("device_review")
+@bp.route("/api/audit-review/ai-summary", methods=["POST"])
+@tab_required("audit_review")
 def dr_ai_summary():
     """Narrate an already-computed Device Review run. The LLM never computes
     a finding — it only summarizes results the check engine already

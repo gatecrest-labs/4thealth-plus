@@ -40,8 +40,8 @@ AI-assisted change analysis to the Rule Validation tab (see Roadmap below).
 | **Firewalls** | Per-ADOM device list with health indicator, paginated table, full-text search |
 | **Device Detail** | Modal pop-up — system info, CPU/memory, interfaces, routing table, BGP/OSPF neighbors, IPsec tunnels |
 | **Device Versions** | Per-ADOM version distribution chart — clickable bars filter the device list; CSV and JSON export |
-| **Rule Review** | Policy viewer (full rule table with search, pagination, group expansion, export) plus nine automated hygiene checks — with a comment-based "Exempt" whitelist to permanently silence a reviewed rule |
-| **Device Review** | Management-interface security audit — checks for cleartext protocols, missing secure alternatives; export as CSV, JSON, or PDF |
+| **Rule Review** | Policy viewer (full rule table with search, pagination, group expansion, export), plus Object/Interface/NAT lookup |
+| **Audit Review** | Management-interface + CIS hardening security audit, nine automated policy hygiene checks (with a comment-based "Exempt" whitelist to permanently silence a reviewed rule), and PSIRT advisory assessment — export as CSV, JSON, or PDF |
 | **Rule Validation** | Pre-change analysis — enter requested flows, select policy packages, get per-flow verdicts; integrates zone segmentation policy checks; optional single-request **AI Assist** mode |
 | **Zone Policy** | Self-contained network segmentation policy browser — query flows, browse zones and rules, validate schema, edit database (admin only) |
 | **Map** | Interactive geographic map of all managed FortiGate devices, coloured by configurable US geographic region |
@@ -58,9 +58,10 @@ AI-assisted change analysis to the Rule Validation tab (see Roadmap below).
 Every AI feature in the app is gated by one `ai_assist_enabled` flag (**Admin → AI Assist**), off by default, and multi-provider — Claude (default), Codex, and Ollama (local or cloud), configured server-wide via `.env`. In every case the LLM only narrates an already-computed result; it never determines a verdict, a check outcome, or a trend itself:
 
 - **Rule Validation → AI Assist** — three modes: **Single Change** (describe one change, get a deterministic verdict from the ported change-planning engine plus an AI-written report and peer-review package), **FQDN Allowlist** (bulk vendor FQDN/wildcard allowlist requests), and **Hygiene Fix** (turns a completed Rule Hygiene run's findings into deterministic FortiOS CLI remediations, grouped by rule, with a peer-reviewable HTML report). The existing bulk CSV/XLSX table workflow is unchanged and does not use the LLM.
-- **Device Review → AI Summary** — plain-English summary of a CIS check run, on-demand or in scheduled reports.
+- **Audit Review → AI Summary** — plain-English summary of a CIS check run, on-demand or in scheduled reports.
 - **Config-Delta → AI Summary** — plain-English description of an install-preview diff, on-demand or in scheduled exports.
-- **Rule Hygiene → AI Explain** — per-finding explanation plus a suggested remediation snippet.
+- **Audit Review → AI Explain** — per-finding explanation plus a suggested remediation snippet, for the Hygiene Analysis section.
+- **Audit Review → PSIRT extraction** — LLM extracts structured fields from a pasted advisory email; everything downstream (firmware/workaround scanning, scoring) is deterministic.
 - **Admin → AI Trend Summary** — narrated 7-day host-resource trend statistics.
 
 See [docs/features.md](docs/features.md) for details on each, and [docs/configuration.md](docs/configuration.md#ai-assist-optional) for the provider environment variables.
@@ -87,7 +88,7 @@ history, `.xlsx` intake parsing, and per-request provider selection.
 │   ├── fmg_client.py            FortiManager JSON-RPC client (context-manager; auto login/logout)
 │   ├── fmg_helpers.py           FMGClient factory / session helper
 │   ├── hygiene.py               Rule hygiene check engine (9 checks + Exempt whitelist, read-only)
-│   ├── device_review.py         Device Review check engine; add new checks here
+│   ├── device_review.py         Audit Review check engine; add new checks here
 │   ├── rule_review.py           Rule Validation — flow/policy matching, path analysis, zone integration
 │   ├── zone_db.py               Zone policy DB engine — loads policy_db.json, runs queries, CRUD
 │   ├── map_regions.py           Map region config — load/save map_regions.json, state validation
@@ -99,7 +100,7 @@ history, `.xlsx` intake parsing, and per-request provider selection.
 │   ├── summary_job.py           Background job: managed firewall + rule counts, nightly APScheduler
 │   ├── summary_history.py       Summary history persistence
 │   ├── config_diff_scheduler.py APScheduler — Config-Delta scheduled exports
-│   ├── device_review_scheduler.py APScheduler — Device Review CIS audit scheduled exports
+│   ├── device_review_scheduler.py APScheduler — Audit Review CIS audit scheduled exports
 │   ├── smtp_client.py           SMTP delivery for scheduled export emails
 │   ├── atomic_io.py             Atomic JSON write helper
 │   ├── security.py              API error response helpers
@@ -112,7 +113,7 @@ history, `.xlsx` intake parsing, and per-request provider selection.
 │       ├── api_routes.py             /api/*  (JSON data endpoints)
 │       ├── admin_routes.py           /admin  /admin/api/*  (admin only)
 │       ├── hygiene_routes.py         /hygiene  /api/hygiene/*
-│       ├── device_review_routes.py   /device-review  /api/device-review/*
+│       ├── audit_review_routes.py    /audit-review  /api/audit-review/*
 │       ├── rule_review_routes.py     /rule-review  /api/rule-review/*
 │       ├── zone_routes.py            /zone-policy  /api/zone/*
 │       ├── map_routes.py             /map  /api/map/*
@@ -274,7 +275,7 @@ Ansible/
 | Document | Contents |
 |---|---|
 | [docs/configuration.md](docs/configuration.md) | All environment variables, `infra_targets.json` format, runtime data files |
-| [docs/features.md](docs/features.md) | Per-tab deep-dives: Rule Review, Device Review, Rule Validation, Zone Policy, Map, External API, logging, extending the app |
+| [docs/features.md](docs/features.md) | Per-tab deep-dives: Rule Review, Audit Review, Rule Validation, Zone Policy, Map, External API, logging, extending the app |
 | [docs/api-reference.md](docs/api-reference.md) | Complete API endpoint reference |
 | [docs/deployment.md](docs/deployment.md) | Linux production deployment: OS setup, Gunicorn, Nginx, systemd (Phases 1–3) |
 | [docs/authentication.md](docs/authentication.md) | RBAC, AD/LDAP setup, RADIUS/FortiAuthenticator setup, AD migration guide |

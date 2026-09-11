@@ -16,15 +16,15 @@ const SECTIONS = [
   <li><strong>Dashboard</strong> — live health cards for FortiManager, FortiAnalyzer, and FortiCollector appliances.</li>
   <li><strong>Firewalls</strong> — browse managed FortiGate devices by ADOM, search by name or IP, and drill into full device details.</li>
   <li><strong>Device Versions</strong> — firmware version distribution across all devices in an ADOM.</li>
-  <li><strong>Rule Review</strong> — policy viewer with full-text search and exports, plus automated hygiene checks on a selected package.</li>
-  <li><strong>Device Review</strong> — per-device interface audit showing which management protocols (HTTP, Telnet, HTTPS, SSH, etc.) are enabled, with insecure protocols highlighted red.</li>
+  <li><strong>Rule Review</strong> — policy viewer with full-text search and exports.</li>
+  <li><strong>Audit Review</strong> — per-device CIS hardening and interface protocol audit, plus hygiene analysis of policy packages and PSIRT advisory assessment.</li>
   <li><strong>Rule Validation</strong> — evaluate whether proposed flows are already permitted or need new/modified rules, with an optional AI Assist mode.</li>
   <li><strong>Zone Policy</strong> — browse and query your network segmentation policy database.</li>
   <li><strong>Config-Delta</strong> — see exactly which FortiOS CLI lines will change on the next install to a device, before it happens.</li>
   <li><strong>Map (Beta)</strong> — interactive geographic map of all managed FortiGate devices, colour-coded by ADOM with zoom-based clustering.</li>
 </ul>
 <h3>AI Assist</h3>
-<p>Several tabs offer an optional AI Assist mode — Rule Validation, Device Review, Config-Delta, and Rule Review's Hygiene Analysis — plus an AI trend summary on the Admin page. All are off by default and gated by a single <strong>Admin → AI Assist</strong> toggle. In every case the AI only explains an already-computed result; it never decides a verdict, a check outcome, or a trend by itself — those are always computed deterministically first.</p>
+<p>Several tabs offer an optional AI Assist mode — Rule Validation, Config-Delta, and Audit Review (CIS results, Hygiene Analysis findings, and PSIRT advisory extraction all have their own AI touchpoint) — plus an AI trend summary on the Admin page. All are off by default and gated by a single <strong>Admin → AI Assist</strong> toggle. In every case the AI only explains an already-computed result; it never decides a verdict, a check outcome, or a trend by itself — those are always computed deterministically first.</p>
 <h3>Status Colours</h3>
 <div class="help-status-list">
   <span class="status-dot green"></span> <span><strong>Green</strong> — device is reachable and all metrics are within normal thresholds.</span>
@@ -139,7 +139,7 @@ const SECTIONS = [
     tab:   'rule_hygiene',
     html: `
 <h3>Rule Review</h3>
-<p>Four sections on this page: <strong>Policy Rules</strong>, <strong>Object Lookup</strong>, <strong>Interface Lookup</strong>, <strong>NAT Lookup</strong>, and <strong>Hygiene Analysis</strong>. Each has its own ADOM selector and works independently.</p>
+<p>Four sections on this page: <strong>Policy Rules</strong>, <strong>Object Lookup</strong>, <strong>Interface Lookup</strong>, and <strong>NAT Lookup</strong>. Each has its own ADOM selector and works independently.</p>
 <h3>Policy Rules</h3>
 <p>Select an ADOM and Policy Package — the full rule table loads automatically.</p>
 <ul>
@@ -173,40 +173,16 @@ const SECTIONS = [
   <li>Results show: Type (VIP or IP Pool), name, external IP, mapped/pool IP, interface, protocol/port (for port-forwarding VIPs), and comments.</li>
   <li>Exports: CSV, JSON, PDF.</li>
 </ul>
-<h3>Hygiene Analysis</h3>
-<ol>
-  <li>Select an <strong>ADOM</strong> and <strong>Policy Package</strong> (independent from the viewer above).</li>
-  <li>Choose which checks to run (all selected by default).</li>
-  <li>Click <strong>Run Analysis</strong>. Findings appear in the results table.</li>
-</ol>
-<h3>Check Types</h3>
-<ul>
-  <li><strong>Unnamed rules</strong> — policies with no name set (harder to audit).</li>
-  <li><strong>Unlogged rules</strong> — policies with logging disabled (traffic is invisible).</li>
-  <li><strong>Shadow rules</strong> — rules that are completely covered by an earlier, broader rule and will never match.</li>
-  <li><strong>Disabled rules</strong> — rules that have been turned off but left in place.</li>
-  <li><strong>Expired rules</strong> — rules with a validity end date in the past.</li>
-  <li><strong>Unhit rules</strong> — rules with zero bytes or sessions since creation (may be unused).</li>
-  <li><strong>Missing Security Profiles</strong> — accept rules with UTM disabled, or UTM enabled but no IPS/AV/webfilter/DNS filter/application-control profile actually attached.</li>
-  <li><strong>Redundant rules</strong> — a rule whose src/dst/service scope is fully covered by an earlier rule with the same action, making it a duplicate.</li>
-  <li><strong>Over-permissive rules</strong> — accept rules where two or more of source, destination, and service are unrestricted (<code>all</code>/<code>ANY</code>). Severity is <em>critical</em> when all three are unrestricted, <em>high</em> when two are.</li>
-</ul>
-<h3>Exempting a Rule From Hygiene Checks</h3>
-<p>Add the word <strong>"Exempt"</strong> anywhere in a rule's comment field (case-insensitive — e.g. <code>"Exempt -- approved by security, CHG0012345"</code>) and every hygiene check silently skips that rule on future runs, no matter which checks are selected. Use this to whitelist rules you've reviewed and intentionally kept as-is, so they stop reappearing in every report. Shadow/redundant analysis for <em>other</em> rules is unaffected — an exempted rule still counts as the "earlier, broader rule" when determining whether it shadows something else; only findings <em>about the exempted rule itself</em> are suppressed. The <strong>Hygiene Fix</strong> AI Assist mode's "Exempt (keep enabled)" option (see the Rule Validation help section) writes this same tag automatically, so choosing that fix for an over-permissive rule doubles as marking it exempt going forward.</p>
-<h3>Findings Table</h3>
-<ul>
-  <li>Filter by check type using the dropdown. Use the search box to find specific rule names or IDs.</li>
-  <li>Export findings as <strong>CSV</strong>, <strong>JSON</strong>, or <strong>PDF</strong>. Each export includes a header block showing the package, ADOM, timestamp, and active filters.</li>
-</ul>
-<h3>AI Explain</h3>
-<p><em>If AI Assist is enabled (Admin → AI Assist):</em> expand any finding row and click <strong>Explain</strong> to get a plain-English explanation of why it matters plus a suggested FortiOS CLI remediation snippet — for that one finding only, never the whole result set. The snippet is a suggestion to review, not something the app applies for you.</p>
 `
   },
   {
-    id:    'device_review',
-    label: 'Device Review',
-    tab:   'device_review',
+    id:    'audit_review',
+    label: 'Audit Review',
+    tab:   'audit_review',
     html: `
+<h3>Audit Review</h3>
+<p>The Audit Review tab contains three sections: <strong>Device Review</strong> (CIS hardening and interface protocol checks), <strong>Hygiene Analysis</strong> (policy package rule checks), and <strong>PSIRT Advisory Assessment</strong>.</p>
+
 <h3>Device Review</h3>
 <p>Audits every FortiGate in a selected ADOM against interface protocol checks and CIS hardening benchmarks. Results are colour-coded by severity so issues stand out immediately.</p>
 
@@ -294,6 +270,35 @@ const SECTIONS = [
 <p>CSV and JSON export all filtered rows with a metadata header. PDF exports only the selected (checked) rows and includes an evidence header: ADOM, date/time, devices reviewed, and checks run.</p>
 <h3>AI Summary</h3>
 <p><em>If AI Assist is enabled (Admin → AI Assist):</em> after a run completes, click <strong>Summarize with AI</strong> for a short plain-English summary of overall posture and which devices or checks need attention first. The same summary is added automatically to scheduled email/PDF reports when enabled.</p>
+
+<h3>Hygiene Analysis</h3>
+<ol>
+  <li>Select an <strong>ADOM</strong> and <strong>Policy Package</strong> (independent from Device Review above).</li>
+  <li>Choose which checks to run (all selected by default).</li>
+  <li>Click <strong>▶ Run Analysis</strong>. Findings appear in the results table.</li>
+</ol>
+<h3>Check Types</h3>
+<ul>
+  <li><strong>Unnamed rules</strong> — policies with no name set (harder to audit).</li>
+  <li><strong>Unlogged rules</strong> — policies with logging disabled (traffic is invisible).</li>
+  <li><strong>Shadow rules</strong> — rules that are completely covered by an earlier, broader rule and will never match.</li>
+  <li><strong>Disabled rules</strong> — rules that have been turned off but left in place.</li>
+  <li><strong>Expired rules</strong> — rules with a validity end date in the past.</li>
+  <li><strong>Unhit rules</strong> — rules with zero bytes or sessions since creation (may be unused).</li>
+  <li><strong>Missing Security Profiles</strong> — accept rules with UTM disabled, or UTM enabled but no IPS/AV/webfilter/DNS filter/application-control profile actually attached.</li>
+  <li><strong>Redundant rules</strong> — a rule whose src/dst/service scope is fully covered by an earlier rule with the same action, making it a duplicate.</li>
+  <li><strong>Over-permissive rules</strong> — accept rules where two or more of source, destination, and service are unrestricted (<code>all</code>/<code>ANY</code>). Severity is <em>critical</em> when all three are unrestricted, <em>high</em> when two are.</li>
+</ul>
+<h3>Exempting a Rule From Hygiene Checks</h3>
+<p>Add the word <strong>"Exempt"</strong> anywhere in a rule's comment field (case-insensitive — e.g. <code>"Exempt -- approved by security, CHG0012345"</code>) and every hygiene check silently skips that rule on future runs, no matter which checks are selected. Use this to whitelist rules you've reviewed and intentionally kept as-is, so they stop reappearing in every report. Shadow/redundant analysis for <em>other</em> rules is unaffected — an exempted rule still counts as the "earlier, broader rule" when determining whether it shadows something else; only findings <em>about the exempted rule itself</em> are suppressed. The <strong>Hygiene Fix</strong> AI Assist mode's "Exempt (keep enabled)" option (see the Rule Validation help section) writes this same tag automatically, so choosing that fix for an over-permissive rule doubles as marking it exempt going forward.</p>
+<h3>Findings Table</h3>
+<ul>
+  <li>Filter by check type using the dropdown. Use the search box to find specific rule names or IDs.</li>
+  <li>Export findings as <strong>CSV</strong>, <strong>JSON</strong>, or <strong>PDF</strong>. Each export includes a header block showing the package, ADOM, timestamp, and active filters.</li>
+  <li>Click <strong>Find Unused Objects</strong> to detect address and service objects not referenced by any rule in the selected package.</li>
+</ul>
+<h3>AI Explain</h3>
+<p><em>If AI Assist is enabled (Admin → AI Assist):</em> expand any finding row and click <strong>Explain</strong> to get a plain-English explanation of why it matters plus a suggested FortiOS CLI remediation snippet — for that one finding only, never the whole result set. The snippet is a suggestion to review, not something the app applies for you.</p>
 `
   },
   {
@@ -463,7 +468,7 @@ const SECTIONS = [
     label: 'Scheduled Jobs',
     html: `
 <h3>Scheduled Jobs</h3>
-<p>The <strong>Scheduled</strong> sub-tab in the Admin panel lets admins create recurring automated reports. Two job types are available: <strong>Config-Delta</strong> (pending configuration diffs) and <strong>Device Review</strong> (CIS hardening audit). Both use the same SMTP settings configured at the top of the panel.</p>
+<p>The <strong>Scheduled</strong> sub-tab in the Admin panel lets admins create recurring automated reports. Two job types are available: <strong>Config-Delta</strong> (pending configuration diffs) and <strong>Audit Review</strong> (CIS hardening audit). Both use the same SMTP settings configured at the top of the panel.</p>
 
 <h3>SMTP Settings</h3>
 <p>Before creating any scheduled job, configure the outbound mail server:</p>
@@ -488,7 +493,7 @@ const SECTIONS = [
 </ul>
 <p>Click <strong>Run Now</strong> on any job row to fire it immediately outside the schedule.</p>
 
-<h3>Device Review Scheduled Jobs</h3>
+<h3>Audit Review Scheduled Jobs</h3>
 <p>Runs CIS hardening checks against every device in an ADOM on a recurring schedule and emails the results.</p>
 <ul>
   <li><strong>Name</strong> — a label for this job (e.g. "Weekly CIS Audit — Enterprise").</li>
@@ -502,7 +507,7 @@ const SECTIONS = [
 </ul>
 
 <h3>Email Report Format</h3>
-<p>Each Device Review email contains two parts:</p>
+<p>Each Audit Review email contains two parts:</p>
 <ul>
   <li><strong>Email body</strong> — a summary table showing pass / fail / warn counts per check across all devices.</li>
   <li><strong>Attachment</strong> — the full findings detail in your chosen format:
@@ -581,7 +586,7 @@ const SECTIONS = [
 <p>Lets external programs query Zone Policy data over a bearer-token API, without a browser session. Disabled by default — check <strong>External API enabled</strong> and save to turn it on. Create tokens with <strong>+ New Token</strong>; the plaintext value is shown once and never again, so copy it immediately. Tokens can be revoked at any time. When disabled, every <code>/external/api/</code> request returns <code>503</code> regardless of token validity.</p>
 
 <h3>AI Assist</h3>
-<p>One <strong>ai_assist_enabled</strong> toggle turns on every AI feature in the app at once — Rule Validation's AI Assist, Device Review's AI Summary, Config-Delta's AI Summary, Rule Review's AI Explain, and the Admin AI Trend Summary. Off by default. This sub-tab also shows an AI usage/cost chart — every LLM call the app makes (which provider, how many tokens, estimated cost) is tracked here regardless of which feature triggered it.</p>
+<p>One <strong>ai_assist_enabled</strong> toggle turns on every AI feature in the app at once — Rule Validation's AI Assist, Audit Review's AI Summary/AI Explain/PSIRT extraction, Config-Delta's AI Summary, and the Admin AI Trend Summary. Off by default. This sub-tab also shows an AI usage/cost chart — every LLM call the app makes (which provider, how many tokens, estimated cost) is tracked here regardless of which feature triggered it.</p>
 
 <h3>Backup</h3>
 <p>Creates AES-256 encrypted ZIP backups of all runtime configuration. <strong>One-time backups</strong> download directly to your browser. <strong>Scheduled backups</strong> (daily/weekly/custom) run server-side and can optionally push the archive to a remote FTP or SFTP server. The backup password is shown once on first save, the same as API tokens — store it offline, it cannot be retrieved again. The last 20 local archives are kept automatically; older ones are pruned.</p>
@@ -636,10 +641,10 @@ const SECTIONS = [
   <div class="faq-q">The route table shows thousands of rows. Is there a faster way to find a route?</div>
   <div class="faq-a">Yes — use the filter box above the route table in the device detail panel. Type any part of the destination network, gateway IP, or interface name to narrow down the list instantly.</div>
 
-  <div class="faq-q">Device Review shows no interfaces even though I know protocols are configured.</div>
+  <div class="faq-q">Audit Review shows no interfaces even though I know protocols are configured.</div>
   <div class="faq-a">The review fetches interfaces via FortiManager's proxy API. If the device is offline or FortiManager cannot reach it, the interface list will be empty for that device. Devices that return no data are silently skipped — they are still counted in "devices reviewed" but contribute no rows to the results.</div>
 
-  <div class="faq-q">Why does the Device Review take a long time for a large ADOM?</div>
+  <div class="faq-q">Why does the Audit Review take a long time for a large ADOM?</div>
   <div class="faq-a">Each device requires a separate API call through FortiManager. The review processes one device at a time so you can watch progress and cancel early. For an ADOM with 700+ devices expect several minutes. Use the <strong>⏹ Cancel</strong> button to stop and work with partial results.</div>
 
   <div class="faq-q">The Device Versions "All ADOMs" chart is spinning and not loading.</div>

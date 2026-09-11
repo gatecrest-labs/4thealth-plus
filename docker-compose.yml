@@ -1,4 +1,12 @@
 services:
+  test-smtp:
+    image: mailhog/mailhog
+    container_name: test-smtp
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   app:
     build: .
     image: 4thealth-plus:latest
@@ -32,6 +40,7 @@ services:
       - ./config_diff_jobs.json:/app/config_diff_jobs.json:rw
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
       - ./device_review_rollup.json:/app/device_review_rollup.json:rw
+      - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
       - ./hygiene_rollup.json:/app/hygiene_rollup.json:rw
       - ./summary_history.json:/app/summary_history.json:rw
       - ./certs:/app/certs:ro

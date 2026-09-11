@@ -2,7 +2,7 @@
 
 import os
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
@@ -147,6 +147,63 @@ def test_poll_all_targets_skips_target_missing_host(snmp_targets, monkeypatch):
 
     # Good target was polled successfully
     assert cache_mod.get_cached("10.0.0.1")["snmp_status"] == "ok"
+
+
+def test_fetch_meta_parses_hostname_ha_role_and_disk_pct():
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get_system_status.return_value = {
+        "Hostname": "fmg1.local",
+        "HA Role": "master",
+        "disk info": {"used": "20", "total": "100"},
+    }
+
+    with patch("app.fmg_client.FMGClient", return_value=fake_client):
+        meta = cache_mod.fetch_meta({"host": "10.0.0.1", "type": "FortiManager"})
+
+    assert meta == {"hostname": "fmg1.local", "ha_role": "master", "disk_pct": 20.0, "api_ok": True}
+
+
+def test_fetch_meta_handles_list_response():
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get_system_status.return_value = [{"hostname": "faz1.local", "ha_role": "n/a"}]
+
+    with patch("app.fmg_client.FMGClient", return_value=fake_client):
+        meta = cache_mod.fetch_meta({"host": "10.0.0.2", "type": "FortiAnalyzer"})
+
+    assert meta["hostname"] == "faz1.local"
+    assert meta["disk_pct"] is None
+
+
+def test_fetch_meta_unreachable_returns_all_none_and_api_ok_false():
+    with patch("app.fmg_client.FMGClient", side_effect=RuntimeError("connection refused")):
+        meta = cache_mod.fetch_meta({"host": "10.0.0.1", "type": "FortiManager"})
+
+    assert meta == {"hostname": None, "ha_role": None, "disk_pct": None, "api_ok": False}
+
+
+def test_fetch_meta_never_returns_zero_disk_for_unreachable_target():
+    # Regression guard: an unreachable target must read as "no data", never
+    # as a healthy 0% disk usage.
+    with patch("app.fmg_client.FMGClient", side_effect=RuntimeError("boom")):
+        meta = cache_mod.fetch_meta({"host": "10.0.0.1", "type": "FortiManager"})
+    assert meta["disk_pct"] is None
+
+
+def test_fetch_meta_malformed_disk_info_returns_none_not_crash():
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get_system_status.return_value = {"disk info": {"used": "n/a", "total": "n/a"}}
+
+    with patch("app.fmg_client.FMGClient", return_value=fake_client):
+        meta = cache_mod.fetch_meta({"host": "10.0.0.1", "type": "FortiManager"})
+
+    assert meta["disk_pct"] is None
+    assert meta["api_ok"] is True
 
 
 def test_poll_now_does_not_block_caller(snmp_targets):
