@@ -260,6 +260,7 @@ def _execute_job(job_id: str) -> None:
             .replace(tzinfo=None)
             .isoformat()
             + "Z",
+            "adom": adom,
             **_build_dr_rollup(results),
         }
         _append_dr_rollup(dr_rollup_record)

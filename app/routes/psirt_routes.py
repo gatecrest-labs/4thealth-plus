@@ -27,6 +27,17 @@ API (JSON):
        body: { assessment: {...PsirtAssessment.to_dict() shape...} }
        Renders the already-computed assessment to HTML — never recomputes.
        returns: HTML document (Content-Type: text/html)
+
+  GET  /api/audit-review/psirt/advisories?open_only=true
+       Persisted advisories (see app.psirt_store), each with its latest
+       assessment summary merged in — feeds the "Open PSIRT Advisories"
+       panel and its Close button.
+       returns: { advisories: [...] }
+
+  POST /api/audit-review/psirt/advisories/<advisory_id>/close
+       Sets closed_at so this advisory stops counting in the executive
+       summary's fleet exposure rollup. Does not re-run or delete anything.
+       returns: { closed: true } or 404 if the advisory was never saved
 """
 
 from __future__ import annotations
@@ -36,6 +47,7 @@ from email import policy as email_policy
 
 from flask import Blueprint, jsonify, request, session
 
+from app import psirt_store
 from app.app_settings import get_setting
 from app.config import Config
 from app.decorators import check_adom_access, tab_required
@@ -326,7 +338,14 @@ def psirt_assess_bulk():
     except Exception as exc:
         return internal_api_error("psirt", exc)
 
-    return jsonify(result.to_dict())
+    result_dict = result.to_dict()
+    try:
+        psirt_store.save_assessment_result(result_dict)
+    except Exception:
+        # Persistence is best-effort — a storage hiccup must never cost the
+        # user the assessment they just waited on.
+        pass
+    return jsonify(result_dict)
 
 
 # ── report ──────────────────────────────────────────────────────────────────
@@ -344,3 +363,33 @@ def psirt_report():
     except Exception as exc:
         return internal_api_error("psirt", exc)
     return html, 200, {"Content-Type": "text/html"}
+
+
+# ── persisted advisories: list + close ──────────────────────────────────────
+
+
+@bp.route("/api/audit-review/psirt/advisories")
+@tab_required("audit_review")
+def psirt_list_advisories():
+    open_only = (request.args.get("open_only", "") or "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    try:
+        advisories = psirt_store.list_advisories(open_only=open_only)
+    except Exception as exc:
+        return internal_api_error("psirt", exc)
+    return jsonify({"advisories": advisories})
+
+
+@bp.route("/api/audit-review/psirt/advisories/<advisory_id>/close", methods=["POST"])
+@tab_required("audit_review")
+def psirt_close_advisory(advisory_id: str):
+    try:
+        closed = psirt_store.close_advisory(advisory_id)
+    except Exception as exc:
+        return internal_api_error("psirt", exc)
+    if not closed:
+        return jsonify({"error": f"No saved advisory {advisory_id!r}"}), 404
+    return jsonify({"closed": True})

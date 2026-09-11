@@ -118,7 +118,11 @@ This closes the loop with Hygiene Fix's over-permissive "Exempt (keep enabled)" 
 
 ### PSIRT Advisory Assessment
 
-Paste or upload (`.eml`/`.txt`) a Fortinet PSIRT advisory email. An LLM extracts structured fields — advisory ID, CVE IDs, affected version ranges, workaround text, severity, exploitation wording — into an editable review form; this is the only LLM touchpoint in the feature. Everything downstream is deterministic: the app scans the selected ADOM (or every accessible ADOM) for affected firmware and whether a documented workaround is already applied, then computes a priority from CVSS band, Fortinet's exploitation wording, and CISA KEV catalog membership. No persistence — each assessment is a one-off analysis, downloadable as a standalone HTML report. Admin-gated by the same `ai_assist_enabled` flag as the rest of AI Assist.
+Paste or upload (`.eml`/`.txt`) a Fortinet PSIRT advisory email. An LLM extracts structured fields — advisory ID, CVE IDs, affected version ranges, workaround text, severity, exploitation wording — into an editable review form; this is the only LLM touchpoint in the feature. Everything downstream is deterministic: the app scans the selected ADOM (or every accessible ADOM) for affected firmware and whether a documented workaround is already applied, then computes a priority from CVSS band, Fortinet's exploitation wording, and CISA KEV catalog membership. Each completed assessment is downloadable as a standalone HTML report. Admin-gated by the same `ai_assist_enabled` flag as the rest of AI Assist.
+
+**Persistence:** every completed assessment (run from the UI, via `POST /api/audit-review/psirt/assess`) is saved to `psirt.db` (gitignored, project root) — see `app/psirt_store.py`. Two tables: `advisories` (one row per advisory, upserted — CVEs, CVSS, severity, KEV flag, affected ranges, workaround text, `created_at`/`closed_at`) and `assessments` (append-only history of runs, each with `devices_affected` and a `summary`). The **Open PSIRT Advisories** panel below the results table lists every saved advisory that hasn't been closed, with its most recent device-affected count, and a **Close advisory** button that sets `closed_at` — once closed, the advisory stops counting toward fleet exposure (see below) and stops being re-checked by the scheduler.
+
+**Scheduled re-assessment:** a background job (`app/psirt_reassess_scheduler.py`) re-runs `app.psirt.engine.assess()` for every still-open advisory on the same cadence as the executive-summary device sweep (`EXEC_SUMMARY_REFRESH_MINUTES`, default 15 minutes), so exposure stays current without the user re-running anything. It reuses that sweep's already-cached device inventory (`app.executive_summary_cache.get_devices_raw_by_adom()`) rather than making a fresh FMG download — a `_CachedDeviceClient` stand-in supplies `get_adoms()`/`get_devices()` from the cache. Two things that inventory can't provide are handled as expected degradations rather than failures: a FortiManager-itself finding (when an advisory names FortiManager) reports as a warning since the cached inventory has no FMG version, and workaround verification (which needs live per-device config reads) falls back to `manual_verification_required` per device. A per-advisory failure during the sweep skips saving for that advisory only — its last successful result is left untouched — and the sweep continues with the next one.
 
 ---
 
@@ -413,7 +417,53 @@ Response:
   "firewall_online_count": 212,
   "firewalls_total": 218,
   "status": "ok",
-  "last_updated": "2026-08-24T15:00:00Z"
+  "last_updated": "2026-08-24T15:00:00Z",
+  "schema_version": 2,
+  "change_control": {
+    "devices_out_of_sync": 4,
+    "admin_changes_24h": 12,
+    "admin_changes_by_user": [{"user": "alice", "count": 8}, {"user": "bob", "count": 4}],
+    "collected_at": "2026-09-10T01:00:00Z"
+  },
+  "by_adom": {
+    "Corp": {
+      "firewalls_total": 42,
+      "firewall_online_count": 40,
+      "version_compliance_pct": 92.9,
+      "pending_config_diff_count": 3,
+      "devices_with_failures": 5
+    }
+  },
+  "infra": [
+    {
+      "role": "fortimanager",
+      "label": "FMG-01",
+      "hostname": "fmg1.corp.local",
+      "cpu": 12.4,
+      "mem": 38.1,
+      "disk_pct": 41.0,
+      "ha_role": "master",
+      "status": "green",
+      "last_updated": "2026-09-10T00:00:00Z"
+    }
+  ],
+  "lifecycle": {
+    "devices_hw_eos": 3,
+    "devices_hw_eos_12m": 5,
+    "models_unknown": ["FortiGate-Unicorn"],
+    "collected_at": "2026-09-10T00:00:00Z"
+  },
+  "psirt": {
+    "open_advisories": 3,
+    "devices_critical": 5,
+    "devices_high": 2,
+    "devices_medium": 0,
+    "devices_critical_mitigated": 1.0,
+    "kev_exposed_devices": 2,
+    "top_advisory": {"advisory_id": "FG-IR-24-001", "cvss": 9.8, "kev": true, "devices": 5},
+    "mean_days_to_remediate_90d": 12.5,
+    "collected_at": "2026-09-10T00:00:00Z"
+  }
 }
 ```
 
@@ -424,6 +474,29 @@ Response:
 - `firewall_online_count` / `firewalls_total` — connected vs. total FortiGate device count.
 - `status` — one of `pending`, `running`, `ok`, or `error`; lets consumers distinguish "not computed yet" from "real data."
 - `last_updated` — ISO 8601 timestamp of whichever sweep (see below) most recently completed.
+- `schema_version` — `2` as of this release (bumped from `1`; the bump is purely additive — every v1 key is still present).
+- `change_control` — who's changing what, and how much of the fleet has drifted from FortiManager's database:
+  - `devices_out_of_sync` — device count whose normalized `conf_status` (from `FMGClient.get_devices_with_sync_status()`, the same call the device sweep already made) is not `"insync"` — covers both `"outofsync"` and an unrecognized status. Freshness: the top-level `device_sweep_collected_at` field, same as the other device-sweep-sourced counts.
+  - `admin_changes_24h` — total FortiManager admin audit-log entries in the trailing 24 hours, from a separate hourly sweep (`app/change_control_cache.py`) calling `FMGClient.get_audit_log(hours=24)` once (the audit log is FortiManager-instance-wide, not per-ADOM).
+  - `admin_changes_by_user` — the top 5 users by change count in that window, as `[{user, count}]`, ties broken by first-seen order.
+  - `collected_at` — ISO 8601 timestamp of the audit-log sweep that produced `admin_changes_24h`/`admin_changes_by_user`. Persisted to `change_control.json` (gitignored) so a restart doesn't blank these two fields until the next hourly sweep completes; a failed sweep (FMG unreachable, endpoint unsupported by the FMG version) leaves the last successful result in place.
+  - **`oldest_pending_change_days` is intentionally not included.** FortiManager's `dvmdb` device object (as read by `get_devices_with_sync_status()`) carries no confirmed per-device modification timestamp in this codebase's vendored API knowledge — no such field is read anywhere else in the app, and no FMG API reference is vendored here to confirm one exists. The key is omitted entirely rather than reporting a fabricated or always-null value; add it once a real FMG instance confirms which field (if any) carries it, following the same "not confirmed against real hardware" caveat already documented for the FortiAnalyzer/FortiAuthenticator SNMP OIDs in CLAUDE.md.
+- `lifecycle` — hardware end-of-support (EOS) exposure, computed inside the device sweep from the platform strings `app/pending_status_cache.py` already caches (no extra FMG call) matched against a static table in `app/model_eos.py` (mirrors `app/version_eol.py`'s FortiOS software-EOL table, but keyed by hardware platform string with an actual EOS date rather than a fixed version set):
+  - `devices_hw_eos` — device count whose hardware platform has already reached end-of-support.
+  - `devices_hw_eos_12m` — device count whose hardware platform reaches (or already has reached) end-of-support within the next 12 months; a superset of `devices_hw_eos`.
+  - `models_unknown` — distinct platform strings with no entry in `app/model_eos.py`'s table, so a hardware family this table hasn't been updated for is visible rather than silently treated as "not EOS". `is_hw_eos()`/`hw_eos_within()` both return `None` (never `False`) for an unrecognized model.
+  - `collected_at` — same timestamp as `device_sweep_collected_at` (same sweep, same source data).
+  - **Device configuration backup age (`device_backup`) is not implemented.** The FMG revision-history endpoint this would need could not be confirmed against the lab FortiManager or any vendored API knowledge in this repo — see `docs/superpowers/specs/2026-09-10-device-backup-age-spike.md` for the investigation and recommended next step.
+- `by_adom` — the same five fleet-wide device-sweep metrics (`firewalls_total`, `firewall_online_count`, `version_compliance_pct`, `pending_config_diff_count`, `devices_with_failures`), broken out per ADOM. Computed inside the same device sweep that produces the fleet-wide numbers (the sweep already loops per-ADOM), so this costs no extra FMG calls beyond what the fleet-wide sweep already makes. `forti*` system ADOMs are excluded, same as every other ADOM-returning endpoint in this repo. `pending_config_diff_count` is `null` for an ADOM whenever `pending_status_cache` isn't ready yet, matching the fleet-wide field's own honesty rule. `devices_with_failures` is the one field the device sweep genuinely cannot compute itself (it needs live CIS check results, not a device list) — it's filled in from `app/device_review_rollup.py`'s `get_latest_by_adom()`, i.e. whichever ADOM a *scheduled Device Review job* most recently covered; an ADOM with no such run yet (or ever) gets `null`, never a fabricated `0`.
+- `infra` — management-plane health for FortiManager, FortiAnalyzer, and FortiAuthenticator `infra_targets.json` entries, as `[{role, label, hostname, cpu, mem, disk_pct, ha_role, status, last_updated}]`. `cpu`/`mem`/`status`(green/amber/red when a reading exists)/`last_updated` come straight from `app/infra_health_cache.py`'s existing SNMPv3 poll cache (no new SNMP traffic). `hostname`/`ha_role`/`disk_pct` come from a lightweight `FMGClient.get_system_status()` call per target, made once per device-sweep cycle (`app/infra_health_cache.py::fetch_meta()`) — not cached separately, since the sweep's own 15-minute-default cadence is already an appropriate refresh rate for fields that change this slowly. **Never includes the target's `host` (an IP) or its `token`** — only `label` (from `infra_targets.json`) and the device-reported `hostname`. `status` is `"gray"` when the target is unreachable by both SNMP and the FMG API, `"green"` when the API is reachable but no SNMP reading is available, and green/amber/red from the SNMP reading otherwise.
+- `psirt` — fleet-wide PSIRT exposure, sourced from `psirt.db` (see [PSIRT Advisory Assessment](#psirt-advisory-assessment) above) rather than a live sweep:
+  - `open_advisories` — count of saved advisories not yet closed.
+  - `devices_critical` / `devices_high` / `devices_medium` — device count affected by open advisories in that priority band (from the advisory's own computed priority, not CVSS alone). A device counts here regardless of whether a workaround is already applied — this field is never silently reduced for mitigation.
+  - `devices_critical_mitigated` — of the critical-band devices above, those with a confirmed workaround in place, counted **at half weight** (e.g. 2 mitigated devices → `1.0`). Reported as its own field specifically so it is never used to silently shrink `devices_critical`.
+  - `kev_exposed_devices` — distinct devices affected by any open advisory listed in the CISA KEV catalog.
+  - `top_advisory` — the single highest-priority open advisory (ties broken by CVSS, then device count); `null` if there are no open advisories.
+  - `mean_days_to_remediate_90d` — mean days between an advisory being first saved and being closed, over advisories closed in the trailing 90 days; `null` if none were closed in that window.
+  - `collected_at` — ISO 8601 timestamp of when this rollup was computed (computed on read, not cached).
 
 **Two independent background sweeps, on different cadences:** `hygiene_score` is expensive to compute — it downloads every policy in every package in every ADOM — so it refreshes on its own, much slower schedule (`EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES`, default 60 minutes) than the other four metrics (`EXEC_SUMMARY_REFRESH_MINUTES`, default 15 minutes), which only need one lightweight device-list call per ADOM. Each sweep only updates its own fields; the other sweep's most recent values are always preserved in between. In large environments (hundreds of FortiGates), raise `EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES` further to reduce load on FortiManager.
 
@@ -437,6 +510,8 @@ Response:
 |---|---|
 | `app_settings.json` | Stores `external_api_enabled`, `executive_compliant_versions`, and `ai_assist_enabled` (created automatically) |
 | `api_tokens.json` | Stores SHA-256 token hashes (created automatically) |
+| `psirt.db` | SQLite — saved PSIRT advisories and assessment history (created automatically) |
+| `change_control.json` | Latest admin audit-log rollup (`admin_changes_24h`, `admin_changes_by_user`) — created automatically |
 
 ---
 

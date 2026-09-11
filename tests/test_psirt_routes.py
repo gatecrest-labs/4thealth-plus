@@ -6,7 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app import psirt_store
 from app.llm.base import LLMProvider
+
+
+@pytest.fixture(autouse=True)
+def _isolated_psirt_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(psirt_store, "_DB_PATH", tmp_path / "psirt_test.db")
+    yield
 
 
 class _FakeProvider(LLMProvider):
@@ -280,3 +287,55 @@ def test_report_returns_html(client):
     assert resp.status_code == 200
     assert b"FG-IR-24-001" in resp.data
     assert b"FW01" in resp.data
+
+
+# ── Persistence: bulk assess saves, and the advisories list/close routes ────
+
+
+def test_assess_bulk_persists_result_for_open_advisories_list(client):
+    fake_fmg = MagicMock()
+    fake_fmg.get_devices.return_value = [{"name": "FW01", "os_ver": "7.0", "mr": "4", "patch": "2"}]
+    fake_fmg.get_adoms.return_value = [{"name": "Corp"}]
+    cm = MagicMock()
+    cm.__enter__.return_value = fake_fmg
+    cm.__exit__.return_value = False
+
+    with patch("app.routes.psirt_routes.make_client", return_value=cm):
+        resp = _post(client, "/api/audit-review/psirt/assess",
+                      {"adom": "Corp", "advisory": _STAR_ADVISORY_PAYLOAD})
+    assert resp.status_code == 200
+
+    list_resp = client.get("/api/audit-review/psirt/advisories?open_only=true")
+    data = list_resp.get_json()
+    assert any(a["advisory_id"] == "FG-IR-24-001" for a in data["advisories"])
+
+
+def test_close_advisory_removes_it_from_open_list(client):
+    fake_fmg = MagicMock()
+    fake_fmg.get_devices.return_value = [{"name": "FW01", "os_ver": "7.0", "mr": "4", "patch": "2"}]
+    fake_fmg.get_adoms.return_value = [{"name": "Corp"}]
+    cm = MagicMock()
+    cm.__enter__.return_value = fake_fmg
+    cm.__exit__.return_value = False
+
+    with patch("app.routes.psirt_routes.make_client", return_value=cm):
+        _post(client, "/api/audit-review/psirt/assess",
+              {"adom": "Corp", "advisory": _STAR_ADVISORY_PAYLOAD})
+
+    close_resp = client.post(
+        "/api/audit-review/psirt/advisories/FG-IR-24-001/close",
+        headers={"X-CSRF-Token": "test-csrf"},
+    )
+    assert close_resp.status_code == 200
+    assert close_resp.get_json()["closed"] is True
+
+    list_resp = client.get("/api/audit-review/psirt/advisories?open_only=true")
+    assert list_resp.get_json()["advisories"] == []
+
+
+def test_close_unknown_advisory_returns_404(client):
+    resp = client.post(
+        "/api/audit-review/psirt/advisories/does-not-exist/close",
+        headers={"X-CSRF-Token": "test-csrf"},
+    )
+    assert resp.status_code == 404
