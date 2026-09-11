@@ -23,7 +23,7 @@ All of these files are gitignored. None exist in the repository; you created the
 | `api_tokens.json` | Hashed bearer tokens for external API clients | Yes — external integrations will break without it |
 | `smtp_config.json` | SMTP relay settings | Yes if scheduled exports are in use |
 | `config_diff_jobs.json` | Scheduled Config-Delta export jobs + run history | Yes if scheduled jobs are configured |
-| `device_review_jobs.json` | Scheduled Device Review audit jobs + run history | Yes if scheduled jobs are configured |
+| `device_review_jobs.json` | Scheduled Audit Review audit jobs + run history | Yes if scheduled jobs are configured |
 | `summary_history.json` | Nightly firewall/rule count history | No — regenerates on next nightly run |
 
 **Linux-only extras (not in the app directory):**

@@ -41,7 +41,7 @@ def hygiene_page():
 
 
 @bp.route("/api/hygiene/adoms/<adom>/packages")
-@tab_required("rule_hygiene")
+@tab_required("rule_hygiene", "audit_review")
 def hygiene_packages(adom: str):
     if err := check_adom_access(adom):
         return err
@@ -68,7 +68,7 @@ def hygiene_packages(adom: str):
 
 
 @bp.route("/api/hygiene/adoms/<adom>/packages/raw")
-@tab_required("rule_hygiene")
+@tab_required("rule_hygiene", "audit_review")
 def hygiene_packages_raw(adom: str):
     """Return the unfiltered FMG response — useful for diagnosing missing packages."""
     if err := check_adom_access(adom):
@@ -1312,7 +1312,7 @@ def hygiene_nat_lookup(adom: str):
 
 
 @bp.route("/api/hygiene/ai-explain-status")
-@tab_required("rule_hygiene")
+@tab_required("audit_review")
 def hygiene_ai_explain_status():
     from app.app_settings import get_setting
 
@@ -1320,7 +1320,7 @@ def hygiene_ai_explain_status():
 
 
 @bp.route("/api/hygiene/explain-finding", methods=["POST"])
-@tab_required("rule_hygiene")
+@tab_required("audit_review")
 def hygiene_explain_finding():
     """Explain one already-computed Rule Hygiene finding. The LLM never
     re-runs a check — app.hygiene.run_checks() already produced this
@@ -1353,7 +1353,7 @@ def hygiene_explain_finding():
 
 
 @bp.route("/api/hygiene/run", methods=["POST"])
-@tab_required("rule_hygiene")
+@tab_required("audit_review")
 def hygiene_run():
     data = request.get_json(silent=True) or {}
     adom = (data.get("adom") or "").strip()
@@ -1371,6 +1371,8 @@ def hygiene_run():
 
     addr_resolver = None
     svc_resolver = None
+    addr_groups: list = []
+    svc_groups: list = []
 
     try:
         with make_client() as client:
@@ -1409,9 +1411,13 @@ def hygiene_run():
                                 int(pid), p.get("_hitcount") or 0
                             )
 
-            # For the shadow and redundant checks, fetch address and service objects so the
-            # check engine can detect IP-containment shadowing and equivalence.
-            if "shadow" in valid_checks or "redundant" in valid_checks:
+            # For shadow, redundant, and broken_refs checks fetch address/service
+            # objects — shadow/redundant use resolvers for IP-containment analysis;
+            # broken_refs uses the raw group lists to detect empty groups.
+            _needs_objects = any(
+                k in valid_checks for k in ("shadow", "redundant", "broken_refs")
+            )
+            if _needs_objects:
                 try:
                     addr_objects = client.get_address_objects(adom)
                     addr_groups = client.get_address_groups(adom)
@@ -1426,6 +1432,8 @@ def hygiene_run():
                     # Object fetch failure is non-fatal — fall back to name-only matching.
                     addr_resolver = None
                     svc_resolver = None
+                    addr_groups = []
+                    svc_groups = []
 
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
@@ -1438,6 +1446,8 @@ def hygiene_run():
         pkg_settings=pkg_settings,
         addr_resolver=addr_resolver,
         svc_resolver=svc_resolver,
+        addr_groups=addr_groups,
+        svc_groups=svc_groups,
     )
 
     # Build a lookup so each finding can carry its rule's detail fields.
@@ -1490,7 +1500,7 @@ def hygiene_run():
 
 
 @bp.route("/api/hygiene/unused-objects")
-@tab_required("rule_hygiene")
+@tab_required("audit_review")
 def hygiene_unused_objects():
     """Return address/service objects not referenced by any rule in the given package."""
     adom = (request.args.get("adom") or "").strip()
@@ -1575,7 +1585,13 @@ def _hygiene_for_pkg(
                 svc_resolver = None
 
             findings = run_checks(
-                policies, active_checks, pkg_settings, addr_resolver, svc_resolver
+                policies,
+                active_checks,
+                pkg_settings,
+                addr_resolver,
+                svc_resolver,
+                addr_groups=addr_groups,
+                svc_groups=svc_groups,
             )
 
             unused_objects = None

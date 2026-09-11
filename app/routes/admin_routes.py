@@ -32,6 +32,7 @@ App settings (JSON):
   PUT    /admin/api/settings         {"external_api_enabled": bool, "ai_assist_enabled": bool}
   GET    /admin/api/ai-usage         bucketed AI Assist call/cost history (?range= or ?start=&end=)
   GET    /admin/api/host-metrics     bucketed host CPU/mem/disk history (?range=1h|4h|12h|1d|7d|14d)
+  GET    /admin/api/login-metrics    bucketed login success/failure history (?range=1h|4h|12h|1d|7d|14d)
 
 External API tokens (JSON):
   GET    /admin/api/tokens           list tokens (hashes never returned)
@@ -363,6 +364,16 @@ def api_host_metrics():
     return jsonify(get_metrics(request.args.get("range", "1h")))
 
 
+@bp.route("/api/login-metrics")
+@_admin_required
+def api_login_metrics():
+    """Bucketed login success/failure history.
+    ?range=1h|4h|12h|1d|7d|14d (default 1h)."""
+    from app.login_metrics import get_metrics
+
+    return jsonify(get_metrics(request.args.get("range", "1h")))
+
+
 @bp.route("/api/host-metrics/ai-summary")
 @_admin_required
 def api_host_metrics_ai_summary():
@@ -539,16 +550,16 @@ def admin_cdiff_jobs_status(job_id: str):
     return jsonify({"running": _sched.is_job_running(job_id), "last_run": last_run})
 
 
-# ── Device Review: Scheduled Jobs ─────────────────────────────────────────────
+# ── Audit Review: Scheduled Jobs ──────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/jobs")
+@bp.route("/api/audit-review/jobs")
 @_admin_required
 def admin_dr_jobs_list():
     return jsonify(_dr_sched.get_all_jobs())
 
 
-@bp.route("/api/device-review/jobs", methods=["POST"])
+@bp.route("/api/audit-review/jobs", methods=["POST"])
 @_admin_required
 def admin_dr_jobs_create():
     data = request.get_json(force=True) or {}
@@ -559,7 +570,7 @@ def admin_dr_jobs_create():
     return jsonify(job), 201
 
 
-@bp.route("/api/device-review/jobs/<job_id>", methods=["PUT"])
+@bp.route("/api/audit-review/jobs/<job_id>", methods=["PUT"])
 @_admin_required
 def admin_dr_jobs_update(job_id: str):
     data = request.get_json(force=True) or {}
@@ -572,7 +583,7 @@ def admin_dr_jobs_update(job_id: str):
     return jsonify(job)
 
 
-@bp.route("/api/device-review/jobs/<job_id>", methods=["DELETE"])
+@bp.route("/api/audit-review/jobs/<job_id>", methods=["DELETE"])
 @_admin_required
 def admin_dr_jobs_delete(job_id: str):
     try:
@@ -582,7 +593,7 @@ def admin_dr_jobs_delete(job_id: str):
     return jsonify({"ok": True})
 
 
-@bp.route("/api/device-review/jobs/<job_id>/run", methods=["POST"])
+@bp.route("/api/audit-review/jobs/<job_id>/run", methods=["POST"])
 @_admin_required
 def admin_dr_jobs_run(job_id: str):
     jobs = _dr_sched.get_all_jobs()
@@ -592,7 +603,7 @@ def admin_dr_jobs_run(job_id: str):
     return jsonify({"ok": True, "message": "Job started"}), 202
 
 
-@bp.route("/api/device-review/jobs/<job_id>/status")
+@bp.route("/api/audit-review/jobs/<job_id>/status")
 @_admin_required
 def admin_dr_jobs_status(job_id: str):
     jobs = _dr_sched.get_all_jobs()
