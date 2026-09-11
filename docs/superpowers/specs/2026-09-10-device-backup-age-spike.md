@@ -102,3 +102,38 @@ Not implemented. `"device_backup"` is absent from the executive summary
 payload entirely (no fabricated or always-null key) until the above is
 confirmed. Part 1 (hardware EOS / `"lifecycle"`) shipped independently in
 this same change and does not depend on this spike.
+
+## Resolution (2026-09-11)
+
+The lab FMG (`192.168.64.2`, FortiManager-VM64-KVM v7.6.7-build3737) came
+back online and was reachable from a development environment. Live
+confirmation via direct JSON-RPC calls (`curl`, since the project's `uv`-managed
+Python interpreter lacked macOS Local Network permission to the lab subnet —
+worked around by probing with `curl` and a system Python instead):
+
+- `GET /dvmdb/adom/<adom>/revision` (ADOM-scoped, NOT
+  `/dvmdb/adom/<adom>/device/<name>/revision` — the latter returns
+  `{"code": -3, "message": "Object does not exist"}`) returns one entry per
+  device-config snapshot for every device in that ADOM:
+  ```json
+  {"oid": 182, "version": 1,
+   "name": "FortiWiFi-71G-New_2026-08-27-07-03-18-PDT",
+   "desc": "", "created_by": "adminakw",
+   "created_time": 1787839429, "locked": 0}
+  ```
+- `"name"` embeds the device's dvmdb name as a literal prefix followed by
+  `"-"`, used to correlate revisions back to devices.
+- Only one real device (`FortiWiFi-71G` in ADOM `root`) and one revision
+  existed in this lab, so the naming convention is confirmed for exactly
+  one sample — not cross-checked across multiple revision-creation
+  triggers (e.g. a later re-backup vs. the initial "New" snapshot) or
+  against FMG 7.4.x. Documented as a residual caveat in
+  `app.fmg_client.FMGClient.get_adom_revisions()`'s docstring; revisit if a
+  real fleet run surfaces a `"name"` shape that doesn't match.
+
+Implemented in this follow-up: `FMGClient.get_adom_revisions()` /
+`get_device_last_revision()` (`app/fmg_client.py`), the daily fleet-wide
+sweep (`app/device_backup_cache.py`, `DEVICE_BACKUP_REFRESH_HOUR`/`_MINUTE`),
+and the `"device_backup"` executive-summary key
+(`{devices_backup_ok, devices_backup_stale_7d, devices_backup_never,
+collected_at}`) — see CLAUDE.md's External API section for the full wiring.

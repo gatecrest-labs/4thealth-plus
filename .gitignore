@@ -27,6 +27,7 @@ host_metrics.db
 login_events.db
 psirt.db
 change_control.json
+device_backup.json
 api_tokens.json
 app_settings.json
 

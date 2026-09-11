@@ -242,6 +242,20 @@ def create_app(test_config: dict | None = None) -> Flask:
         except Exception as exc:
             app.logger.warning("Change-control scheduler failed to start: %s", exc)
 
+    if not app.config.get("TESTING") and not app.config.get(
+        "_DEVICE_BACKUP_SCHEDULER_STARTED"
+    ):
+        app.config["_DEVICE_BACKUP_SCHEDULER_STARTED"] = True
+        try:
+            from app.device_backup_cache import (
+                init_scheduler as init_device_backup_scheduler,
+            )
+
+            with app.app_context():
+                init_device_backup_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Device backup scheduler failed to start: %s", exc)
+
     @app.context_processor
     def inject_session_globals():
         role = session.get("role", "viewer")
