@@ -198,6 +198,10 @@ async function runPsirtAssessment() {
     psirtAssessment = data;
     renderPsirtResults(data);
     document.getElementById('psirtResults').style.display = '';
+    // The route persists this result server-side (app.psirt_store) as a
+    // side effect of the /assess call above — refresh the open-advisories
+    // panel so it shows up (or its updated device count) immediately.
+    loadPsirtOpenAdvisories();
   } catch (e) {
     errEl.textContent = e.message;
     errEl.style.display = '';
@@ -304,6 +308,53 @@ function downloadPsirtReport(filename, html) {
   URL.revokeObjectURL(a.href);
 }
 
+/* ── Open advisories panel ────────────────────────────────────────────────── */
+async function loadPsirtOpenAdvisories() {
+  const tbody = document.getElementById('psirtOpenTbody');
+  try {
+    const resp = await fetch('/api/audit-review/psirt/advisories?open_only=true');
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const data = await resp.json();
+    const advisories = data.advisories || [];
+    if (!advisories.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No saved advisories yet — run an assessment above.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = advisories.map(a => {
+      const latest = a.latest_assessment;
+      const deviceCount = latest ? latest.devices_affected.length : 0;
+      const priority = latest ? (latest.summary.priority || '').toUpperCase() : '—';
+      const firstSeen = a.created_at ? a.created_at.slice(0, 10) : '—';
+      return `
+        <tr>
+          <td>${escHtml(a.advisory_id)}</td>
+          <td>${a.cvss != null ? a.cvss : '—'}</td>
+          <td>${a.kev ? 'Yes' : 'No'}</td>
+          <td>${escHtml(priority)}</td>
+          <td>${deviceCount}</td>
+          <td>${escHtml(firstSeen)}</td>
+          <td><button class="btn btn-xs" data-close-advisory="${escAttr(a.advisory_id)}">Close advisory</button></td>
+        </tr>
+      `;
+    }).join('');
+    tbody.querySelectorAll('[data-close-advisory]').forEach(btn => {
+      btn.addEventListener('click', () => closePsirtAdvisory(btn.getAttribute('data-close-advisory')));
+    });
+  } catch (_) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Could not load saved advisories.</td></tr>';
+  }
+}
+
+async function closePsirtAdvisory(advisoryId) {
+  try {
+    const resp = await fetch(`/api/audit-review/psirt/advisories/${encodeURIComponent(advisoryId)}/close`, { method: 'POST' });
+    if (resp.status === 401) { location.href = '/login'; return; }
+    if (!resp.ok) return;
+    loadPsirtOpenAdvisories();
+  } catch (_) {}
+}
+
 /* ── Init ──────────────────────────────────────────────────────────────────── */
 checkPsirtAvailability();
 loadPsirtAdoms();
+loadPsirtOpenAdvisories();

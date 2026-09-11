@@ -88,6 +88,27 @@ def get_latest() -> dict | None:
     return history[0] if history else None
 
 
+def get_latest_by_adom() -> dict[str, dict]:
+    """Return the most recent rollup record for each ADOM that has one,
+    keyed by ADOM name — {adom: {devices_reviewed, devices_with_failures,
+    findings_by_severity, top_failing_checks, ran_at}}.
+
+    Each scheduled Device Review job targets one ADOM
+    (device_review_scheduler.py's job["adom"]), so history naturally
+    contains at most one run per job per firing — this just picks each
+    ADOM's newest entry out of the (at most _MAX_RUNS, newest-first) shared
+    history. Records persisted before this function existed have no
+    "adom" key and are skipped, not misattributed to any ADOM.
+    """
+    result: dict[str, dict] = {}
+    for record in get_history():
+        adom = record.get("adom")
+        if not adom or adom in result:
+            continue
+        result[adom] = record
+    return result
+
+
 def append_run(record: dict) -> None:
     """Prepend a new rollup record, keeping at most _MAX_RUNS entries."""
     history = get_history()

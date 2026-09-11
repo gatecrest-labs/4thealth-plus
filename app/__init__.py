@@ -214,6 +214,34 @@ def create_app(test_config: dict | None = None) -> Flask:
         except Exception as exc:
             app.logger.warning("Backup scheduler failed to start: %s", exc)
 
+    if not app.config.get("TESTING") and not app.config.get(
+        "_PSIRT_REASSESS_SCHEDULER_STARTED"
+    ):
+        app.config["_PSIRT_REASSESS_SCHEDULER_STARTED"] = True
+        try:
+            from app.psirt_reassess_scheduler import (
+                init_scheduler as init_psirt_reassess_scheduler,
+            )
+
+            with app.app_context():
+                init_psirt_reassess_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("PSIRT re-assessment scheduler failed to start: %s", exc)
+
+    if not app.config.get("TESTING") and not app.config.get(
+        "_CHANGE_CONTROL_SCHEDULER_STARTED"
+    ):
+        app.config["_CHANGE_CONTROL_SCHEDULER_STARTED"] = True
+        try:
+            from app.change_control_cache import (
+                init_scheduler as init_change_control_scheduler,
+            )
+
+            with app.app_context():
+                init_change_control_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Change-control scheduler failed to start: %s", exc)
+
     @app.context_processor
     def inject_session_globals():
         role = session.get("role", "viewer")

@@ -199,13 +199,14 @@ def test_payload_includes_schema_version_and_split_freshness(client):
         patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
         patch("app.versions_cache.get_cached", return_value={"devices": []}),
         patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
     ):
         resp = client.get(
             "/external/api/executive/summary",
             headers={"Authorization": "Bearer good-token"},
         )
     data = resp.get_json()
-    assert data["schema_version"] == 1
+    assert data["schema_version"] == 2
     assert data["device_sweep_status"] == "ok"
     assert data["hygiene_sweep_status"] == "ok"
     assert data["device_sweep_collected_at"] == "2026-08-28T09:45:00Z"
@@ -370,6 +371,227 @@ def test_payload_includes_ai_usage_by_feature_when_ai_enabled(client):
     data = resp.get_json()
     assert data["ai_usage_by_feature"] == fake_usage["by_feature"]
     assert data["ai_usage_24h"]["ai_connection_count_24h"] == 2
+
+
+def test_payload_includes_psirt_rollup(client):
+    fake_rollup = {
+        "open_advisories": 2,
+        "devices_critical": 3,
+        "devices_high": 1,
+        "devices_medium": 0,
+        "devices_critical_mitigated": 0.5,
+        "kev_exposed_devices": 1,
+        "top_advisory": {"advisory_id": "FG-IR-24-001", "cvss": 9.8, "kev": True, "devices": 3},
+        "mean_days_to_remediate_90d": 12.5,
+        "collected_at": "2026-09-10T00:00:00+00:00",
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value=fake_rollup),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["schema_version"] == 2
+    assert data["psirt"] == fake_rollup
+
+
+def test_payload_includes_change_control(client):
+    fake_summary = {"status": "ok", "devices_out_of_sync": 4}
+    fake_cc = {
+        "admin_changes_24h": 12,
+        "admin_changes_by_user": [{"user": "alice", "count": 8}, {"user": "bob", "count": 4}],
+        "collected_at": "2026-09-10T01:00:00+00:00",
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=fake_cc),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["change_control"] == {
+        "devices_out_of_sync": 4,
+        "admin_changes_24h": 12,
+        "admin_changes_by_user": [{"user": "alice", "count": 8}, {"user": "bob", "count": 4}],
+        "collected_at": "2026-09-10T01:00:00+00:00",
+    }
+    assert "oldest_pending_change_days" not in data["change_control"]
+
+
+def test_payload_change_control_defaults_when_no_sweep_yet(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "pending"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["change_control"] == {
+        "devices_out_of_sync": None,
+        "admin_changes_24h": None,
+        "admin_changes_by_user": [],
+        "collected_at": None,
+    }
+
+
+def test_payload_includes_lifecycle(client):
+    fake_summary = {
+        "status": "ok",
+        "devices_hw_eos": 3,
+        "devices_hw_eos_12m": 5,
+        "models_unknown": ["FortiGate-Unicorn"],
+        "device_sweep_collected_at": "2026-09-10T00:00:00+00:00",
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["lifecycle"] == {
+        "devices_hw_eos": 3,
+        "devices_hw_eos_12m": 5,
+        "models_unknown": ["FortiGate-Unicorn"],
+        "collected_at": "2026-09-10T00:00:00+00:00",
+    }
+
+
+def test_payload_lifecycle_defaults_when_no_sweep_yet(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "pending"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["lifecycle"] == {
+        "devices_hw_eos": None,
+        "devices_hw_eos_12m": None,
+        "models_unknown": [],
+        "collected_at": None,
+    }
+
+
+def test_payload_includes_by_adom_and_infra(client):
+    fake_summary = {
+        "status": "ok",
+        "by_adom": {
+            "Corp": {
+                "firewalls_total": 10,
+                "firewall_online_count": 9,
+                "version_compliance_pct": 90.0,
+                "pending_config_diff_count": 1,
+                "devices_with_failures": 2,
+            }
+        },
+        "infra": [
+            {
+                "role": "fortimanager",
+                "label": "FMG-01",
+                "hostname": "fmg1.local",
+                "cpu": 12.0,
+                "mem": 25.0,
+                "disk_pct": 33.0,
+                "ha_role": "master",
+                "status": "green",
+                "last_updated": "2026-09-10T00:00:00Z",
+            }
+        ],
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["by_adom"] == fake_summary["by_adom"]
+    assert data["infra"] == fake_summary["infra"]
+    assert "host" not in data["infra"][0]
+    assert "token" not in data["infra"][0]
+
+
+def test_payload_by_adom_and_infra_default_to_empty(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "pending"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["by_adom"] == {}
+    assert data["infra"] == []
 
 
 def test_ai_usage_by_feature_omitted_when_ai_assist_disabled(client):

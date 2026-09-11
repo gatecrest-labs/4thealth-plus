@@ -4,7 +4,7 @@ Runs TWO independent periodic sweeps, on different cadences, both writing
 into the same in-memory _store:
 
   - Device sweep (default every EXEC_SUMMARY_REFRESH_MINUTES=15 minutes):
-    one get_devices() call per non-forti* ADOM, computing
+    one get_devices_with_sync_status() call per non-forti* ADOM, computing
       - firewall_online_count / firewalls_total  (device conn_status)
       - version_compliance_pct                   (device version vs. an
                                                     admin-configured target
@@ -14,7 +14,62 @@ into the same in-memory _store:
                                                     pending_status_cache)
       - adom_count                                (len of the target ADOM
                                                     list itself)
-    Cheap — one lightweight call per ADOM.
+      - devices_out_of_sync                      (normalized conf_status
+                                                    != "insync", fed into
+                                                    the "change_control"
+                                                    payload key — see
+                                                    app.routes.
+                                                    external_api_routes)
+      - devices_hw_eos / devices_hw_eos_12m /
+        models_unknown                           (hardware end-of-support,
+                                                    from app.model_eos,
+                                                    matched against the
+                                                    platform_str already
+                                                    cached by
+                                                    app.pending_status_cache
+                                                    — no extra FMG call; fed
+                                                    into the "lifecycle"
+                                                    payload key)
+      - by_adom                                  (firewalls_total,
+                                                    firewall_online_count,
+                                                    version_compliance_pct,
+                                                    pending_config_diff_count
+                                                    per ADOM, from this same
+                                                    per-ADOM loop;
+                                                    devices_with_failures
+                                                    per ADOM from
+                                                    app.device_review_rollup
+                                                    .get_latest_by_adom() —
+                                                    see _build_by_adom())
+      - infra                                    (management-plane health
+                                                    for FortiManager/
+                                                    FortiAnalyzer/
+                                                    FortiAuthenticator
+                                                    infra_targets.json
+                                                    entries: cpu/mem/status
+                                                    from
+                                                    app.infra_health_cache's
+                                                    existing SNMP poll
+                                                    cache, hostname/ha_role/
+                                                    disk_pct from one
+                                                    lightweight
+                                                    get_system_status() call
+                                                    per target this same
+                                                    cycle — see
+                                                    _build_infra_list())
+    Cheap — one lightweight call per ADOM, plus up to a handful more for
+    infra targets (typically 1-3).
+
+    change_control's other field, oldest_pending_change_days, is NOT
+    computed here and is omitted from the payload entirely: the dvmdb
+    device object returned by get_devices_with_sync_status() carries no
+    per-device modification timestamp in this codebase's confirmed API
+    knowledge (no vendored FMG dvmdb schema exists in this repo, and no
+    other caller of get_devices()/get_devices_with_sync_status() reads
+    such a field). Add it once a real FMG instance confirms which field
+    (if any) carries it — same "not confirmed against real hardware"
+    posture as the FortiAnalyzer/FortiAuthenticator SNMP OIDs documented
+    in CLAUDE.md.
 
   - Hygiene sweep (default every EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES=60
     minutes): downloads every policy in every package in every non-forti*
@@ -65,6 +120,13 @@ _store: dict = {
     "hygiene_sweep_status": "pending",
     "device_sweep_collected_at": None,
     "hygiene_sweep_collected_at": None,
+    "devices_raw_by_adom": {},
+    "devices_out_of_sync": None,
+    "devices_hw_eos": None,
+    "devices_hw_eos_12m": None,
+    "models_unknown": [],
+    "by_adom": {},
+    "infra": [],
 }
 
 _lock = threading.Lock()
@@ -76,6 +138,16 @@ def get_summary() -> dict:
     """Return a copy of the current summary store (safe to serialise as JSON)."""
     with _lock:
         return dict(_store)
+
+
+def get_devices_raw_by_adom() -> dict[str, list[dict]]:
+    """Return the device sweep's cached per-ADOM raw device records —
+    {name, os_ver, mr, patch} per device, the fields app.psirt.engine's
+    firmware parsing needs. Consumed by app.psirt_reassess_scheduler so
+    scheduled re-assessments reuse this cadence's device sweep instead of
+    downloading the fleet again."""
+    with _lock:
+        return {k: list(v) for k, v in _store["devices_raw_by_adom"].items()}
 
 
 # ── Pure aggregation helpers (no I/O — unit-tested directly) ──────────────────
@@ -98,6 +170,15 @@ def _version_compliance_pct(
     return round(100 * compliant / total, 1)
 
 
+def _count_out_of_sync(devices: list[dict]) -> int:
+    """Count devices whose normalized conf_status (from
+    get_devices_with_sync_status()) is not "insync" — covers "outofsync"
+    and the "unknown" fallback for an unrecognized conf_status int alike,
+    since both mean the device's actual config cannot be confirmed to
+    match FortiManager's database."""
+    return sum(1 for d in devices if d.get("conf_status") != "insync")
+
+
 def _pending_diff_count(devices_by_adom: dict[str, list[dict]]) -> int:
     count = 0
     for devices in devices_by_adom.values():
@@ -109,6 +190,143 @@ def _pending_diff_count(devices_by_adom: dict[str, list[dict]]) -> int:
             ):
                 count += 1
     return count
+
+
+_INFRA_SUPPORTED_TYPES = {"fortimanager", "fortianalyzer", "fortiauthenticator"}
+
+
+def _infra_status(cpu: float | None, mem: float | None, api_ok: bool) -> str:
+    from app.config import Config
+
+    if cpu is not None and mem is not None:
+        if cpu >= Config.CPU_CRIT or mem >= Config.MEM_CRIT:
+            return "red"
+        if cpu >= Config.CPU_WARN or mem >= Config.MEM_WARN:
+            return "amber"
+        return "green"
+    return "green" if api_ok else "gray"
+
+
+def _build_infra_list(
+    targets: list[dict],
+    snmp_by_host: dict[str, dict | None],
+    meta_by_host: dict[str, dict],
+) -> list[dict]:
+    """Compose the "infra" payload list from infra_health_cache's SNMP
+    results (cpu/mem/status) and a live per-target metadata fetch
+    (hostname/ha_role/disk_pct) — never includes "host" (an IP) or any
+    credential field."""
+    infra = []
+    for target in targets:
+        role = (target.get("type") or "").lower()
+        if role not in _INFRA_SUPPORTED_TYPES:
+            continue
+        host = target.get("host")
+        if not host:
+            continue
+        snmp = snmp_by_host.get(host)
+        meta = meta_by_host.get(host) or {
+            "hostname": None,
+            "ha_role": None,
+            "disk_pct": None,
+            "api_ok": False,
+        }
+        cpu = mem = None
+        if snmp and snmp.get("snmp_status") == "ok":
+            cpu = round(snmp["cpu"], 1) if snmp.get("cpu") is not None else None
+            mem = round(snmp["mem"], 1) if snmp.get("mem") is not None else None
+        infra.append(
+            {
+                "role": role,
+                "label": target.get("label", ""),
+                "hostname": meta.get("hostname"),
+                "cpu": cpu,
+                "mem": mem,
+                "disk_pct": meta.get("disk_pct"),
+                "ha_role": meta.get("ha_role"),
+                "status": _infra_status(cpu, mem, bool(meta.get("api_ok"))),
+                "last_updated": snmp.get("last_updated") if snmp else None,
+            }
+        )
+    return infra
+
+
+def _build_by_adom(
+    adom_names: list[str],
+    devices_flat_by_adom: dict[str, list[dict]],
+    compliant_versions: list[str],
+    pending_devices_by_adom: dict[str, list[dict]] | None,
+) -> dict:
+    """Per-ADOM breakdown of the same metrics the fleet-wide device sweep
+    already computes — reuses this same sweep's already-fetched per-ADOM
+    device lists, no extra FMG calls.
+
+    devices_with_failures is the one field this sweep cannot compute
+    itself (it needs live CIS check results, not a device list) — it's
+    filled in from app.device_review_rollup.get_latest_by_adom(), i.e.
+    whichever ADOM a scheduled Device Review job most recently covered.
+    An ADOM with no such run yet gets None, never a fabricated 0.
+    pending_config_diff_count is similarly None for an ADOM whenever the
+    pending-status cache itself isn't ready (pending_devices_by_adom is
+    None), matching the fleet-wide field's own honesty rule.
+    """
+    from app.device_review_rollup import get_latest_by_adom
+
+    dr_by_adom = get_latest_by_adom()
+
+    result: dict[str, dict] = {}
+    for adom in adom_names:
+        devices = devices_flat_by_adom.get(adom, [])
+        online, total = _classify_online(devices)
+        compliance_pct = _version_compliance_pct(devices, compliant_versions)
+        pending_count = (
+            _pending_diff_count({adom: pending_devices_by_adom.get(adom, [])})
+            if pending_devices_by_adom is not None
+            else None
+        )
+        dr_record = dr_by_adom.get(adom)
+        result[adom] = {
+            "firewalls_total": total,
+            "firewall_online_count": online,
+            "version_compliance_pct": compliance_pct,
+            "pending_config_diff_count": pending_count,
+            "devices_with_failures": (
+                dr_record["devices_with_failures"] if dr_record else None
+            ),
+        }
+    return result
+
+
+def _lifecycle_counts(devices_by_adom: dict[str, list[dict]]) -> dict:
+    """Hardware EOS counts from the platform strings pending_status_cache
+    already caches — no extra FMG call. models_unknown lists the distinct
+    platform strings app.model_eos has no EOS date for (sorted, so an
+    unmodeled hardware family is visible rather than silently ignored)."""
+    from app.model_eos import hw_eos_within, is_hw_eos
+
+    devices_hw_eos = 0
+    devices_hw_eos_12m = 0
+    unknown_models: set[str] = set()
+
+    for devices in devices_by_adom.values():
+        for d in devices:
+            platform = (d.get("platform") or "").strip()
+            if not platform:
+                continue
+            eos_now = is_hw_eos(platform)
+            if eos_now is None:
+                unknown_models.add(platform)
+                continue
+            if eos_now:
+                devices_hw_eos += 1
+            if hw_eos_within(platform, 12):
+                devices_hw_eos_12m += 1
+
+    return {
+        "devices_hw_eos": devices_hw_eos,
+        "devices_hw_eos_12m": devices_hw_eos_12m,
+        "models_unknown": sorted(unknown_models),
+    }
 
 
 def _hygiene_score(total_findings: int, total_policies: int) -> float | None:
@@ -175,48 +393,98 @@ def _run_device_sweep(app) -> bool:
         from app.pending_status_cache import get_all_cached_devices, get_cache_status
 
         devices_flat: list[dict] = []
+        devices_flat_by_adom: dict[str, list[dict]] = {}
+        devices_raw_by_adom: dict[str, list[dict]] = {}
+        out_of_sync_total = 0
 
         with make_client() as client:
             adom_names = _list_target_adoms(client)
 
             for adom in adom_names:
                 try:
-                    raw = client.get_devices(adom)
+                    raw = client.get_devices_with_sync_status(adom)
                 except Exception as exc:
                     logger.warning(
-                        "executive_summary_cache: get_devices(%s) failed: %s", adom, exc
+                        "executive_summary_cache: get_devices_with_sync_status(%s) "
+                        "failed: %s",
+                        adom,
+                        exc,
                     )
                     raw = []
+                out_of_sync_total += _count_out_of_sync(raw)
+                adom_raw_devices = []
+                adom_flat_devices = []
                 for d in raw:
                     if not isinstance(d, dict):
                         continue
-                    devices_flat.append(
+                    flat = {
+                        "name": d.get("name", ""),
+                        "version": _device_version(d),
+                        "conn_status": d.get("conn_status"),
+                    }
+                    devices_flat.append(flat)
+                    adom_flat_devices.append(flat)
+                    # Raw os_ver/mr/patch (not the formatted "version" string
+                    # above) — these are what app.psirt.engine's firmware
+                    # parsing needs to match advisory ranges.
+                    adom_raw_devices.append(
                         {
                             "name": d.get("name", ""),
-                            "version": _device_version(d),
-                            "conn_status": d.get("conn_status"),
+                            "os_ver": d.get("os_ver", ""),
+                            "mr": d.get("mr", ""),
+                            "patch": d.get("patch", ""),
                         }
                     )
+                devices_raw_by_adom[adom] = adom_raw_devices
+                devices_flat_by_adom[adom] = adom_flat_devices
 
         online, total = _classify_online(devices_flat)
         compliant_versions = get_setting("executive_compliant_versions", [])
         compliance_pct = _version_compliance_pct(devices_flat, compliant_versions)
         pending_cache_status = get_cache_status()
+        cached_devices_by_adom = (
+            get_all_cached_devices() if pending_cache_status["status"] == "ok" else {}
+        )
+        by_adom = _build_by_adom(
+            adom_names,
+            devices_flat_by_adom,
+            compliant_versions,
+            cached_devices_by_adom if pending_cache_status["status"] == "ok" else None,
+        )
         pending_count = (
-            _pending_diff_count(get_all_cached_devices())
+            _pending_diff_count(cached_devices_by_adom)
             if pending_cache_status["status"] == "ok"
             else None
         )
+        lifecycle = (
+            _lifecycle_counts(cached_devices_by_adom)
+            if pending_cache_status["status"] == "ok"
+            else {"devices_hw_eos": None, "devices_hw_eos_12m": None, "models_unknown": []}
+        )
+
+        from app import infra_health_cache
+        from app.config import Config
+
+        infra_targets = [
+            t
+            for t in Config.INFRA_TARGETS
+            if (t.get("type") or "").lower() in _INFRA_SUPPORTED_TYPES and t.get("host")
+        ]
+        snmp_by_host = {t["host"]: infra_health_cache.get_cached(t["host"]) for t in infra_targets}
+        meta_by_host = {t["host"]: infra_health_cache.fetch_meta(t) for t in infra_targets}
+        infra_list = _build_infra_list(Config.INFRA_TARGETS, snmp_by_host, meta_by_host)
 
         elapsed = round(_time.monotonic() - t0, 1)
         logger.info(
             "executive_summary_cache: device sweep done in %ss — %d/%d online, "
-            "compliance=%s, pending=%s",
+            "compliance=%s, out_of_sync=%d, pending=%s, hw_eos=%s",
             elapsed,
             online,
             total,
             compliance_pct,
+            out_of_sync_total,
             pending_count,
+            lifecycle["devices_hw_eos"],
         )
 
         with _lock:
@@ -232,6 +500,13 @@ def _run_device_sweep(app) -> bool:
                     "last_updated": datetime.now(UTC).isoformat(),
                     "device_sweep_status": "ok",
                     "device_sweep_collected_at": datetime.now(UTC).isoformat(),
+                    "devices_raw_by_adom": devices_raw_by_adom,
+                    "devices_out_of_sync": out_of_sync_total,
+                    "devices_hw_eos": lifecycle["devices_hw_eos"],
+                    "devices_hw_eos_12m": lifecycle["devices_hw_eos_12m"],
+                    "models_unknown": lifecycle["models_unknown"],
+                    "by_adom": by_adom,
+                    "infra": infra_list,
                 }
             )
         return True

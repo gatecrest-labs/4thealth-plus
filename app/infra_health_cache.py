@@ -202,6 +202,65 @@ def get_cached(host: str) -> dict | None:
         return dict(entry) if entry is not None else None
 
 
+def fetch_meta(target: dict) -> dict:
+    """One-off live fetch of hostname/ha_role/disk_pct for a single infra
+    target, via the same FMG get_system_status() call and field parsing
+    /api/infrastructure already does per-request (app/routes/api_routes.py)
+    — but NOT cached or scheduled here. The caller controls its own
+    cadence; app.executive_summary_cache's device sweep calls this once
+    per target on its own 15-minute-default interval, which is appropriate
+    for fields (hostname, HA role, disk usage) that change slowly.
+
+    Returns {hostname, ha_role, disk_pct, api_ok}. On any failure to reach
+    the target, all three fields are None and api_ok is False — a
+    genuinely unreachable target must never be reported as 0% disk or a
+    blank-but-present hostname.
+    """
+    from app.config import Config
+    from app.fmg_client import FMGClient
+
+    try:
+        client = FMGClient(
+            host=target["host"],
+            username=Config.FMG_USERNAME,
+            password=Config.FMG_PASSWORD,
+            token=target.get("token", Config.FMG_API_TOKEN),
+            verify_ssl=Config.FMG_VERIFY_SSL,
+            timeout=Config.FMG_TIMEOUT,
+        )
+        with client:
+            sys_status = client.get_system_status()
+    except Exception:
+        return {"hostname": None, "ha_role": None, "disk_pct": None, "api_ok": False}
+
+    if isinstance(sys_status, list) and sys_status:
+        sys_status = sys_status[0]
+    if not isinstance(sys_status, dict):
+        sys_status = {}
+
+    hostname = sys_status.get("Hostname") or sys_status.get("hostname") or None
+    ha_role = (
+        sys_status.get("HA Role")
+        or sys_status.get("ha_role")
+        or (sys_status.get("HA") or {}).get("Role")
+        or None
+    )
+
+    disk_info = sys_status.get("disk info") or sys_status.get("Disk info") or {}
+    disk_pct = None
+    if isinstance(disk_info, dict):
+        used = disk_info.get("used", disk_info.get("Used"))
+        total = disk_info.get("total", disk_info.get("Total"))
+        try:
+            used_f, total_f = float(used), float(total)
+            if total_f > 0:
+                disk_pct = round(used_f / total_f * 100, 1)
+        except (TypeError, ValueError):
+            disk_pct = None
+
+    return {"hostname": hostname, "ha_role": ha_role, "disk_pct": disk_pct, "api_ok": True}
+
+
 def poll_now() -> None:
     """Kick off a non-blocking poll of all targets in a daemon thread."""
     t = threading.Thread(
