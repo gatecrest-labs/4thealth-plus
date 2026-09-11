@@ -101,8 +101,20 @@ def _add_months(d: datetime.date, months: int) -> datetime.date:
     # Clamp the day for months with fewer days (e.g. Jan 31 + 1 month).
     day = min(
         d.day,
-        [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
-         31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1],
+        [
+            31,
+            29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
+        ][month - 1],
     )
     return datetime.date(year, month, day)
 
@@ -114,11 +126,13 @@ def is_hw_eos(model: str, as_of: datetime.date | None = None) -> bool | None:
     eos_date = _HW_EOS.get(_normalize(model))
     if eos_date is None:
         return None
-    as_of = as_of or datetime.date.today()
+    as_of = as_of or datetime.datetime.now(tz=datetime.UTC).date()
     return as_of >= eos_date
 
 
-def hw_eos_within(model: str, months: int, as_of: datetime.date | None = None) -> bool | None:
+def hw_eos_within(
+    model: str, months: int, as_of: datetime.date | None = None
+) -> bool | None:
     """True if model's EOS date falls within the next `months` months of
     `as_of` (default: today) — inclusive of a model already past EOS, since
     that is trivially "within" any forward-looking window. None if model
@@ -126,5 +140,5 @@ def hw_eos_within(model: str, months: int, as_of: datetime.date | None = None) -
     eos_date = _HW_EOS.get(_normalize(model))
     if eos_date is None:
         return None
-    as_of = as_of or datetime.date.today()
+    as_of = as_of or datetime.datetime.now(tz=datetime.UTC).date()
     return eos_date <= _add_months(as_of, months)

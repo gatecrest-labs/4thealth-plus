@@ -89,8 +89,8 @@ def _run_reassessment(app) -> bool:
     _running.set()
     t0 = _time.monotonic()
     try:
-        from app.config import Config
         from app import psirt_store
+        from app.config import Config
         from app.executive_summary_cache import get_devices_raw_by_adom
         from app.psirt.engine import assess as psirt_assess
         from app.psirt.models import Advisory, AffectedRange
@@ -110,7 +110,9 @@ def _run_reassessment(app) -> bool:
             advisory_id = adv["advisory_id"]
             try:
                 ranges = [
-                    AffectedRange(**r) if isinstance(r, dict) else AffectedRange(product=str(r))
+                    AffectedRange(**r)
+                    if isinstance(r, dict)
+                    else AffectedRange(product=str(r))
                     for r in adv["affected_ranges"]
                 ]
                 advisory = Advisory(

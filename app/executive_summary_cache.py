@@ -459,7 +459,11 @@ def _run_device_sweep(app) -> bool:
         lifecycle = (
             _lifecycle_counts(cached_devices_by_adom)
             if pending_cache_status["status"] == "ok"
-            else {"devices_hw_eos": None, "devices_hw_eos_12m": None, "models_unknown": []}
+            else {
+                "devices_hw_eos": None,
+                "devices_hw_eos_12m": None,
+                "models_unknown": [],
+            }
         )
 
         from app import infra_health_cache
@@ -470,8 +474,12 @@ def _run_device_sweep(app) -> bool:
             for t in Config.INFRA_TARGETS
             if (t.get("type") or "").lower() in _INFRA_SUPPORTED_TYPES and t.get("host")
         ]
-        snmp_by_host = {t["host"]: infra_health_cache.get_cached(t["host"]) for t in infra_targets}
-        meta_by_host = {t["host"]: infra_health_cache.fetch_meta(t) for t in infra_targets}
+        snmp_by_host = {
+            t["host"]: infra_health_cache.get_cached(t["host"]) for t in infra_targets
+        }
+        meta_by_host = {
+            t["host"]: infra_health_cache.fetch_meta(t) for t in infra_targets
+        }
         infra_list = _build_infra_list(Config.INFRA_TARGETS, snmp_by_host, meta_by_host)
 
         elapsed = round(_time.monotonic() - t0, 1)

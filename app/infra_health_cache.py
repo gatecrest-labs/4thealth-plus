@@ -258,7 +258,12 @@ def fetch_meta(target: dict) -> dict:
         except (TypeError, ValueError):
             disk_pct = None
 
-    return {"hostname": hostname, "ha_role": ha_role, "disk_pct": disk_pct, "api_ok": True}
+    return {
+        "hostname": hostname,
+        "ha_role": ha_role,
+        "disk_pct": disk_pct,
+        "api_ok": True,
+    }
 
 
 def poll_now() -> None:

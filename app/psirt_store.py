@@ -382,7 +382,11 @@ def compute_psirt_rollup(now: dt.datetime | None = None) -> dict:
         is_better = (
             rank > top_rank
             or (rank == top_rank and cvss > top_cvss)
-            or (rank == top_rank and cvss == top_cvss and device_count > top_device_count)
+            or (
+                rank == top_rank
+                and cvss == top_cvss
+                and device_count > top_device_count
+            )
         )
         if is_better:
             top_rank, top_cvss, top_device_count = rank, cvss, device_count
