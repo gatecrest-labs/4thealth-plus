@@ -174,6 +174,31 @@ def _lifecycle(summary: dict) -> dict:
     }
 
 
+def _device_backup() -> dict:
+    """Device configuration backup age, from the daily
+    app.device_backup_cache sweep — see that module and
+    app.fmg_client.FMGClient.get_adom_revisions() for the confirmed FMG
+    revision-history endpoint. None counts (never swept yet) rather than 0,
+    same "unknown never renders as a false negative" convention as
+    app.model_eos."""
+    from app.device_backup_cache import get_latest
+
+    latest = get_latest()
+    if latest is None:
+        return {
+            "devices_backup_ok": None,
+            "devices_backup_stale_7d": None,
+            "devices_backup_never": None,
+            "collected_at": None,
+        }
+    return {
+        "devices_backup_ok": latest.get("devices_backup_ok"),
+        "devices_backup_stale_7d": latest.get("devices_backup_stale_7d"),
+        "devices_backup_never": latest.get("devices_backup_never"),
+        "collected_at": latest.get("collected_at"),
+    }
+
+
 def _psirt_rollup() -> dict:
     """Fleet PSIRT exposure — see app.psirt_store.compute_psirt_rollup()
     for how open_advisories/devices_*/kev_exposed_devices/top_advisory/
@@ -332,6 +357,7 @@ def ext_executive_summary():
         "psirt": _psirt_rollup(),
         "change_control": _change_control(summary),
         "lifecycle": _lifecycle(summary),
+        "device_backup": _device_backup(),
         "by_adom": summary.get("by_adom") or {},
         "infra": summary.get("infra") or [],
     }
