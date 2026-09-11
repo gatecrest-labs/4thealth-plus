@@ -39,6 +39,20 @@ All endpoints require an authenticated session (HTTP 401 otherwise).
 
 The Hygiene Analysis section of this tab reuses the `/api/hygiene/*` endpoints listed above (re-gated to the `audit_review` tab key alongside `rule_hygiene` where applicable — see `app/routes/hygiene_routes.py`).
 
+## PSIRT Advisory Assessment
+
+Also lives on the Audit Review tab. See [features.md](features.md#psirt-advisory-assessment).
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/audit-review/psirt/extract-status` | Is advisory-email extraction available (`ai_assist_enabled`)? |
+| POST | `/api/audit-review/psirt/extract` | Extract structured advisory fields from a pasted email or `.eml`/`.txt` upload |
+| POST | `/api/audit-review/psirt/assess/device` | Single-device assessment (API completeness; not used by the current UI) |
+| POST | `/api/audit-review/psirt/assess` | Run a fleet assessment for one ADOM or `"*"` (every accessible ADOM); persists the result to `psirt.db` |
+| POST | `/api/audit-review/psirt/report` | Render an already-computed assessment to a standalone HTML report |
+| GET | `/api/audit-review/psirt/advisories?open_only=` | List saved advisories (each with its latest assessment summary); `open_only=true` excludes closed ones |
+| POST | `/api/audit-review/psirt/advisories/<advisory_id>/close` | Mark a saved advisory closed (`closed_at`) so it stops counting toward fleet exposure; 404 if never saved |
+
 ## Rule Validation
 
 | Method | Path | Description |
@@ -132,6 +146,6 @@ All external API endpoints require `Authorization: Bearer <token>` and return `5
 | POST | `/external/api/zone/query` | Query src→dst flows against the zone policy DB |
 | GET | `/external/api/zone/zones` | List all zones and subnets |
 | GET | `/external/api/zone/policies` | List all segmentation policies |
-| GET | `/external/api/executive/summary` | Fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance, pending config diffs, firewall online count) |
+| GET | `/external/api/executive/summary` | Fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance, pending config diffs, firewall online count, PSIRT exposure, change-control metrics, hardware EOS lifecycle, per-ADOM breakdown, management-plane infra health — `schema_version: 2`) |
 
 See [features.md](features.md#external-api) for setup and usage details.

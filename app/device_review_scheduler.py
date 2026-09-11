@@ -32,7 +32,7 @@ _VALID_DAYS = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
 
 
 def _bulk_device_review_adom(adom, checks, check_params, max_workers=4):
-    from app.routes.device_review_routes import bulk_device_review_adom
+    from app.routes.audit_review_routes import bulk_device_review_adom
 
     return bulk_device_review_adom(adom, checks, check_params, max_workers)
 
@@ -260,6 +260,7 @@ def _execute_job(job_id: str) -> None:
             .replace(tzinfo=None)
             .isoformat()
             + "Z",
+            "adom": adom,
             **_build_dr_rollup(results),
         }
         _append_dr_rollup(dr_rollup_record)

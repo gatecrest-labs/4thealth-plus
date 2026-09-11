@@ -92,7 +92,7 @@ app/
   config.py            # Reads .env into a Config object
   auth.py              # Session-based login; bcrypt password verify against users.json
   fmg_client.py        # FortiManager JSON-RPC client (context manager: auto login/logout)
-  hygiene.py           # Rule hygiene check engine (9 checks: unnamed, unlogged, shadow, disabled, expired, unhit, missing security profile, redundant, over-permissive)
+  hygiene.py           # Rule hygiene check engine (10 checks: unnamed, unlogged, shadow, disabled, expired, unhit, missing security profile, redundant, over-permissive, broken references)
   hygiene_ai.py        # AI Explain for a single Rule Hygiene finding — narrates one already-computed finding, never re-runs a check
   device_review.py     # Audit Review check engine — interface protocol checks; add new checks here
   rule_review.py       # Policy analysis + route-tracing engine; zone policy integration
@@ -208,7 +208,7 @@ features.
 Three-section layout with unified tab access (internal key: `audit_review`; the page merges what used to be the separate Device Review tab with the Rule Review tab's Hygiene Analysis section):
 
 1. **Device Review** (top) — runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
-2. **Hygiene Analysis** (middle) — select ADOM + package, run 9 checks, filter/export findings (CSV/JSON/PDF).
+2. **Hygiene Analysis** (middle) — select ADOM + package, run 10 checks, filter/export findings (CSV/JSON/PDF).
 3. **PSIRT Advisory Assessment** (bottom) — see below.
 
 **Device Review workflow:**
@@ -303,7 +303,7 @@ Assist (Admin → AI Assist) — there is no separate Audit Review toggle.
 4. Append an entry to `CHECKS` with the appropriate `data_keys` and empty `params_schema`.
 No template or frontend JS changes are needed for binary checks.
 
-**Hygiene Analysis section** — select ADOM + package, run 9 checks, filter/export findings (CSV/JSON/PDF). Uses the same `/api/hygiene/*` endpoints as the Rule Review tab's Policy Rules section (package listing is shared; `run` and `unused-objects` are gated to `audit_review` only, since this is the section's new home).
+**Hygiene Analysis section** — select ADOM + package, run 10 checks, filter/export findings (CSV/JSON/PDF). Uses the same `/api/hygiene/*` endpoints as the Rule Review tab's Policy Rules section (package listing is shared; `run` and `unused-objects` are gated to `audit_review` only, since this is the section's new home). The `broken_refs` check flags rules referencing the FortiOS `"none"` deleted-object sentinel or empty address/service groups — it re-fetches `addr_groups`/`svc_groups` (the same call `shadow`/`redundant` already make) only when selected.
 - **Find Unused Objects** button (next to Run Analysis) scans the selected package and lists address/address-group/service/service-group objects not referenced by any policy rule (BFS group-member expansion catches indirect references; FortiGuard/built-in objects like `all`/`ANY`/`g-*`/`ISDB-*` are excluded). A scope selector (All / Local only / Global only) controls whether the shared Global-ADOM object pool is included — services and service groups have no global pool, so `scope=global` always returns empty for those. Results are filterable/paginated (10/25/50/100) with CSV/JSON export. Backend: `GET /api/hygiene/unused-objects?adom=&pkg=&scope=`, logic in `app/hygiene.py::find_unused_objects()`.
 
 **AI Explain endpoints:**
@@ -692,7 +692,7 @@ Provides read-only zone policy access to external programs (e.g. FW-Analyst) via
 - `POST /external/api/zone/query` — same payload/response as internal `/api/zone/query`
 - `GET  /external/api/zone/zones` — zone list
 - `GET  /external/api/zone/policies` — policy list
-- `GET  /external/api/executive/summary` — fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance %, pending config-diff count, firewall online count/total); backed by `app/executive_summary_cache.py`, which runs TWO independent scheduled sweeps at different cadences — a cheap device sweep (online count, version compliance, pending diffs; default every 15 min, `EXEC_SUMMARY_REFRESH_MINUTES`) and an expensive hygiene sweep (downloads every policy in every ADOM; default every 60 min, `EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES` — raise this in large environments to reduce FMG load). Each sweep only updates its own fields in the shared store, so a slow hygiene sweep never blanks out fresh device data.
+- `GET  /external/api/executive/summary` — fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance %, pending config-diff count, firewall online count/total); backed by `app/executive_summary_cache.py`, which runs TWO independent scheduled sweeps at different cadences — a cheap device sweep (online count, version compliance, pending diffs; default every 15 min, `EXEC_SUMMARY_REFRESH_MINUTES`) and an expensive hygiene sweep (downloads every policy in every ADOM; default every 60 min, `EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES` — raise this in large environments to reduce FMG load). Each sweep only updates its own fields in the shared store, so a slow hygiene sweep never blanks out fresh device data. The payload also includes `lifecycle` (hardware EOS, from the device sweep), `change_control` (admin audit-log aggregation, hourly), `psirt` (persisted advisory exposure), and `device_backup` (see below) — each sourced from its own independent module/cadence, not the device sweep's 15-min loop.
 
 **CSRF:** `/external/api/` requests are exempt from CSRF validation (bearer token is the auth mechanism, no session cookie exists).
 
@@ -700,6 +700,7 @@ Provides read-only zone policy access to external programs (e.g. FW-Analyst) via
 - `app/app_settings.py` — atomic read/write of `app_settings.json` (feature flags)
 - `app/api_tokens.py` — token create/list/revoke/validate; tokens stored as SHA-256 hashes
 - `app/executive_summary_cache.py` — background sweep computing the four executive-summary metrics; same pending|running|ok|error store pattern as `summary_job.py`
+- `app/device_backup_cache.py` — daily sweep (`DEVICE_BACKUP_REFRESH_HOUR`/`_MINUTE`, default 02:00 local) computing device configuration backup age fleet-wide, feeding the `device_backup` executive-summary key: `{devices_backup_ok, devices_backup_stale_7d, devices_backup_never, collected_at}`. One `FMGClient.get_devices(adom)` call plus one `FMGClient.get_adom_revisions(adom)` call per non-forti\* ADOM (not per device — the revision endpoint is ADOM-scoped and returns every device's revisions in one list). `get_adom_revisions()`/`get_device_last_revision()` in `app/fmg_client.py` wrap `GET /dvmdb/adom/<adom>/revision` — confirmed live against a lab FMG-VM64-KVM (v7.6.7-build3737) on 2026-09-11; each revision's `name` field embeds the device name as a literal `<device>-` prefix (e.g. `FortiWiFi-71G-New_2026-08-27-07-03-18-PDT`), used to match revisions to devices. Only one real revision was observed in the lab (single device, single snapshot) — see `docs/superpowers/specs/2026-09-10-device-backup-age-spike.md` for the original spike and its resolution. Persisted to `device_backup.json` (gitignored, project root) after every successful sweep, same atomic-write/single-latest-record pattern as `app/change_control_cache.py`; a failed sweep leaves the prior result in place.
 
 **Admin endpoints added to `admin_routes.py`:**
 - `GET/PUT /admin/api/settings` — get/set `external_api_enabled` and `executive_compliant_versions`

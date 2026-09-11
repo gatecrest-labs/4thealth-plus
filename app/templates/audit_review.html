@@ -39,7 +39,7 @@
         <button class="btn btn-xs" id="drChecksNone">Deselect All</button>
       </div>
       <div class="checkbox-group" id="drChecks">
-        {% for check in checks %}
+        {% for check in dr_checks %}
         <label class="checkbox-label" title="{{ check.description }}">
           <input type="checkbox" name="dr_check" value="{{ check.key }}" checked
             {% if check.params_schema %}data-has-params="1"{% endif %} />
@@ -338,6 +338,10 @@
       <button class="btn btn-sm" id="psirtReportBtn">&#8659; Download HTML Report</button>
     </div>
   </div>
+  <div class="text-muted" style="font-size:.8rem;margin-top:.35rem">
+    This assessment is saved automatically and counts toward fleet exposure
+    in the executive summary until closed below.
+  </div>
 
   <div id="psirtVerdictSummary" class="text-muted" style="display:none;margin-top:.35rem;font-size:.85rem"></div>
 
@@ -354,6 +358,29 @@
         </tr>
       </thead>
       <tbody id="psirtTbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Saved / open advisories -->
+<div style="margin-top:2rem">
+  <h4 style="margin-bottom:.4rem">Open PSIRT Advisories</h4>
+  <div class="text-muted" style="font-size:.85rem;margin-bottom:.5rem">
+    Saved assessments count toward fleet exposure in the executive summary
+    and are re-checked against the fleet automatically. Close an advisory
+    once it's remediated so it stops counting.
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="psirtOpenTable">
+      <thead>
+        <tr>
+          <th>Advisory ID</th><th>CVSS</th><th>KEV</th><th>Priority</th>
+          <th>Devices Affected</th><th>First Seen</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="psirtOpenTbody">
+        <tr><td colspan="7" class="empty-state">No saved advisories yet — run an assessment above.</td></tr>
+      </tbody>
     </table>
   </div>
 </div>
