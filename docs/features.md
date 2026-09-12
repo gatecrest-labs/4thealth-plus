@@ -513,7 +513,7 @@ Five rollup objects in the executive summary payload carry an optional per-item 
 {
   "device": "FW-Branch-12",
   "adom": "Corp",
-  "failed_checks": ["unnamed_policies", "unlogged_policies"],
+  "failed_checks": ["trusted_hosts", "snmp_version"],
   "worst_severity": "high"
 }
 ```
@@ -523,9 +523,18 @@ Five rollup objects in the executive summary payload carry an optional per-item 
 {
   "package": "Corp-Edge",
   "adom": "Corp",
-  "findings": [{"policy_id": 14, "check": "unnamed_policies", "severity": "low"}]
+  "findings": [
+    {
+      "policy_id": "14",
+      "policy_name": "Allow-Any-Outbound",
+      "check": "over_permissive",
+      "severity": "high",
+      "detail": "Over-permissive — source and destination are unrestricted"
+    }
+  ]
 }
 ```
+Each finding's shape comes straight from `app.hygiene.run_checks()` — `policy_id`, `policy_name`, `check`, `detail` are always present, but `severity` is only set for `over_permissive` findings; every other check type (`unnamed`, `unlogged`, `shadow`, `disabled`, `expired`, `unhit`, `missing_security_profile`, `redundant`, `broken_refs`) omits it.
 
 **`version_breakdown.eol_devices`** — every device running an end-of-life FortiOS version, from `app/routes/external_api_routes.py::_version_breakdown()`. Capped at 50, sorted oldest firmware first (unparseable versions sort last, since "unknown" isn't the same as "oldest"), then by device name:
 ```json
