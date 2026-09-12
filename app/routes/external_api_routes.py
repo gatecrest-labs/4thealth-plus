@@ -65,8 +65,31 @@ def _parse_endpoints(raw: str) -> list:
     return [i.strip() for i in items if i.strip()]
 
 
+_MAX_EOL_DEVICES = 50
+
+
+def _version_sort_key(version: str) -> tuple[int, int, int, int]:
+    """Parse "vMAJOR.MR.PATCH" for ascending (oldest-first) sort.
+
+    Returns (1, 0, 0, 0) for anything unparseable (e.g. "n/a") so it always
+    sorts after every real version — being unable to determine a device's
+    version is not the same as it being the oldest one.
+    """
+    m = re.match(r"^v(\d+)\.(\d+)(?:\.(\d+))?$", version or "")
+    if not m:
+        return (1, 0, 0, 0)
+    major, mr, patch = int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+    return (0, major, mr, patch)
+
+
 def _version_breakdown() -> dict:
-    """Firmware version -> {count, eol}, from the all-ADOM versions cache."""
+    """Firmware version -> {count, eol}, from the all-ADOM versions cache.
+
+    "eol_devices" is a reserved key in this dict (not a version string): a
+    capped, oldest-first list of every device running an EOL version, for
+    the drill-down details view. See docs/api-reference.md for the cap and
+    ordering.
+    """
     from collections import Counter
 
     from app import versions_cache
@@ -74,10 +97,25 @@ def _version_breakdown() -> dict:
 
     devices = versions_cache.get_cached().get("devices") or []
     counts = Counter(d.get("version", "n/a") for d in devices)
-    return {
+    breakdown = {
         version: {"count": count, "eol": is_eol(version)}
         for version, count in counts.items()
     }
+
+    eol_devices = [
+        {
+            "device": d.get("name", ""),
+            "adom": d.get("adom", ""),
+            "version": d.get("version", "n/a"),
+        }
+        for d in devices
+        if is_eol(d.get("version", "n/a"))
+    ]
+    eol_devices.sort(
+        key=lambda d: (_version_sort_key(d["version"]), d["device"])
+    )
+    breakdown["eol_devices"] = eol_devices[:_MAX_EOL_DEVICES]
+    return breakdown
 
 
 def _last_backup_status() -> str | None:

@@ -94,7 +94,9 @@ def test_returns_summary_payload_when_authorized(client):
     assert data["firewall_managed_count"] == 218
     assert data["adom_count"] == 3
     assert data["rule_count_total"] == 5120
-    assert data["version_breakdown"] == {"v7.4.5": {"count": 2, "eol": False}, "v7.2.9": {"count": 1, "eol": False}}
+    assert data["version_breakdown"]["v7.4.5"] == {"count": 2, "eol": False}
+    assert data["version_breakdown"]["v7.2.9"] == {"count": 1, "eol": False}
+    assert data["version_breakdown"]["eol_devices"] == []
     assert data["last_backup_status"] == "ok"
     assert data["ai_enabled"] is True
     assert "ai_usage_24h" in data
@@ -131,7 +133,7 @@ def test_ai_usage_omitted_when_ai_assist_disabled(client):
     assert data["ai_enabled"] is False
     assert "ai_usage_24h" not in data
     assert data["last_backup_status"] is None
-    assert data["version_breakdown"] == {}
+    assert data["version_breakdown"] == {"eol_devices": []}
 
 
 def test_rule_count_total_sourced_from_executive_summary_cache_not_summary_job(client):
@@ -176,10 +178,11 @@ def test_version_breakdown_annotates_eol_versions(client):
             headers={"Authorization": "Bearer good-token"},
         )
     data = resp.get_json()
-    assert data["version_breakdown"] == {
-        "v7.4.5": {"count": 1, "eol": False},
-        "v6.4.2": {"count": 1, "eol": True},
-    }
+    assert data["version_breakdown"]["v7.4.5"] == {"count": 1, "eol": False}
+    assert data["version_breakdown"]["v6.4.2"] == {"count": 1, "eol": True}
+    assert data["version_breakdown"]["eol_devices"] == [
+        {"device": "fw2", "adom": "", "version": "v6.4.2"}
+    ]
 
 
 def test_payload_includes_schema_version_and_split_freshness(client):
@@ -750,3 +753,37 @@ def test_ai_usage_by_feature_omitted_when_ai_assist_disabled(client):
             headers={"Authorization": "Bearer good-token"},
         )
     assert "ai_usage_by_feature" not in resp.get_json()
+
+
+def test_version_breakdown_includes_eol_devices_oldest_first(client):
+    from app import versions_cache
+
+    devices = [
+        {"name": "fw-new", "version": "v7.6.1", "adom": "root", "status": "green"},
+        {"name": "fw-old-b", "version": "v6.2.0", "adom": "root", "status": "green"},
+        {"name": "fw-old-a", "version": "v6.0.0", "adom": "branch", "status": "green"},
+        {"name": "fw-noversion", "version": "n/a", "adom": "root", "status": "offline"},
+    ]
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch.object(
+            versions_cache, "get_cached", return_value={"devices": devices}
+        ),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer test-token"},
+        )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    eol = body["version_breakdown"]["eol_devices"]
+    assert eol == [
+        {"device": "fw-old-a", "adom": "branch", "version": "v6.0.0"},
+        {"device": "fw-old-b", "adom": "root", "version": "v6.2.0"},
+    ]
