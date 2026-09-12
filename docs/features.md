@@ -403,6 +403,8 @@ data = resp.json()
 
 The **4tExecutive dashboard** polls fleet-wide metrics from the `/external/api/executive/summary` endpoint:
 
+**Collector/web process split:** every background sweep this endpoint reads from (device review, rule hygiene, PSIRT, change control, pending status, infra health, and the device sweep itself) can now run in a separate `python -m app.collector` process instead of inline in the web process — the two share one SQLite-backed state store (`collector_state.db`) so a web replica that has never run a sweep itself still reads the latest data a collector process wrote. See [container.md](../container.md) for the two-service deployment pattern (`web` + `collector`) and the `RUN_SCHEDULERS` setting that controls it. This split is transparent to API consumers — the payload shape is unchanged either way.
+
 ```http
 GET /external/api/executive/summary
 Authorization: Bearer 4th_<your-token>
@@ -418,7 +420,18 @@ Response:
   "firewalls_total": 218,
   "status": "ok",
   "last_updated": "2026-08-24T15:00:00Z",
-  "schema_version": 2,
+  "schema_version": 3,
+  "freshness": {
+    "device_review": "2026-09-10T00:00:00Z",
+    "rule_hygiene": "2026-09-10T00:00:00Z",
+    "version_breakdown": "2026-09-10T00:00:00Z",
+    "silent_devices": "2026-09-10T00:00:00Z",
+    "psirt": "2026-09-10T00:00:00Z",
+    "change_control": "2026-09-10T01:00:00Z",
+    "lifecycle": "2026-09-10T00:00:00Z",
+    "infra": "2026-09-10T00:00:00Z",
+    "pending_status": "2026-09-10T00:00:00Z"
+  },
   "change_control": {
     "devices_out_of_sync": 4,
     "admin_changes_24h": 12,
@@ -474,7 +487,8 @@ Response:
 - `firewall_online_count` / `firewalls_total` — connected vs. total FortiGate device count.
 - `status` — one of `pending`, `running`, `ok`, or `error`; lets consumers distinguish "not computed yet" from "real data."
 - `last_updated` — ISO 8601 timestamp of whichever sweep (see below) most recently completed.
-- `schema_version` — `2` as of this release (bumped from `1`; the bump is purely additive — every v1 key is still present).
+- `schema_version` — `3` as of this release (bumped from `2`; the bump is purely additive — every v1/v2 key is still present).
+- `freshness` — a flat `{field_group: collected_at}` map, new in `schema_version` 3, covering every rollup in the payload (`device_review`, `rule_hygiene`, `version_breakdown`, `silent_devices`, `psirt`, `change_control`, `lifecycle`, `infra`, `pending_status`) — the preferred single place to check staleness instead of digging into each nested object's own `collected_at`/`ran_at` field. Every v1/v2 per-object timestamp is kept as a deprecated alias; see [api-reference.md](api-reference.md#freshness-map-schema_version-3) for the full key-to-alias mapping.
 - `change_control` — who's changing what, and how much of the fleet has drifted from FortiManager's database:
   - `devices_out_of_sync` — device count whose normalized `conf_status` (from `FMGClient.get_devices_with_sync_status()`, the same call the device sweep already made) is not `"insync"` — covers both `"outofsync"` and an unrecognized status. Freshness: the top-level `device_sweep_collected_at` field, same as the other device-sweep-sourced counts.
   - `admin_changes_24h` — total FortiManager admin audit-log entries in the trailing 24 hours, from a separate hourly sweep (`app/change_control_cache.py`) calling `FMGClient.get_audit_log(hours=24)` once (the audit log is FortiManager-instance-wide, not per-ADOM).

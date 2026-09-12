@@ -209,7 +209,7 @@ def test_payload_includes_schema_version_and_split_freshness(client):
             headers={"Authorization": "Bearer good-token"},
         )
     data = resp.get_json()
-    assert data["schema_version"] == 2
+    assert data["schema_version"] == 3
     assert data["device_sweep_status"] == "ok"
     assert data["hygiene_sweep_status"] == "ok"
     assert data["device_sweep_collected_at"] == "2026-08-28T09:45:00Z"
@@ -275,6 +275,55 @@ def test_payload_device_review_none_when_no_rollup_yet(client):
     data = resp.get_json()
     assert data["device_review"] is None
     assert data["rule_hygiene"] is None
+
+
+def test_executive_summary_schema_version_is_3(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer test-token"},
+        )
+    assert resp.get_json()["schema_version"] == 3
+
+
+def test_executive_summary_freshness_map_covers_every_group(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer test-token"},
+        )
+    body = resp.get_json()
+    freshness = body["freshness"]
+    for group in (
+        "device_review",
+        "rule_hygiene",
+        "version_breakdown",
+        "silent_devices",
+        "psirt",
+        "change_control",
+        "lifecycle",
+        "infra",
+        "pending_status",
+    ):
+        assert group in freshness, f"missing freshness entry for {group!r}"
 
 
 def test_executive_summary_includes_device_review_details(client):
@@ -491,7 +540,7 @@ def test_payload_includes_psirt_rollup(client):
             headers={"Authorization": "Bearer good-token"},
         )
     data = resp.get_json()
-    assert data["schema_version"] == 2
+    assert data["schema_version"] == 3
     assert data["psirt"] == fake_rollup
 
 

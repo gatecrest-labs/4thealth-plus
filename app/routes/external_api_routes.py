@@ -230,6 +230,35 @@ def _silent_devices(summary: dict) -> dict:
     }
 
 
+def _freshness(payload: dict, summary: dict) -> dict:
+    """When each rollup's underlying data was actually collected — the
+    preferred way to check staleness as of schema_version 3. Every v1/v2
+    per-object "collected_at" (or "ran_at"-derived "collected_at") field
+    is kept for backward compatibility; this map is just a single place
+    to check all of them without knowing which nested object each one
+    lives in.
+    """
+    from app.pending_status_cache import get_cache_status
+
+    device_review = payload.get("device_review") or {}
+    rule_hygiene = payload.get("rule_hygiene") or {}
+    psirt = payload.get("psirt") or {}
+    change_control = payload.get("change_control") or {}
+    lifecycle = payload.get("lifecycle") or {}
+
+    return {
+        "device_review": device_review.get("collected_at"),
+        "rule_hygiene": rule_hygiene.get("collected_at"),
+        "version_breakdown": summary.get("device_sweep_collected_at"),
+        "silent_devices": summary.get("device_sweep_collected_at"),
+        "psirt": psirt.get("collected_at"),
+        "change_control": change_control.get("collected_at"),
+        "lifecycle": lifecycle.get("collected_at"),
+        "infra": summary.get("device_sweep_collected_at"),
+        "pending_status": get_cache_status().get("last_updated"),
+    }
+
+
 def _device_backup() -> dict:
     """Device configuration backup age, from the daily
     app.device_backup_cache sweep — see that module and
@@ -403,7 +432,7 @@ def ext_executive_summary():
         "last_backup_status": _last_backup_status(),
         "status": summary.get("status"),
         "last_updated": summary.get("last_updated"),
-        "schema_version": 2,
+        "schema_version": 3,
         "device_sweep_status": summary.get("device_sweep_status"),
         "hygiene_sweep_status": summary.get("hygiene_sweep_status"),
         "device_sweep_collected_at": summary.get("device_sweep_collected_at"),
@@ -419,6 +448,7 @@ def ext_executive_summary():
         "by_adom": summary.get("by_adom") or {},
         "infra": summary.get("infra") or [],
     }
+    payload["freshness"] = _freshness(payload, summary)
 
     ai_enabled = get_setting("ai_assist_enabled", False)
     payload["ai_enabled"] = ai_enabled
