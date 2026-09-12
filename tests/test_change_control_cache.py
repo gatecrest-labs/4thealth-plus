@@ -13,7 +13,9 @@ from app import change_control_cache as cc
 
 @pytest.fixture(autouse=True)
 def _isolated_store(tmp_path, monkeypatch):
-    monkeypatch.setattr(cc, "_STORE_PATH", tmp_path / "change_control_test.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
     cc._running.clear()
     yield
     cc._running.clear()
@@ -127,3 +129,21 @@ def test_sweep_skips_when_already_running():
     finally:
         cc._running.clear()
     assert cc.get_latest() is None
+
+
+def test_get_latest_persists_via_sqlite_not_json_file(monkeypatch, tmp_path):
+    from app import change_control_cache, collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    assert change_control_cache.get_latest() is None
+
+    change_control_cache._save(
+        {"admin_changes_24h": 3, "admin_changes_by_user": [], "collected_at": "t1"}
+    )
+
+    assert change_control_cache.get_latest() == {
+        "admin_changes_24h": 3,
+        "admin_changes_by_user": [],
+        "collected_at": "t1",
+    }

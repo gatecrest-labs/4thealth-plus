@@ -754,7 +754,18 @@ def _run_hygiene_sweep(app) -> bool:
         }
         from app.hygiene_rollup import append_run as _append_hygiene_rollup
 
-        _append_hygiene_rollup(rule_hygiene_record)
+        try:
+            _append_hygiene_rollup(rule_hygiene_record)
+        except Exception as exc:
+            # hygiene_rollup.append_run persists via the same shared SQLite
+            # store as the write_snapshot() call below — a mirror-write
+            # failure here must not downgrade an already-successful
+            # in-memory hygiene sweep, same as that call's own try/except.
+            logger.warning(
+                "executive_summary_cache: hygiene rollup history append "
+                "failed (hygiene sweep still succeeded in-memory): %s",
+                exc,
+            )
 
         elapsed = round(_time.monotonic() - t0, 1)
         logger.info(

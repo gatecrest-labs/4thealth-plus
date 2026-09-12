@@ -136,9 +136,9 @@ def test_lifecycle_counts_sums_across_adoms_and_dedupes_unknown_models():
 # ── _build_by_adom ───────────────────────────────────────────────────────────
 
 def test_build_by_adom_computes_per_adom_metrics(tmp_path, monkeypatch):
-    import app.device_review_rollup as dr_rollup_mod
+    from app import collector_store
 
-    monkeypatch.setattr(dr_rollup_mod, "_ROLLUP_PATH", tmp_path / "dr_rollup.json")
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     devices_flat_by_adom = {
         "Corp": [
@@ -168,9 +168,9 @@ def test_build_by_adom_computes_per_adom_metrics(tmp_path, monkeypatch):
 
 
 def test_build_by_adom_pending_none_when_cache_not_ready(tmp_path, monkeypatch):
-    import app.device_review_rollup as dr_rollup_mod
+    from app import collector_store
 
-    monkeypatch.setattr(dr_rollup_mod, "_ROLLUP_PATH", tmp_path / "dr_rollup.json")
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     result = _build_by_adom(["Corp"], {"Corp": []}, [], None)
 
@@ -179,8 +179,9 @@ def test_build_by_adom_pending_none_when_cache_not_ready(tmp_path, monkeypatch):
 
 def test_build_by_adom_devices_with_failures_from_latest_device_review_run(tmp_path, monkeypatch):
     import app.device_review_rollup as dr_rollup_mod
+    from app import collector_store
 
-    monkeypatch.setattr(dr_rollup_mod, "_ROLLUP_PATH", tmp_path / "dr_rollup.json")
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
     dr_rollup_mod.append_run(
         {"ran_at": "2026-09-01T00:00:00Z", "adom": "Corp", "devices_with_failures": 3}
     )
@@ -403,13 +404,6 @@ import app.executive_summary_cache as cache_mod
 
 @pytest.fixture(autouse=True)
 def _reset_store(tmp_path, monkeypatch):
-    # Redirect the hygiene rollup file into tmp_path so sweeps triggered by any
-    # test in this module never write hygiene_rollup.json into the project root.
-    import app.hygiene_rollup as hygiene_rollup_mod
-
-    monkeypatch.setattr(
-        hygiene_rollup_mod, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json"
-    )
     # Point the shared SQLite snapshot store at a throwaway DB file per test —
     # otherwise every sweep test's new write-through call would hit the real
     # project root's collector_state.db.
@@ -425,13 +419,9 @@ def _reset_store(tmp_path, monkeypatch):
     from app.config import Config as _Config
 
     monkeypatch.setattr(_Config, "INFRA_TARGETS", [])
-    # Device-review-by-ADOM lookups also touch a real file by default —
-    # redirect it too so tests never read/write the project root's copy.
-    import app.device_review_rollup as dr_rollup_mod
-
-    monkeypatch.setattr(
-        dr_rollup_mod, "_ROLLUP_PATH", tmp_path / "device_review_rollup_test.json"
-    )
+    # Device-review-by-ADOM and hygiene-rollup lookups now persist via the
+    # same shared SQLite store (redirected above), so no separate JSON-file
+    # redirection is needed for either.
     with cache_mod._lock:
         cache_mod._store.update({
             "hygiene_score": None,
@@ -956,8 +946,6 @@ def test_run_hygiene_sweep_stores_rule_count_total(app_ctx):
 def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tmp_path, monkeypatch):
     import app.hygiene_rollup as hygiene_rollup
 
-    monkeypatch.setattr(hygiene_rollup, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json")
-
     client = MagicMock()
     client.__enter__ = MagicMock(return_value=client)
     client.__exit__ = MagicMock(return_value=False)
@@ -989,8 +977,6 @@ def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tm
 
 def test_run_hygiene_sweep_populates_details_per_package(app_ctx, tmp_path, monkeypatch):
     import app.hygiene_rollup as hygiene_rollup
-
-    monkeypatch.setattr(hygiene_rollup, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json")
 
     client = MagicMock()
     client.__enter__ = MagicMock(return_value=client)

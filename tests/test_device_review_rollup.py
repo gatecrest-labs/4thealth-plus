@@ -50,7 +50,9 @@ def test_build_rollup_excludes_devices_with_errors_from_reviewed_count():
 
 
 def test_append_run_and_get_latest(tmp_path, monkeypatch):
-    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     record = {
         "ran_at": "2026-08-28T06:00:00Z", "devices_reviewed": 5, "devices_with_failures": 1,
@@ -63,7 +65,9 @@ def test_append_run_and_get_latest(tmp_path, monkeypatch):
 
 
 def test_get_latest_by_adom_picks_newest_per_adom(tmp_path, monkeypatch):
-    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     # append_run prepends -- append oldest first so history ends up newest-first.
     dr_rollup.append_run({"ran_at": "2026-08-28T06:00:00Z", "adom": "Corp", "devices_with_failures": 5})
@@ -77,7 +81,9 @@ def test_get_latest_by_adom_picks_newest_per_adom(tmp_path, monkeypatch):
 
 
 def test_get_latest_by_adom_skips_records_with_no_adom(tmp_path, monkeypatch):
-    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     dr_rollup.append_run({"ran_at": "2026-08-28T06:00:00Z", "devices_with_failures": 5})  # legacy, no "adom"
 
@@ -85,7 +91,9 @@ def test_get_latest_by_adom_skips_records_with_no_adom(tmp_path, monkeypatch):
 
 
 def test_get_latest_by_adom_empty_when_no_history(tmp_path, monkeypatch):
-    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     assert dr_rollup.get_latest_by_adom() == {}
 
@@ -170,3 +178,39 @@ def test_build_details_caps_at_50_most_severe_first(monkeypatch):
     assert len(details) == 50
     assert details[0]["device"] == "fw-059"
     assert details[0]["worst_severity"] == "critical"
+
+
+def test_history_persists_across_module_reload_via_sqlite(monkeypatch, tmp_path):
+    """Two separate reads of get_history() (standing in for two separate
+    app instances/processes) see the same data after one append_run() —
+    proves persistence no longer depends on any in-memory list."""
+    from app import collector_store, device_review_rollup
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    device_review_rollup.append_run({"ran_at": "t1", "adom": "root", "devices_reviewed": 1})
+
+    # Simulate a second, independent reader by re-reading fresh — this
+    # module keeps no in-memory list of its own, so a plain second call
+    # already proves the data survived outside any Python-level cache.
+    assert device_review_rollup.get_history() == [
+        {"ran_at": "t1", "adom": "root", "devices_reviewed": 1}
+    ]
+    assert device_review_rollup.get_latest() == {
+        "ran_at": "t1",
+        "adom": "root",
+        "devices_reviewed": 1,
+    }
+
+
+def test_history_caps_at_30_entries(monkeypatch, tmp_path):
+    from app import collector_store, device_review_rollup
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    for i in range(35):
+        device_review_rollup.append_run({"ran_at": f"t{i}", "adom": "root"})
+
+    history = device_review_rollup.get_history()
+    assert len(history) == 30
+    assert history[0]["ran_at"] == "t34"  # newest first

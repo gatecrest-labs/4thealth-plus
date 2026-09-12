@@ -26,18 +26,14 @@ activity, verify the actual field name with a raw call and adjust here.
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import time as _time
 from datetime import UTC, datetime
-from pathlib import Path
-
-from app.atomic_io import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
-_STORE_PATH = Path(__file__).parent.parent / "change_control.json"
+_CACHE_KEY = "change_control_latest"
 
 _TOP_USERS = 5
 
@@ -79,17 +75,17 @@ def get_latest() -> dict | None:
     """The last successfully persisted {admin_changes_24h,
     admin_changes_by_user, collected_at}, or None if no sweep has ever
     succeeded."""
-    if not _STORE_PATH.exists():
-        return None
-    try:
-        data = json.loads(_STORE_PATH.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
+    from app import collector_store
+
+    return collector_store.read_snapshot(_CACHE_KEY)
 
 
 def _save(record: dict) -> None:
-    atomic_write_json(_STORE_PATH, record)
+    from app import collector_store
+
+    collector_store.write_snapshot(
+        _CACHE_KEY, record, collected_at=record.get("collected_at")
+    )
 
 
 # ── Sweep ────────────────────────────────────────────────────────────────────

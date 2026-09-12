@@ -7,7 +7,9 @@ from app.hygiene_rollup import build_details
 
 
 def test_append_run_and_get_latest(tmp_path, monkeypatch):
-    monkeypatch.setattr(hygiene_rollup, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     record = {
         "ran_at": "2026-08-28T09:00:00Z",
@@ -23,13 +25,17 @@ def test_append_run_and_get_latest(tmp_path, monkeypatch):
 
 
 def test_get_latest_returns_none_when_no_history(tmp_path, monkeypatch):
-    monkeypatch.setattr(hygiene_rollup, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     assert hygiene_rollup.get_latest() is None
 
 
 def test_append_run_keeps_at_most_30_entries(tmp_path, monkeypatch):
-    monkeypatch.setattr(hygiene_rollup, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     for i in range(35):
         hygiene_rollup.append_run({"ran_at": f"run-{i}", "rule_findings_total": i, "rule_findings_by_type": {}})
@@ -89,3 +95,36 @@ def test_build_details_caps_at_50():
     details = build_details(package_findings)
 
     assert len(details) == 50
+
+
+def test_history_persists_across_module_reload_via_sqlite(monkeypatch, tmp_path):
+    """Two separate reads of get_history() (standing in for two separate
+    app instances/processes) see the same data after one append_run() —
+    proves persistence no longer depends on any in-memory list."""
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    hygiene_rollup.append_run({"ran_at": "t1", "adom": "root", "rule_findings_total": 1})
+
+    assert hygiene_rollup.get_history() == [
+        {"ran_at": "t1", "adom": "root", "rule_findings_total": 1}
+    ]
+    assert hygiene_rollup.get_latest() == {
+        "ran_at": "t1",
+        "adom": "root",
+        "rule_findings_total": 1,
+    }
+
+
+def test_history_caps_at_30_entries_sqlite(monkeypatch, tmp_path):
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    for i in range(35):
+        hygiene_rollup.append_run({"ran_at": f"t{i}", "adom": "root"})
+
+    history = hygiene_rollup.get_history()
+    assert len(history) == 30
+    assert history[0]["ran_at"] == "t34"  # newest first

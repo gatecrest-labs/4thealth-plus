@@ -9,15 +9,11 @@ as app.hygiene_rollup / app.device_review_scheduler's device_review_jobs.json.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-from app.atomic_io import atomic_write_json
 from app.device_review import CHECKS_META
 from app.device_review_severity import SEVERITY
 
-_ROLLUP_PATH = Path(__file__).parent.parent / "device_review_rollup.json"
 _MAX_RUNS = 30
+_CACHE_KEY = "device_review_history"
 
 _name_to_key: dict[str, str] = {c["name"]: c["key"] for c in CHECKS_META}
 
@@ -126,13 +122,11 @@ def build_details(results: list[dict], adom: str) -> list[dict]:
 
 def get_history() -> list[dict]:
     """Return the rollup history, newest first, or [] if none exists yet."""
-    if not _ROLLUP_PATH.exists():
-        return []
-    try:
-        data = json.loads(_ROLLUP_PATH.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    from app import collector_store
+
+    snapshot = collector_store.read_snapshot(_CACHE_KEY)
+    history = snapshot.get("history") if snapshot else None
+    return history if isinstance(history, list) else []
 
 
 def get_latest() -> dict | None:
@@ -164,6 +158,9 @@ def get_latest_by_adom() -> dict[str, dict]:
 
 def append_run(record: dict) -> None:
     """Prepend a new rollup record, keeping at most _MAX_RUNS entries."""
+    from app import collector_store
+
     history = get_history()
     history.insert(0, record)
-    atomic_write_json(_ROLLUP_PATH, history[:_MAX_RUNS])
+    history = history[:_MAX_RUNS]
+    collector_store.write_snapshot(_CACHE_KEY, {"history": history})
