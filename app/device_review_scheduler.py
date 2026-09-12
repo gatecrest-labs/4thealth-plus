@@ -252,6 +252,9 @@ def _execute_job(job_id: str) -> None:
             append_run as _append_dr_rollup,
         )
         from app.device_review_rollup import (
+            build_details as _build_dr_details,
+        )
+        from app.device_review_rollup import (
             build_rollup as _build_dr_rollup,
         )
 
@@ -262,6 +265,7 @@ def _execute_job(job_id: str) -> None:
             + "Z",
             "adom": adom,
             **_build_dr_rollup(results),
+            "details": _build_dr_details(results, adom),
         }
         _append_dr_rollup(dr_rollup_record)
 

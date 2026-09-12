@@ -119,7 +119,14 @@ def _ai_usage_24h() -> tuple[dict, dict]:
 
 
 def _device_review_rollup() -> dict | None:
-    """Latest device review rollup, or None if no rollup has run yet."""
+    """Latest device review rollup, or None if no rollup has run yet.
+
+    "details" is a capped, most-severe-first per-device drill-down — see
+    app.device_review_rollup.build_details() for the exact cap/ordering.
+    Older persisted records (written before this field existed) fall back
+    to [] rather than a missing key, so old history entries still validate
+    against the current schema.
+    """
     from app.device_review_rollup import get_latest
 
     latest = get_latest()
@@ -131,6 +138,7 @@ def _device_review_rollup() -> dict | None:
         "findings_by_severity": latest["findings_by_severity"],
         "top_failing_checks": latest["top_failing_checks"],
         "collected_at": latest["ran_at"],
+        "details": latest.get("details", []),
     }
 
 

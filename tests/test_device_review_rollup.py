@@ -88,3 +88,85 @@ def test_get_latest_by_adom_empty_when_no_history(tmp_path, monkeypatch):
     monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
 
     assert dr_rollup.get_latest_by_adom() == {}
+
+
+def test_build_details_orders_by_severity_then_failed_count_then_name(monkeypatch):
+    from app.device_review_rollup import build_details
+
+    monkeypatch.setattr(
+        dr_rollup,
+        "_name_to_key",
+        {"Default 'admin' Account (CIS)": "default_admin", "DNS Servers (CIS)": "dns_servers"},
+    )
+    monkeypatch.setattr(dr_rollup, "_severity_for_key", lambda k: {"default_admin": "critical", "dns_servers": "low"}[k])
+
+    results = [
+        {
+            "device": "fw-b",
+            "ip": "10.0.0.2",
+            "rows": [
+                {"check": "Default 'admin' Account (CIS)", "result": "FAIL"},
+                {"check": "DNS Servers (CIS)", "result": "FAIL"},
+            ],
+            "error": None,
+        },
+        {
+            "device": "fw-a",
+            "ip": "10.0.0.1",
+            "rows": [{"check": "Default 'admin' Account (CIS)", "result": "FAIL"}],
+            "error": None,
+        },
+        {
+            "device": "fw-c",
+            "ip": "10.0.0.3",
+            "rows": [{"check": "DNS Servers (CIS)", "result": "PASS"}],
+            "error": None,
+        },
+        {"device": "fw-d", "ip": "10.0.0.4", "rows": [], "error": "timeout"},
+    ]
+
+    details = build_details(results, adom="root")
+
+    assert details == [
+        {
+            "device": "fw-b",
+            "adom": "root",
+            "failed_checks": ["default_admin", "dns_servers"],
+            "worst_severity": "critical",
+        },
+        {
+            "device": "fw-a",
+            "adom": "root",
+            "failed_checks": ["default_admin"],
+            "worst_severity": "critical",
+        },
+    ]
+
+
+def test_build_details_caps_at_50_most_severe_first(monkeypatch):
+    from app.device_review_rollup import build_details
+
+    monkeypatch.setattr(
+        dr_rollup,
+        "_name_to_key",
+        {"Default 'admin' Account (CIS)": "default_admin", "DNS Servers (CIS)": "dns_servers"},
+    )
+    monkeypatch.setattr(dr_rollup, "_severity_for_key", lambda k: {"default_admin": "critical", "dns_servers": "low"}[k])
+
+    results = [
+        {
+            "device": f"fw-{i:03d}",
+            "ip": "10.0.0.1",
+            "rows": [{"check": "DNS Servers (CIS)", "result": "FAIL"}],
+            "error": None,
+        }
+        for i in range(60)
+    ]
+    # Make one device critical so it must sort first despite name order.
+    results[59]["rows"] = [{"check": "Default 'admin' Account (CIS)", "result": "FAIL"}]
+
+    details = build_details(results, adom="root")
+
+    assert len(details) == 50
+    assert details[0]["device"] == "fw-059"
+    assert details[0]["worst_severity"] == "critical"

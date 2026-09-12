@@ -274,6 +274,45 @@ def test_payload_device_review_none_when_no_rollup_yet(client):
     assert data["rule_hygiene"] is None
 
 
+def test_executive_summary_includes_device_review_details(client):
+    from app import device_review_rollup
+
+    record = {
+        "ran_at": "2026-09-12T00:00:00Z",
+        "adom": "root",
+        "devices_reviewed": 2,
+        "devices_with_failures": 1,
+        "findings_by_severity": {"critical": 1, "high": 0, "medium": 0, "low": 0},
+        "top_failing_checks": [{"check": "default_admin", "count": 1}],
+        "details": [
+            {
+                "device": "fw-a",
+                "adom": "root",
+                "failed_checks": ["default_admin"],
+                "worst_severity": "critical",
+            }
+        ],
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch.object(device_review_rollup, "get_latest", return_value=record),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer test-token"},
+        )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["device_review"]["details"] == record["details"]
+
+
 def test_rule_hygiene_falls_back_to_persisted_rollup_on_cold_start(client):
     """After a restart the in-memory cache is empty; the persisted rollup fills in."""
     fake_hygiene_rollup = {

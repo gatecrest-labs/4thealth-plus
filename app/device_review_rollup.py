@@ -71,6 +71,59 @@ def build_rollup(results: list[dict]) -> dict:
     }
 
 
+_SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+_MAX_DETAILS = 50
+
+
+def build_details(results: list[dict], adom: str) -> list[dict]:
+    """Per-device drill-down for the fleet rollup's "details" field.
+
+    Devices with an "error" (never actually reviewed) are excluded, same as
+    build_rollup(). A device with no failing rows is also excluded — this
+    list is "what's wrong", not a full device roster.
+
+    Capped at _MAX_DETAILS, most severe first: sorted by worst_severity
+    (critical, high, medium, low), then by number of failed checks
+    (descending), then by device name (ascending) for a stable order among
+    equally-severe devices.
+    """
+    entries = []
+    for dev in results:
+        if dev.get("error"):
+            continue
+        failed_checks: list[str] = []
+        for row in dev.get("rows", []):
+            if row.get("result") in _NON_FAILURE_RESULTS:
+                continue
+            key = _name_to_key.get(row.get("check", ""))
+            if key is None:
+                continue
+            failed_checks.append(key)
+        if not failed_checks:
+            continue
+        worst = min(
+            (_severity_for_key(k) for k in failed_checks),
+            key=lambda s: _SEVERITY_RANK.get(s, 99),
+        )
+        entries.append(
+            {
+                "device": dev.get("device", ""),
+                "adom": adom,
+                "failed_checks": failed_checks,
+                "worst_severity": worst,
+            }
+        )
+
+    entries.sort(
+        key=lambda e: (
+            _SEVERITY_RANK.get(e["worst_severity"], 99),
+            -len(e["failed_checks"]),
+            e["device"],
+        )
+    )
+    return entries[:_MAX_DETAILS]
+
+
 def get_history() -> list[dict]:
     """Return the rollup history, newest first, or [] if none exists yet."""
     if not _ROLLUP_PATH.exists():
