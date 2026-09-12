@@ -149,3 +149,19 @@ All external API endpoints require `Authorization: Bearer <token>` and return `5
 | GET | `/external/api/executive/summary` | Fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance, pending config diffs, firewall online count, PSIRT exposure, change-control metrics, hardware EOS lifecycle, per-ADOM breakdown, management-plane infra health — `schema_version: 2`) |
 
 See [features.md](features.md#external-api) for setup and usage details.
+
+### Drill-down details lists
+
+Five rollup objects in the executive summary payload carry an optional
+`details` (or, for `version_breakdown`, `eol_devices`) list — a capped,
+most-severe-or-most-relevant-first breakdown for a per-device drill-down
+view. See [features.md](features.md#drill-down-details-lists) for the
+full field shapes and exact ordering per list.
+
+| Rollup | Field | Cap | Order |
+|---|---|---|---|
+| `device_review` | `details` | 50 | worst_severity (critical→low), then most failed checks, then device name |
+| `rule_hygiene` | `details` | 50 | most findings first, then adom, then package name |
+| `version_breakdown` | `eol_devices` | 50 | oldest firmware first, then device name |
+| `silent_devices` (new) | `details` | 50 | adom, then device name (no severity gradient) |
+| `psirt.top_advisory` | `devices` | 50 | unmitigated (`workaround_applied: false`) first, then adom, then device name — **note:** this field changed from an int device count to this list; the old count is now `top_advisory.device_count` |
