@@ -43,10 +43,24 @@ horizontal scaling later.
 
 ---
 
-## Option A — Single Container (current architecture, recommended now)
+## Option A — Docker Compose (recommended now)
 
-One container runs Gunicorn behind Nginx (or directly, if you terminate TLS at a load
-balancer). Runtime data lives in named Docker volumes.
+Two containers, `web` and `collector`, are built from the same image and share the
+same data-file volumes (JSON files and the app's SQLite databases). `web` runs
+Gunicorn behind Nginx (or directly, if you terminate TLS at a load balancer) and
+starts no background schedulers; `collector` runs `python -m app.collector` and
+owns every scheduled sweep (executive summary, device review, rule hygiene,
+PSIRT re-assessment, change control, infra health, backups, etc.). This split
+exists so the executive summary and every other cache it reads stay consistent
+across Gunicorn's own worker processes and survive a `web` restart — both
+processes read and write through `app/collector_store.py` (SQLite, WAL mode)
+instead of relying on a single process's in-memory copy. See
+`~/Documents/4thealth-notes/scale-review-1000-devices.md` section C1 for the
+full rationale.
+
+A single-process deployment (one process, in-memory schedulers, no `collector`
+container) is still available for local development — set `RUN_SCHEDULERS=inline`
+and run the app directly rather than via `docker compose`; see Step 3 below.
 
 ### Directory layout
 
@@ -147,13 +161,21 @@ CMD ["gunicorn", \
 
 ### Step 3 — Create `docker-compose.yml`
 
+See the repo's own `docker-compose.yml` for the full, current `web` + `collector`
+split with every volume mount. In outline:
+
 ```yaml
 services:
-  app:
+  web:
     build: .
-    image: 4thealth:latest
-    container_name: 4thealth
+    image: 4thealth-plus:latest
+    container_name: 4thealth-plus-web
     restart: unless-stopped
+    command: >
+      gunicorn --workers 2 --threads 4 --worker-class gthread
+      --bind 0.0.0.0:8100 --timeout 120 --worker-tmp-dir /dev/shm
+      --certfile certs/cert.pem --keyfile certs/key.pem
+      --access-logfile - --error-logfile - wsgi:app
     ports:
       - "8100:8100"
     env_file:
@@ -163,8 +185,9 @@ services:
       - ./groups.json:/app/groups.json:rw
       - ./infra_targets.json:/app/infra_targets.json:ro
       - ./policy_db.json:/app/policy_db.json:rw
+      - ./collector_state.db:/app/collector_state.db:rw
       - ./certs:/app/certs:ro
-      - ./backups:/var/backups/4thealth   # backup archives
+      # ...plus every other data file the app reads/writes — see docker-compose.yml
     healthcheck:
       test: ["CMD", "python3", "-c",
              "import urllib.request, ssl; urllib.request.urlopen('https://localhost:8100/login', context=ssl._create_unverified_context(), timeout=5)"]
@@ -172,13 +195,30 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  collector:
+    build: .
+    image: 4thealth-plus:latest
+    container_name: 4thealth-plus-collector
+    restart: unless-stopped
+    command: ["python", "-m", "app.collector"]
+    env_file:
+      - .env
+    volumes:
+      # Same data-file volumes as `web` (minus the port and healthcheck) —
+      # both processes must see the same files.
+      - ./users.json:/app/users.json:rw
+      - ./collector_state.db:/app/collector_state.db:rw
+      # ...see docker-compose.yml for the full list
 ```
 
 > **Volume mount notes:**
 > - `users.json`, `groups.json`, and `policy_db.json` are `:rw` — the app writes to all three (user management, group/permission changes, and zone edits)
 > - `infra_targets.json` is `:ro` — it is only read at startup; edit it on the host and restart
 > - `certs/` is `:ro` — TLS certificates are never modified by the app
+> - `collector_state.db` is the shared SQLite (WAL-mode) store both `web` and `collector` read/write through — mount it on both services
 > - `.env` is passed via `env_file` rather than mounted — Docker reads it as environment variables, which is the correct pattern
+> - `web`'s `env_file` does not need `RUN_SCHEDULERS` set — it defaults to off/no schedulers. `collector` sets `RUN_SCHEDULERS=inline` on itself internally (inside `app/collector.py`), overriding whatever `.env` says, so no compose-level `environment:` override is needed for either service.
 
 > **Backup directory:** The default backup directory is `/var/backups/4thealth/` inside the container.
 > Mount a host directory or named volume here so archives survive container restarts.

@@ -7,17 +7,20 @@ services:
       - "1025:1025"
       - "8025:8025"
 
-  app:
+  web:
     build: .
     image: 4thealth-plus:latest
-    container_name: 4thealth-plus
+    container_name: 4thealth-plus-web
     restart: unless-stopped
-    # Local-testing override: single worker so in-memory caches (executive
-    # summary, pending-status, etc.) stay consistent across requests instead
-    # of being split across N independent per-worker copies. Revert to the
-    # Dockerfile's default (--workers 2) before any real deployment.
+    # Two workers is safe again now that the executive summary and every
+    # other cache it reads read through to collector_state.db (SQLite,
+    # WAL mode) instead of relying on this process's own in-memory copy
+    # — see app/collector_store.py and
+    # ~/Documents/4thealth-notes/scale-review-1000-devices.md section
+    # C1. This service starts NO schedulers (RUN_SCHEDULERS defaults to
+    # "off" — see the `collector` service below).
     command: >
-      gunicorn --workers 1 --threads 4 --worker-class gthread
+      gunicorn --workers 2 --threads 4 --worker-class gthread
       --bind 0.0.0.0:8100 --timeout 120 --worker-tmp-dir /dev/shm
       --certfile certs/cert.pem --keyfile certs/key.pem
       --access-logfile - --error-logfile - wsgi:app
@@ -34,14 +37,14 @@ services:
       - ./review_requirements.yaml:/app/review_requirements.yaml:ro
       - ./ai_usage.db:/app/ai_usage.db:rw
       - ./host_metrics.db:/app/host_metrics.db:rw
+      - ./psirt.db:/app/psirt.db:rw
+      - ./collector_state.db:/app/collector_state.db:rw
       - ./app_settings.json:/app/app_settings.json:rw
       - ./api_tokens.json:/app/api_tokens.json:rw
       - ./smtp_config.json:/app/smtp_config.json:rw
       - ./config_diff_jobs.json:/app/config_diff_jobs.json:rw
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
-      - ./device_review_rollup.json:/app/device_review_rollup.json:rw
       - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
-      - ./hygiene_rollup.json:/app/hygiene_rollup.json:rw
       - ./summary_history.json:/app/summary_history.json:rw
       - ./certs:/app/certs:ro
     healthcheck:
@@ -57,3 +60,31 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  collector:
+    build: .
+    image: 4thealth-plus:latest
+    container_name: 4thealth-plus-collector
+    restart: unless-stopped
+    command: ["python", "-m", "app.collector"]
+    env_file:
+      - .env
+    volumes:
+      - ./users.json:/app/users.json:rw
+      - ./groups.json:/app/groups.json:rw
+      - ./infra_targets.json:/app/infra_targets.json:ro
+      - ./policy_db.json:/app/policy_db.json:rw
+      - ./naming.yaml:/app/naming.yaml:ro
+      - ./review_requirements.yaml:/app/review_requirements.yaml:ro
+      - ./ai_usage.db:/app/ai_usage.db:rw
+      - ./host_metrics.db:/app/host_metrics.db:rw
+      - ./psirt.db:/app/psirt.db:rw
+      - ./collector_state.db:/app/collector_state.db:rw
+      - ./app_settings.json:/app/app_settings.json:rw
+      - ./api_tokens.json:/app/api_tokens.json:rw
+      - ./smtp_config.json:/app/smtp_config.json:rw
+      - ./config_diff_jobs.json:/app/config_diff_jobs.json:rw
+      - ./device_review_jobs.json:/app/device_review_jobs.json:rw
+      - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
+      - ./summary_history.json:/app/summary_history.json:rw
+      - ./certs:/app/certs:ro

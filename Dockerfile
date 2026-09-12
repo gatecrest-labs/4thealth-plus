@@ -27,6 +27,10 @@ USER appuser
 
 EXPOSE 8100
 
+# Default CMD serves the web process. The collector process overrides
+# this at the docker-compose/run level with:
+#   command: ["python", "-m", "app.collector"]
+# See docker-compose.yml and container.md.
 CMD ["gunicorn", \
      "--workers", "2", \
      "--threads", "4", \

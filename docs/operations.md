@@ -34,6 +34,17 @@ If step 3 succeeds but step 4 fails, the problem is in Nginx. Check with `sudo n
 
 ## Monitoring the Background Summary Job
 
+> **In a split deployment** (Docker Compose's `web`+`collector` services, or
+> the bare-metal `4thealth-collector` systemd unit — see `container.md` and
+> `docs/deployment.md` section 2.6), every scheduled sweep (this summary job
+> included) runs in the **collector** process, not the web workers. Look for
+> scheduler activity there instead: `docker compose logs -f collector` or
+> `sudo journalctl -u 4thealth-collector -f`. The web process's own logs
+> (`docker compose logs -f web` / `sudo journalctl -u 4thealth -f`) will show
+> no scheduler output at all — that's expected, not a failure. A
+> single-process deployment (`RUN_SCHEDULERS=inline`, no separate collector)
+> still logs scheduler activity on the one web unit, as before.
+
 ```bash
 # Confirm the job started at app boot
 sudo journalctl -u 4thealth | grep "summary_job"
