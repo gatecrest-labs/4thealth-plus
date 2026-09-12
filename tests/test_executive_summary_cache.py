@@ -410,6 +410,14 @@ def _reset_store(tmp_path, monkeypatch):
     monkeypatch.setattr(
         hygiene_rollup_mod, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json"
     )
+    # Point the shared SQLite snapshot store at a throwaway DB file per test —
+    # otherwise every sweep test's new write-through call would hit the real
+    # project root's collector_state.db.
+    from app import collector_store as collector_store_mod
+
+    monkeypatch.setattr(
+        collector_store_mod, "_DB_PATH", tmp_path / "collector_state_test.db"
+    )
     # Default to no infra targets so _run_device_sweep's infra fetch never
     # makes a real network call in tests that don't care about it — this
     # repo's own infra_targets.json points at an unreachable lab FMG, which
@@ -1007,3 +1015,57 @@ def test_run_device_sweep_sets_device_sweep_collected_at(app_ctx):
         cache_mod._run_device_sweep(app_ctx)
 
     assert cache_mod.get_summary()["device_sweep_collected_at"] is not None
+
+
+# ── SQLite write-through / read-through ──────────────────────────────────────
+
+
+def test_get_summary_reads_device_sweep_from_sqlite_when_never_run_locally(
+    monkeypatch, tmp_path
+):
+    """Simulates a fresh web worker: its own _store has never run a device
+    sweep (still "pending"), but a collector process already wrote a
+    snapshot to SQLite — get_summary() must surface that snapshot."""
+    from app import collector_store, executive_summary_cache
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    collector_store.write_snapshot(
+        "executive_summary_device",
+        {
+            "firewall_online_count": 42,
+            "firewalls_total": 50,
+            "device_sweep_status": "ok",
+            "device_sweep_collected_at": "2026-09-12T00:00:00+00:00",
+        },
+    )
+
+    # This worker's own in-memory store has never run a sweep.
+    assert executive_summary_cache._store["device_sweep_status"] == "pending"
+
+    summary = executive_summary_cache.get_summary()
+
+    assert summary["firewall_online_count"] == 42
+    assert summary["firewalls_total"] == 50
+    assert summary["device_sweep_status"] == "ok"
+
+
+def test_get_summary_prefers_local_store_when_already_populated(monkeypatch, tmp_path):
+    """Once THIS process has run its own sweep, its own value wins over
+    whatever is in SQLite (e.g. an older snapshot from before this
+    process's own most recent sweep)."""
+    from app import collector_store, executive_summary_cache
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    collector_store.write_snapshot(
+        "executive_summary_device", {"firewall_online_count": 1}
+    )
+
+    with executive_summary_cache._lock:
+        executive_summary_cache._store["device_sweep_status"] = "ok"
+        executive_summary_cache._store["firewall_online_count"] = 999
+
+    summary = executive_summary_cache.get_summary()
+
+    assert summary["firewall_online_count"] == 999

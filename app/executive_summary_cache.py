@@ -98,6 +98,8 @@ import threading
 import time as _time
 from datetime import UTC, datetime
 
+from app import collector_store
+
 logger = logging.getLogger(__name__)
 
 # Only checks that need no live per-device/per-object lookups — see spec
@@ -137,9 +139,30 @@ _hygiene_running = threading.Event()
 
 
 def get_summary() -> dict:
-    """Return a copy of the current summary store (safe to serialise as JSON)."""
+    """Return a copy of the current summary store (safe to serialise as JSON).
+
+    Read-through: if THIS process has never completed its own device
+    sweep and/or hygiene sweep (RUN_SCHEDULERS != "inline", i.e. a web
+    worker in the split deployment — or a process that just restarted),
+    fall back to the latest snapshot the collector process persisted to
+    SQLite for that sweep. Once this process's own sweep has run, its
+    own in-memory value always wins — this is a fallback for "nothing
+    local yet," not a permanent alternate source of truth.
+    """
     with _lock:
-        return dict(_store)
+        local = dict(_store)
+
+    if local.get("device_sweep_status") == "pending":
+        snapshot = collector_store.read_snapshot("executive_summary_device")
+        if snapshot:
+            local.update(snapshot)
+
+    if local.get("hygiene_sweep_status") == "pending":
+        snapshot = collector_store.read_snapshot("executive_summary_hygiene")
+        if snapshot:
+            local.update(snapshot)
+
+    return local
 
 
 def get_devices_raw_by_adom() -> dict[str, list[dict]]:
@@ -564,6 +587,35 @@ def _run_device_sweep(app) -> bool:
                     "infra": infra_list,
                 }
             )
+
+        collector_store.write_snapshot(
+            "executive_summary_device",
+            {
+                k: v
+                for k, v in _store.items()
+                if k
+                in {
+                    "version_compliance_pct",
+                    "pending_config_diff_count",
+                    "firewall_online_count",
+                    "firewalls_total",
+                    "adom_count",
+                    "status",
+                    "last_updated",
+                    "device_sweep_status",
+                    "device_sweep_collected_at",
+                    "devices_out_of_sync",
+                    "devices_hw_eos",
+                    "devices_hw_eos_12m",
+                    "models_unknown",
+                    "by_adom",
+                    "infra",
+                    "devices_silent",
+                    "silent_devices_details",
+                }
+            },
+            collected_at=_store.get("device_sweep_collected_at"),
+        )
         return True
 
     except Exception as exc:
@@ -724,6 +776,23 @@ def _run_hygiene_sweep(app) -> bool:
                     "hygiene_sweep_collected_at": datetime.now(UTC).isoformat(),
                 }
             )
+
+        collector_store.write_snapshot(
+            "executive_summary_hygiene",
+            {
+                k: v
+                for k, v in _store.items()
+                if k
+                in {
+                    "hygiene_score",
+                    "rule_count_total",
+                    "rule_hygiene",
+                    "hygiene_sweep_status",
+                    "hygiene_sweep_collected_at",
+                }
+            },
+            collected_at=_store.get("hygiene_sweep_collected_at"),
+        )
         return True
 
     except Exception as exc:
