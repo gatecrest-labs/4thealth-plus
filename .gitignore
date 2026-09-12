@@ -26,6 +26,7 @@ ai_usage.db
 host_metrics.db
 login_events.db
 psirt.db
+collector_state.db
 change_control.json
 device_backup.json
 api_tokens.json

@@ -146,6 +146,43 @@ All external API endpoints require `Authorization: Bearer <token>` and return `5
 | POST | `/external/api/zone/query` | Query src→dst flows against the zone policy DB |
 | GET | `/external/api/zone/zones` | List all zones and subnets |
 | GET | `/external/api/zone/policies` | List all segmentation policies |
-| GET | `/external/api/executive/summary` | Fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance, pending config diffs, firewall online count, PSIRT exposure, change-control metrics, hardware EOS lifecycle, per-ADOM breakdown, management-plane infra health — `schema_version: 2`) |
+| GET | `/external/api/executive/summary` | Fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance, pending config diffs, firewall online count, PSIRT exposure, change-control metrics, hardware EOS lifecycle, per-ADOM breakdown, management-plane infra health — `schema_version: 3`) |
 
 See [features.md](features.md#external-api) for setup and usage details.
+
+### Freshness map (schema_version 3+)
+
+`freshness` is a flat map of `{field_group: collected_at}` covering every
+rollup in the payload — the preferred way to check staleness, instead of
+digging into each nested object's own `collected_at`/`ran_at` field.
+Every v1/v2 per-object timestamp field listed below is kept for this
+release as a **deprecated alias** — do not remove them yet, but new
+integrations should read `freshness` instead:
+
+| `freshness` key | Deprecated v1/v2 alias |
+|---|---|
+| `device_review` | `device_review.collected_at` |
+| `rule_hygiene` | `rule_hygiene.collected_at` |
+| `version_breakdown` | `device_sweep_collected_at` (top-level) |
+| `silent_devices` | `silent_devices.collected_at` |
+| `psirt` | `psirt.collected_at` |
+| `change_control` | `change_control.collected_at` |
+| `lifecycle` | `lifecycle.collected_at` |
+| `infra` | `device_sweep_collected_at` (top-level) |
+| `pending_status` | *(no prior alias — new in schema_version 3)* |
+
+### Drill-down details lists
+
+Five rollup objects in the executive summary payload carry an optional
+`details` (or, for `version_breakdown`, `eol_devices`) list — a capped,
+most-severe-or-most-relevant-first breakdown for a per-device drill-down
+view. See [features.md](features.md#drill-down-details-lists) for the
+full field shapes and exact ordering per list.
+
+| Rollup | Field | Cap | Order |
+|---|---|---|---|
+| `device_review` | `details` | 50 | worst_severity (critical→low), then most failed checks, then device name |
+| `rule_hygiene` | `details` | 50 | most findings first, then adom, then package name |
+| `version_breakdown` | `eol_devices` | 50 | oldest firmware first, then device name |
+| `silent_devices` (new) | `details` | 50 | adom, then device name (no severity gradient) |
+| `psirt.top_advisory` | `devices` | 50 | unmitigated (`workaround_applied: false`) first, then adom, then device name — **note:** this field changed from an int device count to this list; the old count is now `top_advisory.device_count` |

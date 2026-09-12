@@ -80,6 +80,14 @@ class Config:
     RADIUS_GROUP_ADMIN = os.environ.get("RADIUS_GROUP_ADMIN", "")
     RADIUS_GROUP_VIEWER = os.environ.get("RADIUS_GROUP_VIEWER", "")
 
+    # "inline" = start every BackgroundScheduler job in this same process
+    # (the old, single-process behaviour — convenient for local dev and
+    # for anyone not running the separate collector process). Anything
+    # else (default "off") means this process starts NO schedulers and
+    # expects `python -m app.collector` to be running separately. See
+    # app/collector.py and docker-compose.yml's `collector` service.
+    RUN_SCHEDULERS = os.environ.get("RUN_SCHEDULERS", "off").lower()
+
     # SNMP (FortiManager / FortiAnalyzer / FortiAuthenticator CPU & memory polling)
     SNMP_ENABLED = os.environ.get("SNMP_ENABLED", "false").lower() == "true"
     SNMP_PORT = int(os.environ.get("SNMP_PORT", "161"))

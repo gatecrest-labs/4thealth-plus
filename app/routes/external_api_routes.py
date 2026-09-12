@@ -65,8 +65,31 @@ def _parse_endpoints(raw: str) -> list:
     return [i.strip() for i in items if i.strip()]
 
 
+_MAX_EOL_DEVICES = 50
+
+
+def _version_sort_key(version: str) -> tuple[int, int, int, int]:
+    """Parse "vMAJOR.MR.PATCH" for ascending (oldest-first) sort.
+
+    Returns (1, 0, 0, 0) for anything unparseable (e.g. "n/a") so it always
+    sorts after every real version — being unable to determine a device's
+    version is not the same as it being the oldest one.
+    """
+    m = re.match(r"^v(\d+)\.(\d+)(?:\.(\d+))?$", version or "")
+    if not m:
+        return (1, 0, 0, 0)
+    major, mr, patch = int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+    return (0, major, mr, patch)
+
+
 def _version_breakdown() -> dict:
-    """Firmware version -> {count, eol}, from the all-ADOM versions cache."""
+    """Firmware version -> {count, eol}, from the all-ADOM versions cache.
+
+    "eol_devices" is a reserved key in this dict (not a version string): a
+    capped, oldest-first list of every device running an EOL version, for
+    the drill-down details view. See docs/api-reference.md for the cap and
+    ordering.
+    """
     from collections import Counter
 
     from app import versions_cache
@@ -74,10 +97,23 @@ def _version_breakdown() -> dict:
 
     devices = versions_cache.get_cached().get("devices") or []
     counts = Counter(d.get("version", "n/a") for d in devices)
-    return {
+    breakdown = {
         version: {"count": count, "eol": is_eol(version)}
         for version, count in counts.items()
     }
+
+    eol_devices = [
+        {
+            "device": d.get("name", ""),
+            "adom": d.get("adom", ""),
+            "version": d.get("version", "n/a"),
+        }
+        for d in devices
+        if is_eol(d.get("version", "n/a"))
+    ]
+    eol_devices.sort(key=lambda d: (_version_sort_key(d["version"]), d["device"]))
+    breakdown["eol_devices"] = eol_devices[:_MAX_EOL_DEVICES]
+    return breakdown
 
 
 def _last_backup_status() -> str | None:
@@ -119,7 +155,14 @@ def _ai_usage_24h() -> tuple[dict, dict]:
 
 
 def _device_review_rollup() -> dict | None:
-    """Latest device review rollup, or None if no rollup has run yet."""
+    """Latest device review rollup, or None if no rollup has run yet.
+
+    "details" is a capped, most-severe-first per-device drill-down — see
+    app.device_review_rollup.build_details() for the exact cap/ordering.
+    Older persisted records (written before this field existed) fall back
+    to [] rather than a missing key, so old history entries still validate
+    against the current schema.
+    """
     from app.device_review_rollup import get_latest
 
     latest = get_latest()
@@ -131,6 +174,7 @@ def _device_review_rollup() -> dict | None:
         "findings_by_severity": latest["findings_by_severity"],
         "top_failing_checks": latest["top_failing_checks"],
         "collected_at": latest["ran_at"],
+        "details": latest.get("details", []),
     }
 
 
@@ -171,6 +215,47 @@ def _lifecycle(summary: dict) -> dict:
         "devices_hw_eos_12m": summary.get("devices_hw_eos_12m"),
         "models_unknown": summary.get("models_unknown") or [],
         "collected_at": summary.get("device_sweep_collected_at"),
+    }
+
+
+def _silent_devices(summary: dict) -> dict:
+    """Devices FortiManager reports as not connected — see
+    app.executive_summary_cache._build_silent_devices() and
+    docs/superpowers/specs/2026-09-12-silent-devices-proxy-spike.md for
+    why last_log_at is always None in this release."""
+    return {
+        "devices_silent": summary.get("devices_silent"),
+        "details": summary.get("silent_devices_details") or [],
+        "collected_at": summary.get("device_sweep_collected_at"),
+    }
+
+
+def _freshness(payload: dict, summary: dict) -> dict:
+    """When each rollup's underlying data was actually collected — the
+    preferred way to check staleness as of schema_version 3. Every v1/v2
+    per-object "collected_at" (or "ran_at"-derived "collected_at") field
+    is kept for backward compatibility; this map is just a single place
+    to check all of them without knowing which nested object each one
+    lives in.
+    """
+    from app.pending_status_cache import get_cache_status
+
+    device_review = payload.get("device_review") or {}
+    rule_hygiene = payload.get("rule_hygiene") or {}
+    psirt = payload.get("psirt") or {}
+    change_control = payload.get("change_control") or {}
+    lifecycle = payload.get("lifecycle") or {}
+
+    return {
+        "device_review": device_review.get("collected_at"),
+        "rule_hygiene": rule_hygiene.get("collected_at"),
+        "version_breakdown": summary.get("device_sweep_collected_at"),
+        "silent_devices": summary.get("device_sweep_collected_at"),
+        "psirt": psirt.get("collected_at"),
+        "change_control": change_control.get("collected_at"),
+        "lifecycle": lifecycle.get("collected_at"),
+        "infra": summary.get("device_sweep_collected_at"),
+        "pending_status": get_cache_status().get("last_updated"),
     }
 
 
@@ -225,6 +310,7 @@ def _hygiene_rollup() -> dict | None:
         "rule_findings_total": latest["rule_findings_total"],
         "rule_findings_by_type": latest["rule_findings_by_type"],
         "collected_at": latest["ran_at"],
+        "details": latest.get("details", []),
     }
 
 
@@ -346,7 +432,7 @@ def ext_executive_summary():
         "last_backup_status": _last_backup_status(),
         "status": summary.get("status"),
         "last_updated": summary.get("last_updated"),
-        "schema_version": 2,
+        "schema_version": 3,
         "device_sweep_status": summary.get("device_sweep_status"),
         "hygiene_sweep_status": summary.get("hygiene_sweep_status"),
         "device_sweep_collected_at": summary.get("device_sweep_collected_at"),
@@ -357,10 +443,12 @@ def ext_executive_summary():
         "psirt": _psirt_rollup(),
         "change_control": _change_control(summary),
         "lifecycle": _lifecycle(summary),
+        "silent_devices": _silent_devices(summary),
         "device_backup": _device_backup(),
         "by_adom": summary.get("by_adom") or {},
         "infra": summary.get("infra") or [],
     }
+    payload["freshness"] = _freshness(payload, summary)
 
     ai_enabled = get_setting("ai_assist_enabled", False)
     payload["ai_enabled"] = ai_enabled

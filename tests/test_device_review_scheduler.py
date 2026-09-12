@@ -11,9 +11,7 @@ def jobs_path(tmp_path, monkeypatch):
     p = tmp_path / "device_review_jobs.json"
     monkeypatch.setattr("app.device_review_scheduler._JOBS_PATH", p)
     # Keep _execute_job's rollup persistence out of the project root too.
-    monkeypatch.setattr(
-        "app.device_review_rollup._ROLLUP_PATH", tmp_path / "device_review_rollup.json"
-    )
+    monkeypatch.setattr("app.collector_store._DB_PATH", tmp_path / "test.db")
     return p
 
 
@@ -276,8 +274,6 @@ def test_execute_job_check_summary_in_email_body(jobs_path, monkeypatch):
 def test_execute_job_persists_device_review_rollup(jobs_path, monkeypatch, tmp_path):
     from app import device_review_scheduler as sched
     import app.device_review_rollup as dr_rollup
-
-    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
 
     fake_meta = [
         {"key": "default_admin", "name": "Default 'admin' Account (CIS)",

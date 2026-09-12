@@ -94,7 +94,9 @@ def test_returns_summary_payload_when_authorized(client):
     assert data["firewall_managed_count"] == 218
     assert data["adom_count"] == 3
     assert data["rule_count_total"] == 5120
-    assert data["version_breakdown"] == {"v7.4.5": {"count": 2, "eol": False}, "v7.2.9": {"count": 1, "eol": False}}
+    assert data["version_breakdown"]["v7.4.5"] == {"count": 2, "eol": False}
+    assert data["version_breakdown"]["v7.2.9"] == {"count": 1, "eol": False}
+    assert data["version_breakdown"]["eol_devices"] == []
     assert data["last_backup_status"] == "ok"
     assert data["ai_enabled"] is True
     assert "ai_usage_24h" in data
@@ -131,7 +133,7 @@ def test_ai_usage_omitted_when_ai_assist_disabled(client):
     assert data["ai_enabled"] is False
     assert "ai_usage_24h" not in data
     assert data["last_backup_status"] is None
-    assert data["version_breakdown"] == {}
+    assert data["version_breakdown"] == {"eol_devices": []}
 
 
 def test_rule_count_total_sourced_from_executive_summary_cache_not_summary_job(client):
@@ -176,10 +178,11 @@ def test_version_breakdown_annotates_eol_versions(client):
             headers={"Authorization": "Bearer good-token"},
         )
     data = resp.get_json()
-    assert data["version_breakdown"] == {
-        "v7.4.5": {"count": 1, "eol": False},
-        "v6.4.2": {"count": 1, "eol": True},
-    }
+    assert data["version_breakdown"]["v7.4.5"] == {"count": 1, "eol": False}
+    assert data["version_breakdown"]["v6.4.2"] == {"count": 1, "eol": True}
+    assert data["version_breakdown"]["eol_devices"] == [
+        {"device": "fw2", "adom": "", "version": "v6.4.2"}
+    ]
 
 
 def test_payload_includes_schema_version_and_split_freshness(client):
@@ -206,7 +209,7 @@ def test_payload_includes_schema_version_and_split_freshness(client):
             headers={"Authorization": "Bearer good-token"},
         )
     data = resp.get_json()
-    assert data["schema_version"] == 2
+    assert data["schema_version"] == 3
     assert data["device_sweep_status"] == "ok"
     assert data["hygiene_sweep_status"] == "ok"
     assert data["device_sweep_collected_at"] == "2026-08-28T09:45:00Z"
@@ -274,6 +277,133 @@ def test_payload_device_review_none_when_no_rollup_yet(client):
     assert data["rule_hygiene"] is None
 
 
+def test_executive_summary_schema_version_is_3(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer test-token"},
+        )
+    assert resp.get_json()["schema_version"] == 3
+
+
+def test_executive_summary_freshness_map_covers_every_group(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer test-token"},
+        )
+    body = resp.get_json()
+    freshness = body["freshness"]
+    for group in (
+        "device_review",
+        "rule_hygiene",
+        "version_breakdown",
+        "silent_devices",
+        "psirt",
+        "change_control",
+        "lifecycle",
+        "infra",
+        "pending_status",
+    ):
+        assert group in freshness, f"missing freshness entry for {group!r}"
+
+
+def test_executive_summary_includes_device_review_details(client):
+    from app import device_review_rollup
+
+    record = {
+        "ran_at": "2026-09-12T00:00:00Z",
+        "adom": "root",
+        "devices_reviewed": 2,
+        "devices_with_failures": 1,
+        "findings_by_severity": {"critical": 1, "high": 0, "medium": 0, "low": 0},
+        "top_failing_checks": [{"check": "default_admin", "count": 1}],
+        "details": [
+            {
+                "device": "fw-a",
+                "adom": "root",
+                "failed_checks": ["default_admin"],
+                "worst_severity": "critical",
+            }
+        ],
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch.object(device_review_rollup, "get_latest", return_value=record),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer test-token"},
+        )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["device_review"]["details"] == record["details"]
+
+
+def test_executive_summary_includes_rule_hygiene_details(client):
+    from app import hygiene_rollup
+
+    record = {
+        "ran_at": "2026-09-12T00:00:00Z",
+        "rule_findings_total": 2,
+        "rule_findings_by_type": {"unnamed": 1, "unlogged": 1},
+        "details": [
+            {
+                "package": "pkg-a",
+                "adom": "root",
+                "findings": [
+                    {"check": "unnamed", "policy_id": "1"},
+                    {"check": "unlogged", "policy_id": "2"},
+                ],
+            }
+        ],
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.device_review_rollup.get_latest", return_value=None),
+        patch.object(hygiene_rollup, "get_latest", return_value=record),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer test-token"},
+        )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["rule_hygiene"]["details"] == record["details"]
+
+
 def test_rule_hygiene_falls_back_to_persisted_rollup_on_cold_start(client):
     """After a restart the in-memory cache is empty; the persisted rollup fills in."""
     fake_hygiene_rollup = {
@@ -303,6 +433,7 @@ def test_rule_hygiene_falls_back_to_persisted_rollup_on_cold_start(client):
         "rule_findings_total": 118,
         "rule_findings_by_type": {"shadow": 4, "unhit": 60},
         "collected_at": "2026-08-28T09:00:00Z",
+        "details": [],
     }
 
 
@@ -381,7 +512,15 @@ def test_payload_includes_psirt_rollup(client):
         "devices_medium": 0,
         "devices_critical_mitigated": 0.5,
         "kev_exposed_devices": 1,
-        "top_advisory": {"advisory_id": "FG-IR-24-001", "cvss": 9.8, "kev": True, "devices": 3},
+        "top_advisory": {
+            "advisory_id": "FG-IR-24-001",
+            "cvss": 9.8,
+            "kev": True,
+            "device_count": 3,
+            "devices": [
+                {"device": "FW1", "adom": "Corp", "version": "7.4.3", "workaround_applied": False},
+            ],
+        },
         "mean_days_to_remediate_90d": 12.5,
         "collected_at": "2026-09-10T00:00:00+00:00",
     }
@@ -401,7 +540,7 @@ def test_payload_includes_psirt_rollup(client):
             headers={"Authorization": "Bearer good-token"},
         )
     data = resp.get_json()
-    assert data["schema_version"] == 2
+    assert data["schema_version"] == 3
     assert data["psirt"] == fake_rollup
 
 
@@ -519,6 +658,64 @@ def test_payload_lifecycle_defaults_when_no_sweep_yet(client):
         "devices_hw_eos": None,
         "devices_hw_eos_12m": None,
         "models_unknown": [],
+        "collected_at": None,
+    }
+
+
+def test_payload_includes_silent_devices(client):
+    fake_summary = {
+        "status": "ok",
+        "devices_silent": 2,
+        "silent_devices_details": [
+            {"devid": "SN-B", "devname": "fw-b", "last_log_at": None}
+        ],
+        "device_sweep_collected_at": "2026-09-12T00:00:00+00:00",
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["silent_devices"] == {
+        "devices_silent": 2,
+        "details": [{"devid": "SN-B", "devname": "fw-b", "last_log_at": None}],
+        "collected_at": "2026-09-12T00:00:00+00:00",
+    }
+
+
+def test_payload_silent_devices_defaults_when_no_sweep_yet(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "pending"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["silent_devices"] == {
+        "devices_silent": None,
+        "details": [],
         "collected_at": None,
     }
 
@@ -671,3 +868,37 @@ def test_ai_usage_by_feature_omitted_when_ai_assist_disabled(client):
             headers={"Authorization": "Bearer good-token"},
         )
     assert "ai_usage_by_feature" not in resp.get_json()
+
+
+def test_version_breakdown_includes_eol_devices_oldest_first(client):
+    from app import versions_cache
+
+    devices = [
+        {"name": "fw-new", "version": "v7.6.1", "adom": "root", "status": "green"},
+        {"name": "fw-old-b", "version": "v6.2.0", "adom": "root", "status": "green"},
+        {"name": "fw-old-a", "version": "v6.0.0", "adom": "branch", "status": "green"},
+        {"name": "fw-noversion", "version": "n/a", "adom": "root", "status": "offline"},
+    ]
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch.object(
+            versions_cache, "get_cached", return_value={"devices": devices}
+        ),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer test-token"},
+        )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    eol = body["version_breakdown"]["eol_devices"]
+    assert eol == [
+        {"device": "fw-old-a", "adom": "branch", "version": "v6.0.0"},
+        {"device": "fw-old-b", "adom": "root", "version": "v6.2.0"},
+    ]

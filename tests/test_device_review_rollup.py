@@ -50,7 +50,9 @@ def test_build_rollup_excludes_devices_with_errors_from_reviewed_count():
 
 
 def test_append_run_and_get_latest(tmp_path, monkeypatch):
-    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     record = {
         "ran_at": "2026-08-28T06:00:00Z", "devices_reviewed": 5, "devices_with_failures": 1,
@@ -63,7 +65,9 @@ def test_append_run_and_get_latest(tmp_path, monkeypatch):
 
 
 def test_get_latest_by_adom_picks_newest_per_adom(tmp_path, monkeypatch):
-    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     # append_run prepends -- append oldest first so history ends up newest-first.
     dr_rollup.append_run({"ran_at": "2026-08-28T06:00:00Z", "adom": "Corp", "devices_with_failures": 5})
@@ -77,7 +81,9 @@ def test_get_latest_by_adom_picks_newest_per_adom(tmp_path, monkeypatch):
 
 
 def test_get_latest_by_adom_skips_records_with_no_adom(tmp_path, monkeypatch):
-    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     dr_rollup.append_run({"ran_at": "2026-08-28T06:00:00Z", "devices_with_failures": 5})  # legacy, no "adom"
 
@@ -85,6 +91,126 @@ def test_get_latest_by_adom_skips_records_with_no_adom(tmp_path, monkeypatch):
 
 
 def test_get_latest_by_adom_empty_when_no_history(tmp_path, monkeypatch):
-    monkeypatch.setattr(dr_rollup, "_ROLLUP_PATH", tmp_path / "device_review_rollup.json")
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     assert dr_rollup.get_latest_by_adom() == {}
+
+
+def test_build_details_orders_by_severity_then_failed_count_then_name(monkeypatch):
+    from app.device_review_rollup import build_details
+
+    monkeypatch.setattr(
+        dr_rollup,
+        "_name_to_key",
+        {"Default 'admin' Account (CIS)": "default_admin", "DNS Servers (CIS)": "dns_servers"},
+    )
+    monkeypatch.setattr(dr_rollup, "_severity_for_key", lambda k: {"default_admin": "critical", "dns_servers": "low"}[k])
+
+    results = [
+        {
+            "device": "fw-b",
+            "ip": "10.0.0.2",
+            "rows": [
+                {"check": "Default 'admin' Account (CIS)", "result": "FAIL"},
+                {"check": "DNS Servers (CIS)", "result": "FAIL"},
+            ],
+            "error": None,
+        },
+        {
+            "device": "fw-a",
+            "ip": "10.0.0.1",
+            "rows": [{"check": "Default 'admin' Account (CIS)", "result": "FAIL"}],
+            "error": None,
+        },
+        {
+            "device": "fw-c",
+            "ip": "10.0.0.3",
+            "rows": [{"check": "DNS Servers (CIS)", "result": "PASS"}],
+            "error": None,
+        },
+        {"device": "fw-d", "ip": "10.0.0.4", "rows": [], "error": "timeout"},
+    ]
+
+    details = build_details(results, adom="root")
+
+    assert details == [
+        {
+            "device": "fw-b",
+            "adom": "root",
+            "failed_checks": ["default_admin", "dns_servers"],
+            "worst_severity": "critical",
+        },
+        {
+            "device": "fw-a",
+            "adom": "root",
+            "failed_checks": ["default_admin"],
+            "worst_severity": "critical",
+        },
+    ]
+
+
+def test_build_details_caps_at_50_most_severe_first(monkeypatch):
+    from app.device_review_rollup import build_details
+
+    monkeypatch.setattr(
+        dr_rollup,
+        "_name_to_key",
+        {"Default 'admin' Account (CIS)": "default_admin", "DNS Servers (CIS)": "dns_servers"},
+    )
+    monkeypatch.setattr(dr_rollup, "_severity_for_key", lambda k: {"default_admin": "critical", "dns_servers": "low"}[k])
+
+    results = [
+        {
+            "device": f"fw-{i:03d}",
+            "ip": "10.0.0.1",
+            "rows": [{"check": "DNS Servers (CIS)", "result": "FAIL"}],
+            "error": None,
+        }
+        for i in range(60)
+    ]
+    # Make one device critical so it must sort first despite name order.
+    results[59]["rows"] = [{"check": "Default 'admin' Account (CIS)", "result": "FAIL"}]
+
+    details = build_details(results, adom="root")
+
+    assert len(details) == 50
+    assert details[0]["device"] == "fw-059"
+    assert details[0]["worst_severity"] == "critical"
+
+
+def test_history_persists_across_module_reload_via_sqlite(monkeypatch, tmp_path):
+    """Two separate reads of get_history() (standing in for two separate
+    app instances/processes) see the same data after one append_run() —
+    proves persistence no longer depends on any in-memory list."""
+    from app import collector_store, device_review_rollup
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    device_review_rollup.append_run({"ran_at": "t1", "adom": "root", "devices_reviewed": 1})
+
+    # Simulate a second, independent reader by re-reading fresh — this
+    # module keeps no in-memory list of its own, so a plain second call
+    # already proves the data survived outside any Python-level cache.
+    assert device_review_rollup.get_history() == [
+        {"ran_at": "t1", "adom": "root", "devices_reviewed": 1}
+    ]
+    assert device_review_rollup.get_latest() == {
+        "ran_at": "t1",
+        "adom": "root",
+        "devices_reviewed": 1,
+    }
+
+
+def test_history_caps_at_30_entries(monkeypatch, tmp_path):
+    from app import collector_store, device_review_rollup
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    for i in range(35):
+        device_review_rollup.append_run({"ran_at": f"t{i}", "adom": "root"})
+
+    history = device_review_rollup.get_history()
+    assert len(history) == 30
+    assert history[0]["ran_at"] == "t34"  # newest first

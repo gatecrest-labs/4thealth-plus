@@ -54,14 +54,32 @@ def get_all_cached_devices() -> dict[str, list[dict]]:
 
 
 def get_cache_status() -> dict:
-    """Return a snapshot of overall cache state."""
+    """Return a snapshot of overall cache state.
+
+    Read-through: if THIS process has never completed its own refresh
+    (RUN_SCHEDULERS != "inline"), falls back to the collector's latest
+    persisted summary. Only the summary counts are persisted — the
+    per-ADOM device lists (get_cached_devices/get_all_cached_devices)
+    stay in-memory-only, since they can be multi-MB and this cache's
+    consumers (the DIFF tab, executive summary's pending_config_diff
+    aggregation) only need a fresh worker to answer "is the cache ready
+    and how many ADOMs does it cover," not to re-derive the full device
+    list without ever running its own refresh.
+    """
     with _lock:
-        return {
+        local = {
             "status": _state["status"],
             "last_updated": _state["last_updated"],
             "adoms_cached": len(_cache),
             "error": _state.get("error"),
         }
+    if local["status"] == "pending":
+        from app import collector_store
+
+        snapshot = collector_store.read_snapshot("pending_status_summary")
+        if snapshot:
+            return snapshot
+    return local
 
 
 # ── Refresh logic ─────────────────────────────────────────────────────────────
@@ -188,6 +206,27 @@ def _run_refresh(app: Flask) -> None:
                 _state["status"] = "ok"
                 _state["last_updated"] = ts_done
                 _state["error"] = None
+
+            try:
+                from app import collector_store
+
+                collector_store.write_snapshot(
+                    "pending_status_summary",
+                    {
+                        "status": "ok",
+                        "last_updated": ts_done,
+                        "adoms_cached": len(adom_names),
+                        "error": None,
+                    },
+                    collected_at=ts_done,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "pending_status_cache: SQLite snapshot write failed "
+                    "(refresh still succeeded in-memory): %s",
+                    exc,
+                )
+
             logger.info("pending_status_cache: refresh complete")
 
     except Exception as exc:
@@ -195,6 +234,25 @@ def _run_refresh(app: Flask) -> None:
         with _lock:
             _state["status"] = "error"
             _state["error"] = str(exc)
+
+        try:
+            from app import collector_store
+
+            collector_store.write_snapshot(
+                "pending_status_summary",
+                {
+                    "status": "error",
+                    "last_updated": _state["last_updated"],
+                    "adoms_cached": len(_cache),
+                    "error": str(exc),
+                },
+            )
+        except Exception as write_exc:
+            logger.warning(
+                "pending_status_cache: SQLite snapshot write failed "
+                "(error state still recorded in-memory): %s",
+                write_exc,
+            )
 
 
 def refresh_now(app: Flask) -> None:

@@ -263,6 +263,54 @@ sudo systemctl status 4thealth
 sudo journalctl -u 4thealth -f
 ```
 
+> **Background scheduler placement:** The web unit above does not set
+> `RUN_SCHEDULERS`, so it defaults to `off` — this web process starts no
+> background jobs (executive summary sweep, device review, rule hygiene,
+> PSIRT re-assessment, change control, infra health, backups, etc.). Those
+> now run in a separate `python -m app.collector` process so the executive
+> summary and every other cache it reads stay consistent across Gunicorn's
+> worker processes and survive a web restart (see
+> `~/Documents/4thealth-notes/scale-review-1000-devices.md` section C1, and
+> `container.md`'s Docker Compose `web`/`collector` split, which this
+> systemd approach mirrors). Create a parallel unit,
+> `/etc/systemd/system/4thealth-collector.service`:
+>
+> ```ini
+> [Unit]
+> Description=4THealth Dashboard — Collector
+> After=network.target
+>
+> [Service]
+> Type=simple
+> User=4thealth
+> Group=4thealth
+> WorkingDirectory=/opt/4thealth
+> EnvironmentFile=/opt/4thealth/.env
+> Environment=TZ=America/Chicago
+> ExecStart=/opt/4thealth/.venv/bin/python -m app.collector
+> Restart=on-failure
+> RestartSec=5
+>
+> [Install]
+> WantedBy=multi-user.target
+> ```
+>
+> ```bash
+> sudo systemctl daemon-reload
+> sudo systemctl enable 4thealth-collector
+> sudo systemctl start 4thealth-collector
+> sudo journalctl -u 4thealth-collector -f
+> ```
+>
+> `app/collector.py` forces `RUN_SCHEDULERS=inline` on itself regardless of
+> `.env`, so no environment change is needed for this unit.
+>
+> **Single-process (no separate collector unit):** for a small bare-metal
+> deployment that doesn't want a second systemd unit, set
+> `RUN_SCHEDULERS=inline` in `/opt/4thealth/.env` and skip the collector
+> unit entirely — the one web process then runs every scheduler itself, as
+> it always did before this split (the old single-process behaviour).
+
 ### 2.7 Smoke Test (before Nginx)
 
 ```bash

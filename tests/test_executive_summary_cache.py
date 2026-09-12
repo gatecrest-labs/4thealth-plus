@@ -136,9 +136,9 @@ def test_lifecycle_counts_sums_across_adoms_and_dedupes_unknown_models():
 # ── _build_by_adom ───────────────────────────────────────────────────────────
 
 def test_build_by_adom_computes_per_adom_metrics(tmp_path, monkeypatch):
-    import app.device_review_rollup as dr_rollup_mod
+    from app import collector_store
 
-    monkeypatch.setattr(dr_rollup_mod, "_ROLLUP_PATH", tmp_path / "dr_rollup.json")
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     devices_flat_by_adom = {
         "Corp": [
@@ -168,9 +168,9 @@ def test_build_by_adom_computes_per_adom_metrics(tmp_path, monkeypatch):
 
 
 def test_build_by_adom_pending_none_when_cache_not_ready(tmp_path, monkeypatch):
-    import app.device_review_rollup as dr_rollup_mod
+    from app import collector_store
 
-    monkeypatch.setattr(dr_rollup_mod, "_ROLLUP_PATH", tmp_path / "dr_rollup.json")
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
 
     result = _build_by_adom(["Corp"], {"Corp": []}, [], None)
 
@@ -179,8 +179,9 @@ def test_build_by_adom_pending_none_when_cache_not_ready(tmp_path, monkeypatch):
 
 def test_build_by_adom_devices_with_failures_from_latest_device_review_run(tmp_path, monkeypatch):
     import app.device_review_rollup as dr_rollup_mod
+    from app import collector_store
 
-    monkeypatch.setattr(dr_rollup_mod, "_ROLLUP_PATH", tmp_path / "dr_rollup.json")
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
     dr_rollup_mod.append_run(
         {"ran_at": "2026-09-01T00:00:00Z", "adom": "Corp", "devices_with_failures": 3}
     )
@@ -317,6 +318,50 @@ def test_pending_diff_count_does_not_double_count_one_device():
     assert _pending_diff_count(devices_by_adom) == 1
 
 
+def test_build_silent_devices_counts_and_details_offline_devices():
+    from app.executive_summary_cache import _build_silent_devices
+
+    devices_flat_by_adom = {
+        "root": [
+            {"name": "fw-a", "sn": "SN-A", "version": "v7.4.2", "conn_status": 1},
+            {"name": "fw-b", "sn": "SN-B", "version": "v7.4.2", "conn_status": 0},
+        ],
+        "branch": [
+            {"name": "fw-c", "sn": "", "version": "v7.4.2", "conn_status": 0},
+        ],
+    }
+
+    count, details = _build_silent_devices(devices_flat_by_adom)
+
+    assert count == 2
+    # "branch" < "root" alphabetically, so branch's fw-c sorts before root's fw-b.
+    assert details == [
+        {"devid": "fw-c", "devname": "fw-c", "last_log_at": None},
+        {"devid": "SN-B", "devname": "fw-b", "last_log_at": None},
+    ]
+
+
+def test_build_silent_devices_caps_at_50():
+    from app.executive_summary_cache import _build_silent_devices
+
+    devices_flat_by_adom = {
+        "root": [
+            {
+                "name": f"fw-{i:03d}",
+                "sn": f"SN-{i:03d}",
+                "version": "v7.4.2",
+                "conn_status": 0,
+            }
+            for i in range(60)
+        ]
+    }
+
+    count, details = _build_silent_devices(devices_flat_by_adom)
+
+    assert count == 60
+    assert len(details) == 50
+
+
 # ── _hygiene_score ───────────────────────────────────────────────────────────
 
 def test_hygiene_score_none_when_no_policies():
@@ -359,12 +404,13 @@ import app.executive_summary_cache as cache_mod
 
 @pytest.fixture(autouse=True)
 def _reset_store(tmp_path, monkeypatch):
-    # Redirect the hygiene rollup file into tmp_path so sweeps triggered by any
-    # test in this module never write hygiene_rollup.json into the project root.
-    import app.hygiene_rollup as hygiene_rollup_mod
+    # Point the shared SQLite snapshot store at a throwaway DB file per test —
+    # otherwise every sweep test's new write-through call would hit the real
+    # project root's collector_state.db.
+    from app import collector_store as collector_store_mod
 
     monkeypatch.setattr(
-        hygiene_rollup_mod, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json"
+        collector_store_mod, "_DB_PATH", tmp_path / "collector_state_test.db"
     )
     # Default to no infra targets so _run_device_sweep's infra fetch never
     # makes a real network call in tests that don't care about it — this
@@ -373,13 +419,9 @@ def _reset_store(tmp_path, monkeypatch):
     from app.config import Config as _Config
 
     monkeypatch.setattr(_Config, "INFRA_TARGETS", [])
-    # Device-review-by-ADOM lookups also touch a real file by default —
-    # redirect it too so tests never read/write the project root's copy.
-    import app.device_review_rollup as dr_rollup_mod
-
-    monkeypatch.setattr(
-        dr_rollup_mod, "_ROLLUP_PATH", tmp_path / "device_review_rollup_test.json"
-    )
+    # Device-review-by-ADOM and hygiene-rollup lookups now persist via the
+    # same shared SQLite store (redirected above), so no separate JSON-file
+    # redirection is needed for either.
     with cache_mod._lock:
         cache_mod._store.update({
             "hygiene_score": None,
@@ -706,6 +748,65 @@ def test_run_device_sweep_sets_error_status_on_exception(monkeypatch, app_ctx):
     assert "boom" in summary["error"]
 
 
+def test_run_device_sweep_still_succeeds_when_sqlite_write_fails(monkeypatch, app_ctx):
+    """A SQLite mirroring failure must never downgrade an already-successful
+    in-memory sweep to 'error' — write_snapshot is best-effort mirroring on
+    top of the in-memory store, not a condition of sweep success."""
+    monkeypatch.setattr(
+        "app.app_settings.get_setting", lambda key, default=None: default
+    )
+    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", lambda: {})
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_cache_status",
+        lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
+    )
+    monkeypatch.setattr(
+        cache_mod.collector_store,
+        "write_snapshot",
+        MagicMock(side_effect=RuntimeError("disk full")),
+    )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = cache_mod._run_device_sweep(app_ctx)
+
+    assert result is True
+    summary = cache_mod.get_summary()
+    assert summary["status"] == "ok"
+    assert summary["device_sweep_status"] == "ok"
+    assert summary["error"] is None
+    assert summary["firewalls_total"] == 2
+
+
+def test_run_device_sweep_writes_and_reads_back_snapshot_via_sqlite(monkeypatch, app_ctx):
+    """End-to-end: running the real sweep should leave a snapshot in SQLite
+    that collector_store.read_snapshot can read back, including the
+    silent-devices drill-down fields."""
+    from app import collector_store
+
+    monkeypatch.setattr(
+        "app.app_settings.get_setting",
+        lambda key, default=None: ["v7.4.3"] if key == "executive_compliant_versions" else default,
+    )
+    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", lambda: {})
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_cache_status",
+        lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
+    )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = cache_mod._run_device_sweep(app_ctx)
+
+    assert result is True
+    snapshot = collector_store.read_snapshot("executive_summary_device")
+    assert snapshot is not None
+    assert snapshot["firewalls_total"] == 2
+    assert snapshot["firewall_online_count"] == 1
+    assert "devices_silent" in snapshot
+    assert "silent_devices_details" in snapshot
+
+
 def test_run_device_sweep_skips_when_already_running():
     cache_mod._device_running.set()
     try:
@@ -777,6 +878,43 @@ def test_run_hygiene_sweep_sets_error_status_on_exception():
     assert "boom" in summary["error"]
 
 
+def test_run_hygiene_sweep_still_succeeds_when_sqlite_write_fails(monkeypatch, app_ctx):
+    """A SQLite mirroring failure must never downgrade an already-successful
+    in-memory hygiene sweep to 'error'."""
+    monkeypatch.setattr(
+        cache_mod.collector_store,
+        "write_snapshot",
+        MagicMock(side_effect=RuntimeError("disk full")),
+    )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = cache_mod._run_hygiene_sweep(app_ctx)
+
+    assert result is True
+    summary = cache_mod.get_summary()
+    assert summary["status"] == "ok"
+    assert summary["hygiene_sweep_status"] == "ok"
+    assert summary["error"] is None
+    assert summary["hygiene_score"] is not None
+
+
+def test_run_hygiene_sweep_writes_and_reads_back_snapshot_via_sqlite(app_ctx):
+    """End-to-end: running the real hygiene sweep should leave a snapshot in
+    SQLite that collector_store.read_snapshot can read back."""
+    from app import collector_store
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = cache_mod._run_hygiene_sweep(app_ctx)
+
+    assert result is True
+    snapshot = collector_store.read_snapshot("executive_summary_hygiene")
+    assert snapshot is not None
+    assert snapshot["hygiene_score"] is not None
+    assert snapshot["hygiene_sweep_status"] == "ok"
+
+
 def test_run_hygiene_sweep_skips_when_already_running():
     cache_mod._hygiene_running.set()
     try:
@@ -808,8 +946,6 @@ def test_run_hygiene_sweep_stores_rule_count_total(app_ctx):
 def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tmp_path, monkeypatch):
     import app.hygiene_rollup as hygiene_rollup
 
-    monkeypatch.setattr(hygiene_rollup, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json")
-
     client = MagicMock()
     client.__enter__ = MagicMock(return_value=client)
     client.__exit__ = MagicMock(return_value=False)
@@ -837,6 +973,37 @@ def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tm
     }
     assert summary["rule_hygiene"]["collected_at"] is not None
     assert hygiene_rollup.get_latest()["rule_findings_total"] == summary["rule_hygiene"]["rule_findings_total"]
+
+
+def test_run_hygiene_sweep_populates_details_per_package(app_ctx, tmp_path, monkeypatch):
+    import app.hygiene_rollup as hygiene_rollup
+
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.get_adoms.return_value = [{"name": "Customer1"}]
+    client.get_devices.return_value = [{"name": "fw1"}]
+    client.get_policy_packages.return_value = [{"name": "default", "path": "default"}]
+    client.get_policies.return_value = [
+        {"policyid": 1, "name": "", "logtraffic": "disable"},
+        {"policyid": 2, "name": "rule2"},
+    ]
+    client.get_address_objects.return_value = []
+    client.get_address_groups.return_value = []
+    client.get_service_objects.return_value = []
+    client.get_service_groups.return_value = []
+
+    with patch("app.fmg_helpers.make_client", return_value=client):
+        cache_mod._run_hygiene_sweep(app_ctx)
+
+    summary = cache_mod.get_summary()
+    details = summary["rule_hygiene"]["details"]
+    assert len(details) == 1
+    assert details[0]["package"] == "default"
+    assert details[0]["adom"] == "Customer1"
+    assert isinstance(details[0]["findings"], list)
+    assert len(details[0]["findings"]) > 0
+    assert hygiene_rollup.get_latest()["details"] == details
 
 
 def _multi_package_client(policies_by_pkg, addresses):
@@ -930,3 +1097,57 @@ def test_run_device_sweep_sets_device_sweep_collected_at(app_ctx):
         cache_mod._run_device_sweep(app_ctx)
 
     assert cache_mod.get_summary()["device_sweep_collected_at"] is not None
+
+
+# ── SQLite write-through / read-through ──────────────────────────────────────
+
+
+def test_get_summary_reads_device_sweep_from_sqlite_when_never_run_locally(
+    monkeypatch, tmp_path
+):
+    """Simulates a fresh web worker: its own _store has never run a device
+    sweep (still "pending"), but a collector process already wrote a
+    snapshot to SQLite — get_summary() must surface that snapshot."""
+    from app import collector_store, executive_summary_cache
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    collector_store.write_snapshot(
+        "executive_summary_device",
+        {
+            "firewall_online_count": 42,
+            "firewalls_total": 50,
+            "device_sweep_status": "ok",
+            "device_sweep_collected_at": "2026-09-12T00:00:00+00:00",
+        },
+    )
+
+    # This worker's own in-memory store has never run a sweep.
+    assert executive_summary_cache._store["device_sweep_status"] == "pending"
+
+    summary = executive_summary_cache.get_summary()
+
+    assert summary["firewall_online_count"] == 42
+    assert summary["firewalls_total"] == 50
+    assert summary["device_sweep_status"] == "ok"
+
+
+def test_get_summary_prefers_local_store_when_already_populated(monkeypatch, tmp_path):
+    """Once THIS process has run its own sweep, its own value wins over
+    whatever is in SQLite (e.g. an older snapshot from before this
+    process's own most recent sweep)."""
+    from app import collector_store, executive_summary_cache
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    collector_store.write_snapshot(
+        "executive_summary_device", {"firewall_online_count": 1}
+    )
+
+    with executive_summary_cache._lock:
+        executive_summary_cache._store["device_sweep_status"] = "ok"
+        executive_summary_cache._store["firewall_online_count"] = 999
+
+    summary = executive_summary_cache.get_summary()
+
+    assert summary["firewall_online_count"] == 999

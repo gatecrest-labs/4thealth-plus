@@ -24,6 +24,185 @@ _BLUEPRINT_MODULES = [
 ]
 
 
+def _schedulers_enabled(config) -> bool:
+    """True when this process should start every BackgroundScheduler job.
+
+    config is anything with a dict-like .get() — normally a Flask app's
+    .config, but tests pass a plain dict directly. Requires BOTH
+    RUN_SCHEDULERS="inline" (see app/config.py) and TESTING not set,
+    exactly like every individual scheduler guard used to check
+    separately — this collapses those into one gate, checked once, at
+    the single call site in create_app().
+    """
+    from app.config import Config
+
+    return not config.get("TESTING") and Config.RUN_SCHEDULERS == "inline"
+
+
+def start_all_schedulers(app: Flask) -> None:
+    """Start every BackgroundScheduler job the app owns.
+
+    Called from create_app() only when _schedulers_enabled() is True —
+    i.e. RUN_SCHEDULERS=inline (the old single-process dev behaviour) or
+    from app.collector.main(), which forces RUN_SCHEDULERS=inline before
+    calling create_app(). Web workers in the split (default) deployment
+    never call this at all.
+
+    Each block below still carries its own app.config["_XXX_STARTED"]
+    guard, unchanged from before this extraction — that guard now only
+    protects against double-registration within a single process (e.g.
+    Flask's debug-mode reloader), since the "should this process run
+    schedulers at all" decision is made once, by the caller.
+    """
+    if not app.config.get("_SUMMARY_STARTED"):
+        app.config["_SUMMARY_STARTED"] = True
+        from app.summary_job import init_scheduler
+
+        init_scheduler(app)
+
+    if not app.config.get("_VERSIONS_CACHE_STARTED"):
+        app.config["_VERSIONS_CACHE_STARTED"] = True
+        from app.versions_cache import init_scheduler as init_versions_scheduler
+
+        init_versions_scheduler(app)
+
+    if not app.config.get("_ADOM_CACHE_STARTED"):
+        app.config["_ADOM_CACHE_STARTED"] = True
+        from app.adom_cache import init_scheduler as init_adom_scheduler
+
+        init_adom_scheduler(app)
+
+    if not app.config.get("_MAP_CACHE_STARTED"):
+        app.config["_MAP_CACHE_STARTED"] = True
+        from app.map_cache import init_scheduler as init_map_scheduler
+
+        init_map_scheduler(app)
+
+    if not app.config.get("_INFRA_HEALTH_STARTED"):
+        app.config["_INFRA_HEALTH_STARTED"] = True
+        from app.infra_health_cache import init_scheduler as init_infra_health_scheduler
+
+        init_infra_health_scheduler(app)
+
+    if not app.config.get("_HOST_METRICS_STARTED"):
+        app.config["_HOST_METRICS_STARTED"] = True
+        from app.host_metrics import init_scheduler as init_host_metrics_scheduler
+
+        init_host_metrics_scheduler(app)
+
+    if not app.config.get("_LOGIN_METRICS_STARTED"):
+        app.config["_LOGIN_METRICS_STARTED"] = True
+        from app.login_metrics import init_scheduler as init_login_metrics_scheduler
+
+        init_login_metrics_scheduler(app)
+
+    if not app.config.get("_AI_USAGE_PRUNE_STARTED"):
+        app.config["_AI_USAGE_PRUNE_STARTED"] = True
+        from app.ai_usage import init_scheduler as init_ai_usage_scheduler
+
+        init_ai_usage_scheduler(app)
+
+    if not app.config.get("_PENDING_STATUS_CACHE_STARTED"):
+        app.config["_PENDING_STATUS_CACHE_STARTED"] = True
+        from app.pending_status_cache import (
+            init_scheduler as init_pending_status_scheduler,
+        )
+
+        init_pending_status_scheduler(app)
+
+    if not app.config.get("_EXEC_SUMMARY_CACHE_STARTED"):
+        app.config["_EXEC_SUMMARY_CACHE_STARTED"] = True
+        from app.executive_summary_cache import (
+            init_scheduler as init_exec_summary_scheduler,
+        )
+
+        init_exec_summary_scheduler(app)
+
+    if not app.config.get("_CONFIG_DIFF_SCHEDULER_STARTED"):
+        app.config["_CONFIG_DIFF_SCHEDULER_STARTED"] = True
+        try:
+            from app.config_diff_scheduler import (
+                init_scheduler as init_config_diff_scheduler,
+            )
+
+            with app.app_context():
+                init_config_diff_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Config-Diff scheduler failed to start: %s", exc)
+
+    if not app.config.get("_DR_SCHEDULER_STARTED"):
+        app.config["_DR_SCHEDULER_STARTED"] = True
+        try:
+            from app.device_review_scheduler import (
+                init_scheduler as init_dr_scheduler,
+            )
+
+            with app.app_context():
+                init_dr_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Audit Review scheduler failed to start: %s", exc)
+
+    if not app.config.get("_RH_SCHEDULER_STARTED"):
+        app.config["_RH_SCHEDULER_STARTED"] = True
+        try:
+            from app.rule_hygiene_scheduler import (
+                init_scheduler as init_rh_scheduler,
+            )
+
+            with app.app_context():
+                init_rh_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Rule Hygiene scheduler failed to start: %s", exc)
+
+    if not app.config.get("_BACKUP_SCHEDULER_STARTED"):
+        app.config["_BACKUP_SCHEDULER_STARTED"] = True
+        try:
+            from app.backup_scheduler import (
+                init_scheduler as init_backup_scheduler,
+            )
+
+            with app.app_context():
+                init_backup_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Backup scheduler failed to start: %s", exc)
+
+    if not app.config.get("_PSIRT_REASSESS_SCHEDULER_STARTED"):
+        app.config["_PSIRT_REASSESS_SCHEDULER_STARTED"] = True
+        try:
+            from app.psirt_reassess_scheduler import (
+                init_scheduler as init_psirt_reassess_scheduler,
+            )
+
+            with app.app_context():
+                init_psirt_reassess_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("PSIRT re-assessment scheduler failed to start: %s", exc)
+
+    if not app.config.get("_CHANGE_CONTROL_SCHEDULER_STARTED"):
+        app.config["_CHANGE_CONTROL_SCHEDULER_STARTED"] = True
+        try:
+            from app.change_control_cache import (
+                init_scheduler as init_change_control_scheduler,
+            )
+
+            with app.app_context():
+                init_change_control_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Change-control scheduler failed to start: %s", exc)
+
+    if not app.config.get("_DEVICE_BACKUP_SCHEDULER_STARTED"):
+        app.config["_DEVICE_BACKUP_SCHEDULER_STARTED"] = True
+        try:
+            from app.device_backup_cache import (
+                init_scheduler as init_device_backup_scheduler,
+            )
+
+            with app.app_context():
+                init_device_backup_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Device backup scheduler failed to start: %s", exc)
+
+
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_object(Config)
@@ -94,167 +273,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     groups.KNOWN_TABS = registry.known_tabs()
 
     # Start background jobs — guard against re-registration on Flask debug reload.
-    if not app.config.get("TESTING") and not app.config.get("_SUMMARY_STARTED"):
-        app.config["_SUMMARY_STARTED"] = True
-        from app.summary_job import init_scheduler
-
-        init_scheduler(app)
-
-    if not app.config.get("TESTING") and not app.config.get("_VERSIONS_CACHE_STARTED"):
-        app.config["_VERSIONS_CACHE_STARTED"] = True
-        from app.versions_cache import init_scheduler as init_versions_scheduler
-
-        init_versions_scheduler(app)
-
-    if not app.config.get("TESTING") and not app.config.get("_ADOM_CACHE_STARTED"):
-        app.config["_ADOM_CACHE_STARTED"] = True
-        from app.adom_cache import init_scheduler as init_adom_scheduler
-
-        init_adom_scheduler(app)
-
-    if not app.config.get("TESTING") and not app.config.get("_MAP_CACHE_STARTED"):
-        app.config["_MAP_CACHE_STARTED"] = True
-        from app.map_cache import init_scheduler as init_map_scheduler
-
-        init_map_scheduler(app)
-
-    if not app.config.get("TESTING") and not app.config.get("_INFRA_HEALTH_STARTED"):
-        app.config["_INFRA_HEALTH_STARTED"] = True
-        from app.infra_health_cache import init_scheduler as init_infra_health_scheduler
-
-        init_infra_health_scheduler(app)
-
-    if not app.config.get("TESTING") and not app.config.get("_HOST_METRICS_STARTED"):
-        app.config["_HOST_METRICS_STARTED"] = True
-        from app.host_metrics import init_scheduler as init_host_metrics_scheduler
-
-        init_host_metrics_scheduler(app)
-
-    if not app.config.get("TESTING") and not app.config.get("_LOGIN_METRICS_STARTED"):
-        app.config["_LOGIN_METRICS_STARTED"] = True
-        from app.login_metrics import init_scheduler as init_login_metrics_scheduler
-
-        init_login_metrics_scheduler(app)
-
-    if not app.config.get("TESTING") and not app.config.get("_AI_USAGE_PRUNE_STARTED"):
-        app.config["_AI_USAGE_PRUNE_STARTED"] = True
-        from app.ai_usage import init_scheduler as init_ai_usage_scheduler
-
-        init_ai_usage_scheduler(app)
-
-    if not app.config.get("TESTING") and not app.config.get(
-        "_PENDING_STATUS_CACHE_STARTED"
-    ):
-        app.config["_PENDING_STATUS_CACHE_STARTED"] = True
-        from app.pending_status_cache import (
-            init_scheduler as init_pending_status_scheduler,
-        )
-
-        init_pending_status_scheduler(app)
-
-    if not app.config.get("TESTING") and not app.config.get(
-        "_EXEC_SUMMARY_CACHE_STARTED"
-    ):
-        app.config["_EXEC_SUMMARY_CACHE_STARTED"] = True
-        from app.executive_summary_cache import (
-            init_scheduler as init_exec_summary_scheduler,
-        )
-
-        init_exec_summary_scheduler(app)
-
-    if not app.config.get("TESTING") and not app.config.get(
-        "_CONFIG_DIFF_SCHEDULER_STARTED"
-    ):
-        app.config["_CONFIG_DIFF_SCHEDULER_STARTED"] = True
-        try:
-            from app.config_diff_scheduler import (
-                init_scheduler as init_config_diff_scheduler,
-            )
-
-            with app.app_context():
-                init_config_diff_scheduler(app)
-        except Exception as exc:
-            app.logger.warning("Config-Diff scheduler failed to start: %s", exc)
-
-    if not app.config.get("TESTING") and not app.config.get("_DR_SCHEDULER_STARTED"):
-        app.config["_DR_SCHEDULER_STARTED"] = True
-        try:
-            from app.device_review_scheduler import (
-                init_scheduler as init_dr_scheduler,
-            )
-
-            with app.app_context():
-                init_dr_scheduler(app)
-        except Exception as exc:
-            app.logger.warning("Audit Review scheduler failed to start: %s", exc)
-
-    if not app.config.get("TESTING") and not app.config.get("_RH_SCHEDULER_STARTED"):
-        app.config["_RH_SCHEDULER_STARTED"] = True
-        try:
-            from app.rule_hygiene_scheduler import (
-                init_scheduler as init_rh_scheduler,
-            )
-
-            with app.app_context():
-                init_rh_scheduler(app)
-        except Exception as exc:
-            app.logger.warning("Rule Hygiene scheduler failed to start: %s", exc)
-
-    if not app.config.get("TESTING") and not app.config.get(
-        "_BACKUP_SCHEDULER_STARTED"
-    ):
-        app.config["_BACKUP_SCHEDULER_STARTED"] = True
-        try:
-            from app.backup_scheduler import (
-                init_scheduler as init_backup_scheduler,
-            )
-
-            with app.app_context():
-                init_backup_scheduler(app)
-        except Exception as exc:
-            app.logger.warning("Backup scheduler failed to start: %s", exc)
-
-    if not app.config.get("TESTING") and not app.config.get(
-        "_PSIRT_REASSESS_SCHEDULER_STARTED"
-    ):
-        app.config["_PSIRT_REASSESS_SCHEDULER_STARTED"] = True
-        try:
-            from app.psirt_reassess_scheduler import (
-                init_scheduler as init_psirt_reassess_scheduler,
-            )
-
-            with app.app_context():
-                init_psirt_reassess_scheduler(app)
-        except Exception as exc:
-            app.logger.warning("PSIRT re-assessment scheduler failed to start: %s", exc)
-
-    if not app.config.get("TESTING") and not app.config.get(
-        "_CHANGE_CONTROL_SCHEDULER_STARTED"
-    ):
-        app.config["_CHANGE_CONTROL_SCHEDULER_STARTED"] = True
-        try:
-            from app.change_control_cache import (
-                init_scheduler as init_change_control_scheduler,
-            )
-
-            with app.app_context():
-                init_change_control_scheduler(app)
-        except Exception as exc:
-            app.logger.warning("Change-control scheduler failed to start: %s", exc)
-
-    if not app.config.get("TESTING") and not app.config.get(
-        "_DEVICE_BACKUP_SCHEDULER_STARTED"
-    ):
-        app.config["_DEVICE_BACKUP_SCHEDULER_STARTED"] = True
-        try:
-            from app.device_backup_cache import (
-                init_scheduler as init_device_backup_scheduler,
-            )
-
-            with app.app_context():
-                init_device_backup_scheduler(app)
-        except Exception as exc:
-            app.logger.warning("Device backup scheduler failed to start: %s", exc)
+    if _schedulers_enabled(app.config):
+        start_all_schedulers(app)
 
     @app.context_processor
     def inject_session_globals():

@@ -403,6 +403,8 @@ data = resp.json()
 
 The **4tExecutive dashboard** polls fleet-wide metrics from the `/external/api/executive/summary` endpoint:
 
+**Collector/web process split:** every background sweep this endpoint reads from (device review, rule hygiene, PSIRT, change control, pending status, infra health, and the device sweep itself) can now run in a separate `python -m app.collector` process instead of inline in the web process — the two share one SQLite-backed state store (`collector_state.db`) so a web replica that has never run a sweep itself still reads the latest data a collector process wrote. See [container.md](../container.md) for the two-service deployment pattern (`web` + `collector`) and the `RUN_SCHEDULERS` setting that controls it. This split is transparent to API consumers — the payload shape is unchanged either way.
+
 ```http
 GET /external/api/executive/summary
 Authorization: Bearer 4th_<your-token>
@@ -418,7 +420,18 @@ Response:
   "firewalls_total": 218,
   "status": "ok",
   "last_updated": "2026-08-24T15:00:00Z",
-  "schema_version": 2,
+  "schema_version": 3,
+  "freshness": {
+    "device_review": "2026-09-10T00:00:00Z",
+    "rule_hygiene": "2026-09-10T00:00:00Z",
+    "version_breakdown": "2026-09-10T00:00:00Z",
+    "silent_devices": "2026-09-10T00:00:00Z",
+    "psirt": "2026-09-10T00:00:00Z",
+    "change_control": "2026-09-10T01:00:00Z",
+    "lifecycle": "2026-09-10T00:00:00Z",
+    "infra": "2026-09-10T00:00:00Z",
+    "pending_status": "2026-09-10T00:00:00Z"
+  },
   "change_control": {
     "devices_out_of_sync": 4,
     "admin_changes_24h": 12,
@@ -460,7 +473,7 @@ Response:
     "devices_medium": 0,
     "devices_critical_mitigated": 1.0,
     "kev_exposed_devices": 2,
-    "top_advisory": {"advisory_id": "FG-IR-24-001", "cvss": 9.8, "kev": true, "devices": 5},
+    "top_advisory": {"advisory_id": "FG-IR-24-001", "cvss": 9.8, "kev": true, "device_count": 5, "devices": [{"device": "FW-Branch-01", "adom": "Corp", "version": "v7.2.4", "workaround_applied": false}]},
     "mean_days_to_remediate_90d": 12.5,
     "collected_at": "2026-09-10T00:00:00Z"
   }
@@ -474,7 +487,8 @@ Response:
 - `firewall_online_count` / `firewalls_total` — connected vs. total FortiGate device count.
 - `status` — one of `pending`, `running`, `ok`, or `error`; lets consumers distinguish "not computed yet" from "real data."
 - `last_updated` — ISO 8601 timestamp of whichever sweep (see below) most recently completed.
-- `schema_version` — `2` as of this release (bumped from `1`; the bump is purely additive — every v1 key is still present).
+- `schema_version` — `3` as of this release (bumped from `2`; the bump is purely additive — every v1/v2 key is still present).
+- `freshness` — a flat `{field_group: collected_at}` map, new in `schema_version` 3, covering every rollup in the payload (`device_review`, `rule_hygiene`, `version_breakdown`, `silent_devices`, `psirt`, `change_control`, `lifecycle`, `infra`, `pending_status`) — the preferred single place to check staleness instead of digging into each nested object's own `collected_at`/`ran_at` field. Every v1/v2 per-object timestamp is kept as a deprecated alias; see [api-reference.md](api-reference.md#freshness-map-schema_version-3) for the full key-to-alias mapping.
 - `change_control` — who's changing what, and how much of the fleet has drifted from FortiManager's database:
   - `devices_out_of_sync` — device count whose normalized `conf_status` (from `FMGClient.get_devices_with_sync_status()`, the same call the device sweep already made) is not `"insync"` — covers both `"outofsync"` and an unrecognized status. Freshness: the top-level `device_sweep_collected_at` field, same as the other device-sweep-sourced counts.
   - `admin_changes_24h` — total FortiManager admin audit-log entries in the trailing 24 hours, from a separate hourly sweep (`app/change_control_cache.py`) calling `FMGClient.get_audit_log(hours=24)` once (the audit log is FortiManager-instance-wide, not per-ADOM).
@@ -502,7 +516,76 @@ Response:
 
 **Configuring Version Compliance:** In **Admin → External API**, add a comma-separated list of compliant firmware versions (e.g., `v7.4.1, v7.4.2`) to **Executive Summary — compliant firmware version(s)**. Devices matching any version in that list count as compliant. Leave empty to report `version_compliance_pct: null` (better than a fabricated number with no target configured).
 
-**Note:** `last_backup_status` is intentionally omitted — this app backs up its own application config, not firewall device configs, so including it would mislead an executive about the firewall backup posture.
+**Note:** `last_backup_status` reports the status (`"ok"` or the raw scheduler status string) of the most recently completed *scheduled backup run* — this app's own application-config backup (`app/backup_scheduler.py`), not firewall device configs. `null` if no scheduled backup has ever completed. Device configuration backup age is tracked separately as `device_backup` (see above); the two are not the same thing and neither should be read as the other.
+
+### Drill-down details lists
+
+Five rollup objects in the executive summary payload carry an optional per-item breakdown list, capped and ordered most-severe-or-most-relevant-first, for a per-device drill-down view. See [api-reference.md](api-reference.md#drill-down-details-lists) for the cap/order summary table.
+
+**`device_review.details`** — per-device failing-check breakdown, from `app/device_review_rollup.py::build_details()`. Excludes devices that errored during review or that passed every check. Capped at 50, sorted by `worst_severity` (critical → high → medium → low), then by number of failed checks (descending), then by device name (ascending):
+```json
+{
+  "device": "FW-Branch-12",
+  "adom": "Corp",
+  "failed_checks": ["trusted_hosts", "snmp_version"],
+  "worst_severity": "high"
+}
+```
+
+**`rule_hygiene.details`** — per-package finding breakdown, from `app/hygiene_rollup.py::build_details()`. Excludes packages with no findings. Capped at 50, sorted by number of findings (descending), then adom (ascending), then package name (ascending):
+```json
+{
+  "package": "Corp-Edge",
+  "adom": "Corp",
+  "findings": [
+    {
+      "policy_id": "14",
+      "policy_name": "Allow-Any-Outbound",
+      "check": "over_permissive",
+      "severity": "high",
+      "detail": "Over-permissive — source and destination are unrestricted"
+    }
+  ]
+}
+```
+Each finding's shape comes straight from `app.hygiene.run_checks()` — `policy_id`, `policy_name`, `check`, `detail` are always present, but `severity` is only set for `over_permissive` findings; every other check type (`unnamed`, `unlogged`, `shadow`, `disabled`, `expired`, `unhit`, `missing_security_profile`, `redundant`, `broken_refs`) omits it.
+
+**`version_breakdown.eol_devices`** — every device running an end-of-life FortiOS version, from `app/routes/external_api_routes.py::_version_breakdown()`. Capped at 50, sorted oldest firmware first (unparseable versions sort last, since "unknown" isn't the same as "oldest"), then by device name:
+```json
+{
+  "device": "FW-Branch-03",
+  "adom": "Corp",
+  "version": "v6.4.8"
+}
+```
+
+**`silent_devices`** — devices FortiManager reports as not connected (`conn_status != 1`); new in this release. `devices_silent` is the total count, `details` a capped, sorted subset:
+```json
+{
+  "devices_silent": 3,
+  "details": [
+    {"devid": "FGT60F1234567890", "devname": "FW-Branch-07", "last_log_at": null}
+  ],
+  "collected_at": "2026-09-10T00:00:00Z"
+}
+```
+Capped at 50; entries are sorted internally by adom then device name, but `adom` itself is **not** included in each `details` entry (`devid`, `devname`, `last_log_at` only). `last_log_at` is always `null` in this release — this is a FortiManager connectivity proxy, not a FortiAnalyzer log-freshness check, and this codebase does not currently query the latter. See `docs/superpowers/specs/2026-09-12-silent-devices-proxy-spike.md` for the investigation and why the field is reserved but unfilled rather than removed.
+
+**`psirt.top_advisory.devices`** — per-device breakdown for the single highest-priority open advisory, from `app/psirt_store.py::_top_advisory_devices()`. Capped at 50, sorted unmitigated (`workaround_applied: false`) first, then adom, then device name:
+```json
+{
+  "top_advisory": {
+    "advisory_id": "FG-IR-24-001",
+    "cvss": 9.8,
+    "kev": true,
+    "device_count": 5,
+    "devices": [
+      {"device": "FW-Branch-01", "adom": "Corp", "version": "v7.2.4", "workaround_applied": false}
+    ]
+  }
+}
+```
+**Note:** `top_advisory.devices` changed from an int device count to this list. The old count is preserved as `top_advisory.device_count`, unchanged.
 
 ### Runtime Files
 

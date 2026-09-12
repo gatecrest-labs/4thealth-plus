@@ -98,6 +98,8 @@ import threading
 import time as _time
 from datetime import UTC, datetime
 
+from app import collector_store
+
 logger = logging.getLogger(__name__)
 
 # Only checks that need no live per-device/per-object lookups — see spec
@@ -125,6 +127,8 @@ _store: dict = {
     "devices_hw_eos": None,
     "devices_hw_eos_12m": None,
     "models_unknown": [],
+    "devices_silent": None,
+    "silent_devices_details": [],
     "by_adom": {},
     "infra": [],
 }
@@ -135,9 +139,30 @@ _hygiene_running = threading.Event()
 
 
 def get_summary() -> dict:
-    """Return a copy of the current summary store (safe to serialise as JSON)."""
+    """Return a copy of the current summary store (safe to serialise as JSON).
+
+    Read-through: if THIS process has never completed its own device
+    sweep and/or hygiene sweep (RUN_SCHEDULERS != "inline", i.e. a web
+    worker in the split deployment — or a process that just restarted),
+    fall back to the latest snapshot the collector process persisted to
+    SQLite for that sweep. Once this process's own sweep has run, its
+    own in-memory value always wins — this is a fallback for "nothing
+    local yet," not a permanent alternate source of truth.
+    """
     with _lock:
-        return dict(_store)
+        local = dict(_store)
+
+    if local.get("device_sweep_status") == "pending":
+        snapshot = collector_store.read_snapshot("executive_summary_device")
+        if snapshot:
+            local.update(snapshot)
+
+    if local.get("hygiene_sweep_status") == "pending":
+        snapshot = collector_store.read_snapshot("executive_summary_hygiene")
+        if snapshot:
+            local.update(snapshot)
+
+    return local
 
 
 def get_devices_raw_by_adom() -> dict[str, list[dict]]:
@@ -177,6 +202,47 @@ def _count_out_of_sync(devices: list[dict]) -> int:
     since both mean the device's actual config cannot be confirmed to
     match FortiManager's database."""
     return sum(1 for d in devices if d.get("conf_status") != "insync")
+
+
+_MAX_SILENT_DEVICES = 50
+
+
+def _build_silent_devices(
+    devices_flat_by_adom: dict[str, list[dict]],
+) -> tuple[int, list[dict]]:
+    """Devices FortiManager reports as not connected (conn_status != 1).
+
+    This is a connectivity proxy, not a log-freshness check: FortiManager
+    connectivity and FortiAnalyzer log forwarding are different signals,
+    and this codebase does not currently query the latter (see
+    docs/superpowers/specs/2026-09-12-silent-devices-proxy-spike.md).
+    last_log_at is therefore always None here — never fabricated.
+
+    Capped at _MAX_SILENT_DEVICES, sorted by adom then device name
+    (there's no severity gradient for a binary online/offline signal).
+    """
+    entries = []
+    for adom, devices in devices_flat_by_adom.items():
+        for d in devices:
+            if d.get("conn_status") == 1:
+                continue
+            name = d.get("name", "")
+            entries.append(
+                {
+                    "adom": adom,
+                    "devid": d.get("sn") or name,
+                    "devname": name,
+                    "last_log_at": None,
+                }
+            )
+
+    entries.sort(key=lambda e: (e["adom"], e["devname"]))
+    count = len(entries)
+    details = [
+        {"devid": e["devid"], "devname": e["devname"], "last_log_at": e["last_log_at"]}
+        for e in entries[:_MAX_SILENT_DEVICES]
+    ]
+    return count, details
 
 
 def _pending_diff_count(devices_by_adom: dict[str, list[dict]]) -> int:
@@ -421,6 +487,7 @@ def _run_device_sweep(app) -> bool:
                         "name": d.get("name", ""),
                         "version": _device_version(d),
                         "conn_status": d.get("conn_status"),
+                        "sn": d.get("sn", ""),
                     }
                     devices_flat.append(flat)
                     adom_flat_devices.append(flat)
@@ -439,6 +506,7 @@ def _run_device_sweep(app) -> bool:
                 devices_flat_by_adom[adom] = adom_flat_devices
 
         online, total = _classify_online(devices_flat)
+        devices_silent, silent_details = _build_silent_devices(devices_flat_by_adom)
         compliant_versions = get_setting("executive_compliant_versions", [])
         compliance_pct = _version_compliance_pct(devices_flat, compliant_versions)
         pending_cache_status = get_cache_status()
@@ -513,9 +581,47 @@ def _run_device_sweep(app) -> bool:
                     "devices_hw_eos": lifecycle["devices_hw_eos"],
                     "devices_hw_eos_12m": lifecycle["devices_hw_eos_12m"],
                     "models_unknown": lifecycle["models_unknown"],
+                    "devices_silent": devices_silent,
+                    "silent_devices_details": silent_details,
                     "by_adom": by_adom,
                     "infra": infra_list,
                 }
+            )
+
+        try:
+            collector_store.write_snapshot(
+                "executive_summary_device",
+                {
+                    k: v
+                    for k, v in _store.items()
+                    if k
+                    in {
+                        "version_compliance_pct",
+                        "pending_config_diff_count",
+                        "firewall_online_count",
+                        "firewalls_total",
+                        "adom_count",
+                        "status",
+                        "last_updated",
+                        "device_sweep_status",
+                        "device_sweep_collected_at",
+                        "devices_out_of_sync",
+                        "devices_hw_eos",
+                        "devices_hw_eos_12m",
+                        "models_unknown",
+                        "by_adom",
+                        "infra",
+                        "devices_silent",
+                        "silent_devices_details",
+                    }
+                },
+                collected_at=_store.get("device_sweep_collected_at"),
+            )
+        except Exception as exc:
+            logger.warning(
+                "executive_summary_cache: SQLite snapshot write failed (device "
+                "sweep still succeeded in-memory): %s",
+                exc,
             )
         return True
 
@@ -565,6 +671,7 @@ def _run_hygiene_sweep(app) -> bool:
         total_policies = 0
         by_type: dict[str, int] = dict.fromkeys(HYGIENE_CHECK_TYPES, 0)
         by_type["unused_objects"] = 0
+        package_findings: list[dict] = []
 
         with make_client() as client:
             adom_names = _list_target_adoms(client)
@@ -607,6 +714,10 @@ def _run_hygiene_sweep(app) -> bool:
                     for f in all_findings:
                         by_type[f["check"]] = by_type.get(f["check"], 0) + 1
 
+                    package_findings.append(
+                        {"package": pkg_path, "adom": adom, "findings": all_findings}
+                    )
+
                     all_adom_policies.extend(policies)
 
                 if not all_adom_policies:
@@ -632,14 +743,29 @@ def _run_hygiene_sweep(app) -> bool:
 
         hygiene_score = _hygiene_score(total_findings, total_policies)
 
+        from app.hygiene_rollup import build_details as _build_hygiene_details
+
+        hygiene_details = _build_hygiene_details(package_findings)
         rule_hygiene_record = {
             "ran_at": datetime.now(UTC).isoformat(),
             "rule_findings_total": sum(by_type.values()),
             "rule_findings_by_type": by_type,
+            "details": hygiene_details,
         }
         from app.hygiene_rollup import append_run as _append_hygiene_rollup
 
-        _append_hygiene_rollup(rule_hygiene_record)
+        try:
+            _append_hygiene_rollup(rule_hygiene_record)
+        except Exception as exc:
+            # hygiene_rollup.append_run persists via the same shared SQLite
+            # store as the write_snapshot() call below — a mirror-write
+            # failure here must not downgrade an already-successful
+            # in-memory hygiene sweep, same as that call's own try/except.
+            logger.warning(
+                "executive_summary_cache: hygiene rollup history append "
+                "failed (hygiene sweep still succeeded in-memory): %s",
+                exc,
+            )
 
         elapsed = round(_time.monotonic() - t0, 1)
         logger.info(
@@ -659,6 +785,7 @@ def _run_hygiene_sweep(app) -> bool:
                         ],
                         "rule_findings_by_type": by_type,
                         "collected_at": datetime.now(UTC).isoformat(),
+                        "details": hygiene_details,
                     },
                     "status": "ok",
                     "error": None,
@@ -666,6 +793,30 @@ def _run_hygiene_sweep(app) -> bool:
                     "hygiene_sweep_status": "ok",
                     "hygiene_sweep_collected_at": datetime.now(UTC).isoformat(),
                 }
+            )
+
+        try:
+            collector_store.write_snapshot(
+                "executive_summary_hygiene",
+                {
+                    k: v
+                    for k, v in _store.items()
+                    if k
+                    in {
+                        "hygiene_score",
+                        "rule_count_total",
+                        "rule_hygiene",
+                        "hygiene_sweep_status",
+                        "hygiene_sweep_collected_at",
+                    }
+                },
+                collected_at=_store.get("hygiene_sweep_collected_at"),
+            )
+        except Exception as exc:
+            logger.warning(
+                "executive_summary_cache: SQLite snapshot write failed (hygiene "
+                "sweep still succeeded in-memory): %s",
+                exc,
             )
         return True
 

@@ -331,6 +331,28 @@ def compute_mean_days_to_remediate(now: dt.datetime | None = None) -> float | No
     return round(sum(days) / len(days), 1)
 
 
+_MAX_TOP_ADVISORY_DEVICES = 50
+
+
+def _top_advisory_devices(devices_affected: list[dict]) -> list[dict]:
+    """Capped, most-urgent-first device list for psirt.top_advisory.devices.
+
+    Devices without the workaround applied sort first (still fully
+    exposed), tie-broken by adom then device name.
+    """
+    entries = [
+        {
+            "device": d.get("name", ""),
+            "adom": d.get("adom", ""),
+            "version": d.get("version", ""),
+            "workaround_applied": bool(d.get("workaround_applied")),
+        }
+        for d in devices_affected
+    ]
+    entries.sort(key=lambda d: (d["workaround_applied"], d["adom"], d["device"]))
+    return entries[:_MAX_TOP_ADVISORY_DEVICES]
+
+
 def compute_psirt_rollup(now: dt.datetime | None = None) -> dict:
     """Fleet PSIRT exposure for the executive summary payload's "psirt" key.
 
@@ -394,7 +416,8 @@ def compute_psirt_rollup(now: dt.datetime | None = None) -> dict:
                 "advisory_id": adv["advisory_id"],
                 "cvss": adv["cvss"],
                 "kev": adv["kev"],
-                "devices": device_count,
+                "device_count": device_count,
+                "devices": _top_advisory_devices(devices_affected),
             }
 
     return {
