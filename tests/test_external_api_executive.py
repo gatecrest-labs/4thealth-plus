@@ -463,7 +463,15 @@ def test_payload_includes_psirt_rollup(client):
         "devices_medium": 0,
         "devices_critical_mitigated": 0.5,
         "kev_exposed_devices": 1,
-        "top_advisory": {"advisory_id": "FG-IR-24-001", "cvss": 9.8, "kev": True, "devices": 3},
+        "top_advisory": {
+            "advisory_id": "FG-IR-24-001",
+            "cvss": 9.8,
+            "kev": True,
+            "device_count": 3,
+            "devices": [
+                {"device": "FW1", "adom": "Corp", "version": "7.4.3", "workaround_applied": False},
+            ],
+        },
         "mean_days_to_remediate_90d": 12.5,
         "collected_at": "2026-09-10T00:00:00+00:00",
     }

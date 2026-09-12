@@ -287,6 +287,23 @@ def test_rollup_top_advisory_prefers_highest_priority_then_cvss():
     assert rollup["top_advisory"]["kev"] is True
 
 
+def test_rollup_top_advisory_devices_lists_unmitigated_first():
+    psirt_store.save_assessment_result(
+        _assessment(advisory_id="FG-IR-24-001", priority="critical", cvss=9.8, kev=False, findings=[
+            {"device": "fw-a", "adom": "root", "current_version": "v7.4.2", "in_range": True,
+             "workaround_status": "in_place", "verdict": "no_action"},
+            {"device": "fw-b", "adom": "root", "current_version": "v7.4.1", "in_range": True,
+             "workaround_status": "not_applicable", "verdict": "upgrade_required"},
+        ])
+    )
+    rollup = psirt_store.compute_psirt_rollup()
+    assert rollup["top_advisory"]["device_count"] == 2
+    assert rollup["top_advisory"]["devices"] == [
+        {"device": "fw-b", "adom": "root", "version": "v7.4.1", "workaround_applied": False},
+        {"device": "fw-a", "adom": "root", "version": "v7.4.2", "workaround_applied": True},
+    ]
+
+
 def test_rollup_closed_advisories_excluded():
     psirt_store.save_assessment_result(_assessment(advisory_id="A1"))
     psirt_store.close_advisory("A1")
