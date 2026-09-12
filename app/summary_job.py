@@ -32,9 +32,25 @@ _running = threading.Event()  # set while a job is executing; prevents overlaps
 
 
 def get_summary() -> dict:
-    """Return a copy of the current summary store (safe to serialise as JSON)."""
+    """Return a copy of the current summary store (safe to serialise as JSON).
+
+    Read-through: if THIS process has never completed its own run
+    (RUN_SCHEDULERS != "inline", i.e. a web worker in the split
+    deployment — or a process that just restarted), fall back to the
+    latest snapshot the collector process persisted to SQLite. Once
+    this process's own run completes, its own in-memory value wins.
+    """
     with _lock:
-        return dict(_store)
+        local = dict(_store)
+
+    if local.get("status") == "pending":
+        from app import collector_store
+
+        snapshot = collector_store.read_snapshot("summary_job")
+        if snapshot:
+            local.update(snapshot)
+
+    return local
 
 
 # ── Core calculation ──────────────────────────────────────────────────────────
@@ -128,6 +144,20 @@ def _run_job(app):
                     "status": "ok",
                     "error": None,
                 }
+            )
+            snapshot = dict(_store)
+
+        try:
+            from app import collector_store
+
+            collector_store.write_snapshot(
+                "summary_job", snapshot, collected_at=snapshot.get("last_updated")
+            )
+        except Exception as exc:
+            logger.warning(
+                "summary_job: SQLite snapshot write failed (in-memory cache "
+                "update still succeeded): %s",
+                exc,
             )
 
         # Persist today's totals for the 30-day trend graphs.

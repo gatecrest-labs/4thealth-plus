@@ -37,6 +37,7 @@ services:
       - ./review_requirements.yaml:/app/review_requirements.yaml:ro
       - ./ai_usage.db:/app/ai_usage.db:rw
       - ./host_metrics.db:/app/host_metrics.db:rw
+      - ./login_events.db:/app/login_events.db:rw
       - ./psirt.db:/app/psirt.db:rw
       - ./collector_state.db:/app/collector_state.db:rw
       - ./app_settings.json:/app/app_settings.json:rw

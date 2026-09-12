@@ -34,9 +34,25 @@ _running = threading.Event()
 
 
 def get_cached() -> dict:
-    """Return a copy of the cache store — safe to read from any thread."""
+    """Return a copy of the cache store — safe to read from any thread.
+
+    Read-through: if THIS process has never completed its own run
+    (RUN_SCHEDULERS != "inline", i.e. a web worker in the split
+    deployment — or a process that just restarted), fall back to the
+    latest snapshot the collector process persisted to SQLite. Once
+    this process's own run completes, its own in-memory value wins.
+    """
     with _lock:
-        return dict(_store)
+        local = dict(_store)
+
+    if local.get("status") == "pending":
+        from app import collector_store
+
+        snapshot = collector_store.read_snapshot("versions_cache")
+        if snapshot:
+            local.update(snapshot)
+
+    return local
 
 
 def _run_job(app):
@@ -117,6 +133,20 @@ def _run_job(app):
             _store["last_updated"] = datetime.now(UTC).isoformat()
             _store["status"] = "ok"
             _store["error"] = None
+            snapshot = dict(_store)
+
+        try:
+            from app import collector_store
+
+            collector_store.write_snapshot(
+                "versions_cache", snapshot, collected_at=snapshot.get("last_updated")
+            )
+        except Exception as exc:
+            logger.warning(
+                "versions_cache: SQLite snapshot write failed (in-memory cache "
+                "update still succeeded): %s",
+                exc,
+            )
 
     except Exception as exc:
         logger.exception("versions_cache: unhandled error")
