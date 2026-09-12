@@ -13,6 +13,21 @@ from app.atomic_io import atomic_write_json
 
 _ROLLUP_PATH = Path(__file__).parent.parent / "hygiene_rollup.json"
 _MAX_RUNS = 30
+_MAX_DETAILS = 50
+
+
+def build_details(package_findings: list[dict]) -> list[dict]:
+    """Per-package drill-down for the fleet rollup's "details" field.
+
+    package_findings: [{"package": str, "adom": str, "findings": list[dict]}],
+    one entry per policy package swept this cycle. Packages with no
+    findings are excluded. Capped at _MAX_DETAILS, most relevant first:
+    sorted by number of findings (descending), then adom (ascending), then
+    package (ascending) for a stable order among equally-sized packages.
+    """
+    entries = [p for p in package_findings if p.get("findings")]
+    entries.sort(key=lambda p: (-len(p["findings"]), p["adom"], p["package"]))
+    return entries[:_MAX_DETAILS]
 
 
 def get_history() -> list[dict]:

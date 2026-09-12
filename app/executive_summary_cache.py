@@ -565,6 +565,7 @@ def _run_hygiene_sweep(app) -> bool:
         total_policies = 0
         by_type: dict[str, int] = dict.fromkeys(HYGIENE_CHECK_TYPES, 0)
         by_type["unused_objects"] = 0
+        package_findings: list[dict] = []
 
         with make_client() as client:
             adom_names = _list_target_adoms(client)
@@ -607,6 +608,10 @@ def _run_hygiene_sweep(app) -> bool:
                     for f in all_findings:
                         by_type[f["check"]] = by_type.get(f["check"], 0) + 1
 
+                    package_findings.append(
+                        {"package": pkg_path, "adom": adom, "findings": all_findings}
+                    )
+
                     all_adom_policies.extend(policies)
 
                 if not all_adom_policies:
@@ -632,10 +637,14 @@ def _run_hygiene_sweep(app) -> bool:
 
         hygiene_score = _hygiene_score(total_findings, total_policies)
 
+        from app.hygiene_rollup import build_details as _build_hygiene_details
+
+        hygiene_details = _build_hygiene_details(package_findings)
         rule_hygiene_record = {
             "ran_at": datetime.now(UTC).isoformat(),
             "rule_findings_total": sum(by_type.values()),
             "rule_findings_by_type": by_type,
+            "details": hygiene_details,
         }
         from app.hygiene_rollup import append_run as _append_hygiene_rollup
 
@@ -659,6 +668,7 @@ def _run_hygiene_sweep(app) -> bool:
                         ],
                         "rule_findings_by_type": by_type,
                         "collected_at": datetime.now(UTC).isoformat(),
+                        "details": hygiene_details,
                     },
                     "status": "ok",
                     "error": None,

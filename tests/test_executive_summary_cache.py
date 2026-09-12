@@ -839,6 +839,39 @@ def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tm
     assert hygiene_rollup.get_latest()["rule_findings_total"] == summary["rule_hygiene"]["rule_findings_total"]
 
 
+def test_run_hygiene_sweep_populates_details_per_package(app_ctx, tmp_path, monkeypatch):
+    import app.hygiene_rollup as hygiene_rollup
+
+    monkeypatch.setattr(hygiene_rollup, "_ROLLUP_PATH", tmp_path / "hygiene_rollup.json")
+
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.get_adoms.return_value = [{"name": "Customer1"}]
+    client.get_devices.return_value = [{"name": "fw1"}]
+    client.get_policy_packages.return_value = [{"name": "default", "path": "default"}]
+    client.get_policies.return_value = [
+        {"policyid": 1, "name": "", "logtraffic": "disable"},
+        {"policyid": 2, "name": "rule2"},
+    ]
+    client.get_address_objects.return_value = []
+    client.get_address_groups.return_value = []
+    client.get_service_objects.return_value = []
+    client.get_service_groups.return_value = []
+
+    with patch("app.fmg_helpers.make_client", return_value=client):
+        cache_mod._run_hygiene_sweep(app_ctx)
+
+    summary = cache_mod.get_summary()
+    details = summary["rule_hygiene"]["details"]
+    assert len(details) == 1
+    assert details[0]["package"] == "default"
+    assert details[0]["adom"] == "Customer1"
+    assert isinstance(details[0]["findings"], list)
+    assert len(details[0]["findings"]) > 0
+    assert hygiene_rollup.get_latest()["details"] == details
+
+
 def _multi_package_client(policies_by_pkg, addresses):
     """Client whose single ADOM has two packages with distinct policies."""
     client = MagicMock()

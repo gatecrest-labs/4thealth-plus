@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import app.hygiene_rollup as hygiene_rollup
+from app.hygiene_rollup import build_details
 
 
 def test_append_run_and_get_latest(tmp_path, monkeypatch):
@@ -36,3 +37,55 @@ def test_append_run_keeps_at_most_30_entries(tmp_path, monkeypatch):
     history = hygiene_rollup.get_history()
     assert len(history) == 30
     assert history[0]["ran_at"] == "run-34"
+
+
+def test_build_details_orders_by_finding_count_then_adom_then_package():
+    package_findings = [
+        {
+            "package": "pkg-b",
+            "adom": "root",
+            "findings": [{"check": "unnamed", "policy_id": "1"}],
+        },
+        {
+            "package": "pkg-a",
+            "adom": "root",
+            "findings": [
+                {"check": "unnamed", "policy_id": "1"},
+                {"check": "unlogged", "policy_id": "2"},
+            ],
+        },
+        {"package": "pkg-c", "adom": "root", "findings": []},
+    ]
+
+    details = build_details(package_findings)
+
+    assert details == [
+        {
+            "package": "pkg-a",
+            "adom": "root",
+            "findings": [
+                {"check": "unnamed", "policy_id": "1"},
+                {"check": "unlogged", "policy_id": "2"},
+            ],
+        },
+        {
+            "package": "pkg-b",
+            "adom": "root",
+            "findings": [{"check": "unnamed", "policy_id": "1"}],
+        },
+    ]
+
+
+def test_build_details_caps_at_50():
+    package_findings = [
+        {
+            "package": f"pkg-{i:03d}",
+            "adom": "root",
+            "findings": [{"check": "unnamed", "policy_id": str(i)}],
+        }
+        for i in range(60)
+    ]
+
+    details = build_details(package_findings)
+
+    assert len(details) == 50

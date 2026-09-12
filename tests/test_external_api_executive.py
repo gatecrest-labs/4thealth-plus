@@ -313,6 +313,45 @@ def test_executive_summary_includes_device_review_details(client):
     assert body["device_review"]["details"] == record["details"]
 
 
+def test_executive_summary_includes_rule_hygiene_details(client):
+    from app import hygiene_rollup
+
+    record = {
+        "ran_at": "2026-09-12T00:00:00Z",
+        "rule_findings_total": 2,
+        "rule_findings_by_type": {"unnamed": 1, "unlogged": 1},
+        "details": [
+            {
+                "package": "pkg-a",
+                "adom": "root",
+                "findings": [
+                    {"check": "unnamed", "policy_id": "1"},
+                    {"check": "unlogged", "policy_id": "2"},
+                ],
+            }
+        ],
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.device_review_rollup.get_latest", return_value=None),
+        patch.object(hygiene_rollup, "get_latest", return_value=record),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer test-token"},
+        )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["rule_hygiene"]["details"] == record["details"]
+
+
 def test_rule_hygiene_falls_back_to_persisted_rollup_on_cold_start(client):
     """After a restart the in-memory cache is empty; the persisted rollup fills in."""
     fake_hygiene_rollup = {
@@ -342,6 +381,7 @@ def test_rule_hygiene_falls_back_to_persisted_rollup_on_cold_start(client):
         "rule_findings_total": 118,
         "rule_findings_by_type": {"shadow": 4, "unhit": 60},
         "collected_at": "2026-08-28T09:00:00Z",
+        "details": [],
     }
 
 

@@ -233,6 +233,7 @@ def _hygiene_rollup() -> dict | None:
         "rule_findings_total": latest["rule_findings_total"],
         "rule_findings_by_type": latest["rule_findings_by_type"],
         "collected_at": latest["ran_at"],
+        "details": latest.get("details", []),
     }
 
 
