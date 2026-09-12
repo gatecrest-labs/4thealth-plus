@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import logging
 import threading
 
 from flask import Flask
@@ -34,6 +35,8 @@ from pysnmp.hlapi.v3arch.asyncio import (
 )
 
 from app.config import Config
+
+logger = logging.getLogger(__name__)
 
 _lock = threading.RLock()
 _cache: dict = {}
@@ -182,6 +185,8 @@ def poll_all_targets() -> None:
     """Poll every SNMP-supported target in Config.INFRA_TARGETS and update the cache."""
     if not Config.SNMP_ENABLED:
         return
+    from app import collector_store
+
     for target in Config.INFRA_TARGETS:
         if target.get("type", "").lower() not in _SUPPORTED_TYPES:
             continue
@@ -193,13 +198,30 @@ def poll_all_targets() -> None:
             continue
         with _lock:
             _cache[host] = result
+        try:
+            collector_store.write_snapshot(
+                f"infra_health:{host}", result, collected_at=result.get("last_updated")
+            )
+        except Exception as exc:
+            logger.warning(
+                "infra_health_cache: SQLite snapshot write failed for host %s "
+                "(in-memory cache update still succeeded): %s",
+                host,
+                exc,
+            )
 
 
 def get_cached(host: str) -> dict | None:
-    """Return a shallow copy of the cached entry for host, or None if not cached."""
+    """Return a shallow copy of the cached entry for host, or None if not
+    cached locally or in the collector's shared SQLite snapshot store."""
     with _lock:
         entry = _cache.get(host)
-        return dict(entry) if entry is not None else None
+        if entry is not None:
+            return dict(entry)
+
+    from app import collector_store
+
+    return collector_store.read_snapshot(f"infra_health:{host}")
 
 
 def fetch_meta(target: dict) -> dict:

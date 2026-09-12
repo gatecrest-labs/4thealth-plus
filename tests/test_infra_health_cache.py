@@ -21,6 +21,16 @@ def _reset_cache():
         cache_mod._cache.clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolated_store(tmp_path, monkeypatch):
+    # Point the shared SQLite snapshot store at a throwaway DB file per test —
+    # otherwise poll_all_targets' write-through call would hit the real
+    # project root's collector_state.db and bleed state across tests.
+    from app import collector_store
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+
 @pytest.fixture
 def snmp_targets(monkeypatch):
     monkeypatch.setattr(
@@ -204,6 +214,44 @@ def test_fetch_meta_malformed_disk_info_returns_none_not_crash():
 
     assert meta["disk_pct"] is None
     assert meta["api_ok"] is True
+
+
+def test_get_cached_reads_sqlite_when_host_never_polled_locally(monkeypatch, tmp_path):
+    from app import collector_store, infra_health_cache
+
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
+
+    collector_store.write_snapshot(
+        "infra_health:10.0.0.5",
+        {"cpu": 12.0, "mem": 30.0, "snmp_status": "ok", "last_updated": "t1"},
+    )
+
+    result = infra_health_cache.get_cached("10.0.0.5")
+
+    assert result == {"cpu": 12.0, "mem": 30.0, "snmp_status": "ok", "last_updated": "t1"}
+
+
+def test_poll_all_targets_write_snapshot_failure_does_not_break_poll(
+    snmp_targets, monkeypatch, caplog
+):
+    """A SQLite mirror-write failure must not propagate out of poll_all_targets
+    and must not prevent the in-memory cache from being updated."""
+    from app import collector_store
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(collector_store, "write_snapshot", _boom)
+
+    async def _fake(host, oids, creds):
+        return [1.0, 2.0, 100.0] if len(oids) == 3 else [1.0, 2.0]
+
+    with patch.object(cache_mod, "_snmp_get", new=_fake):
+        cache_mod.poll_all_targets()  # must not raise
+
+    entry = cache_mod.get_cached("10.0.0.1")
+    assert entry is not None
+    assert entry["snmp_status"] == "ok"
 
 
 def test_poll_now_does_not_block_caller(snmp_targets):
