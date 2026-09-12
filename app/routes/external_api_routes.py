@@ -111,9 +111,7 @@ def _version_breakdown() -> dict:
         for d in devices
         if is_eol(d.get("version", "n/a"))
     ]
-    eol_devices.sort(
-        key=lambda d: (_version_sort_key(d["version"]), d["device"])
-    )
+    eol_devices.sort(key=lambda d: (_version_sort_key(d["version"]), d["device"]))
     breakdown["eol_devices"] = eol_devices[:_MAX_EOL_DEVICES]
     return breakdown
 
