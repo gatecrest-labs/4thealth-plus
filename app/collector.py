@@ -33,7 +33,7 @@ import time
 # module-level `os.environ.get("RUN_SCHEDULERS", "off")` read.
 os.environ["RUN_SCHEDULERS"] = "inline"
 
-from app import create_app  # noqa: E402
+from app import create_app
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +41,7 @@ logger = logging.getLogger(__name__)
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     app = create_app()
-    logger.info(
-        "collector: every BackgroundScheduler job started, entering idle loop"
-    )
+    logger.info("collector: every BackgroundScheduler job started, entering idle loop")
     with app.app_context():
         while True:
             time.sleep(3600)

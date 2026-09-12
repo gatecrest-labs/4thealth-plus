@@ -55,7 +55,9 @@ def _init_db() -> None:
         conn.close()
 
 
-def write_snapshot(cache_key: str, payload: dict, collected_at: str | None = None) -> None:
+def write_snapshot(
+    cache_key: str, payload: dict, collected_at: str | None = None
+) -> None:
     """Persist *payload* (JSON-serializable) as the latest snapshot for
     *cache_key*, replacing whatever was stored for that key before."""
     with _lock:
