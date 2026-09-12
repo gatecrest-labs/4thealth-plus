@@ -317,6 +317,50 @@ def test_pending_diff_count_does_not_double_count_one_device():
     assert _pending_diff_count(devices_by_adom) == 1
 
 
+def test_build_silent_devices_counts_and_details_offline_devices():
+    from app.executive_summary_cache import _build_silent_devices
+
+    devices_flat_by_adom = {
+        "root": [
+            {"name": "fw-a", "sn": "SN-A", "version": "v7.4.2", "conn_status": 1},
+            {"name": "fw-b", "sn": "SN-B", "version": "v7.4.2", "conn_status": 0},
+        ],
+        "branch": [
+            {"name": "fw-c", "sn": "", "version": "v7.4.2", "conn_status": 0},
+        ],
+    }
+
+    count, details = _build_silent_devices(devices_flat_by_adom)
+
+    assert count == 2
+    # "branch" < "root" alphabetically, so branch's fw-c sorts before root's fw-b.
+    assert details == [
+        {"devid": "fw-c", "devname": "fw-c", "last_log_at": None},
+        {"devid": "SN-B", "devname": "fw-b", "last_log_at": None},
+    ]
+
+
+def test_build_silent_devices_caps_at_50():
+    from app.executive_summary_cache import _build_silent_devices
+
+    devices_flat_by_adom = {
+        "root": [
+            {
+                "name": f"fw-{i:03d}",
+                "sn": f"SN-{i:03d}",
+                "version": "v7.4.2",
+                "conn_status": 0,
+            }
+            for i in range(60)
+        ]
+    }
+
+    count, details = _build_silent_devices(devices_flat_by_adom)
+
+    assert count == 60
+    assert len(details) == 50
+
+
 # ── _hygiene_score ───────────────────────────────────────────────────────────
 
 def test_hygiene_score_none_when_no_policies():

@@ -125,6 +125,8 @@ _store: dict = {
     "devices_hw_eos": None,
     "devices_hw_eos_12m": None,
     "models_unknown": [],
+    "devices_silent": None,
+    "silent_devices_details": [],
     "by_adom": {},
     "infra": [],
 }
@@ -177,6 +179,47 @@ def _count_out_of_sync(devices: list[dict]) -> int:
     since both mean the device's actual config cannot be confirmed to
     match FortiManager's database."""
     return sum(1 for d in devices if d.get("conf_status") != "insync")
+
+
+_MAX_SILENT_DEVICES = 50
+
+
+def _build_silent_devices(
+    devices_flat_by_adom: dict[str, list[dict]],
+) -> tuple[int, list[dict]]:
+    """Devices FortiManager reports as not connected (conn_status != 1).
+
+    This is a connectivity proxy, not a log-freshness check: FortiManager
+    connectivity and FortiAnalyzer log forwarding are different signals,
+    and this codebase does not currently query the latter (see
+    docs/superpowers/specs/2026-09-12-silent-devices-proxy-spike.md).
+    last_log_at is therefore always None here — never fabricated.
+
+    Capped at _MAX_SILENT_DEVICES, sorted by adom then device name
+    (there's no severity gradient for a binary online/offline signal).
+    """
+    entries = []
+    for adom, devices in devices_flat_by_adom.items():
+        for d in devices:
+            if d.get("conn_status") == 1:
+                continue
+            name = d.get("name", "")
+            entries.append(
+                {
+                    "adom": adom,
+                    "devid": d.get("sn") or name,
+                    "devname": name,
+                    "last_log_at": None,
+                }
+            )
+
+    entries.sort(key=lambda e: (e["adom"], e["devname"]))
+    count = len(entries)
+    details = [
+        {"devid": e["devid"], "devname": e["devname"], "last_log_at": e["last_log_at"]}
+        for e in entries[:_MAX_SILENT_DEVICES]
+    ]
+    return count, details
 
 
 def _pending_diff_count(devices_by_adom: dict[str, list[dict]]) -> int:
@@ -421,6 +464,7 @@ def _run_device_sweep(app) -> bool:
                         "name": d.get("name", ""),
                         "version": _device_version(d),
                         "conn_status": d.get("conn_status"),
+                        "sn": d.get("sn", ""),
                     }
                     devices_flat.append(flat)
                     adom_flat_devices.append(flat)
@@ -439,6 +483,7 @@ def _run_device_sweep(app) -> bool:
                 devices_flat_by_adom[adom] = adom_flat_devices
 
         online, total = _classify_online(devices_flat)
+        devices_silent, silent_details = _build_silent_devices(devices_flat_by_adom)
         compliant_versions = get_setting("executive_compliant_versions", [])
         compliance_pct = _version_compliance_pct(devices_flat, compliant_versions)
         pending_cache_status = get_cache_status()
@@ -513,6 +558,8 @@ def _run_device_sweep(app) -> bool:
                     "devices_hw_eos": lifecycle["devices_hw_eos"],
                     "devices_hw_eos_12m": lifecycle["devices_hw_eos_12m"],
                     "models_unknown": lifecycle["models_unknown"],
+                    "devices_silent": devices_silent,
+                    "silent_devices_details": silent_details,
                     "by_adom": by_adom,
                     "infra": infra_list,
                 }

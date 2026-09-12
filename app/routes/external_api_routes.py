@@ -220,6 +220,18 @@ def _lifecycle(summary: dict) -> dict:
     }
 
 
+def _silent_devices(summary: dict) -> dict:
+    """Devices FortiManager reports as not connected — see
+    app.executive_summary_cache._build_silent_devices() and
+    docs/superpowers/specs/2026-09-12-silent-devices-proxy-spike.md for
+    why last_log_at is always None in this release."""
+    return {
+        "devices_silent": summary.get("devices_silent"),
+        "details": summary.get("silent_devices_details") or [],
+        "collected_at": summary.get("device_sweep_collected_at"),
+    }
+
+
 def _device_backup() -> dict:
     """Device configuration backup age, from the daily
     app.device_backup_cache sweep — see that module and
@@ -404,6 +416,7 @@ def ext_executive_summary():
         "psirt": _psirt_rollup(),
         "change_control": _change_control(summary),
         "lifecycle": _lifecycle(summary),
+        "silent_devices": _silent_devices(summary),
         "device_backup": _device_backup(),
         "by_adom": summary.get("by_adom") or {},
         "infra": summary.get("infra") or [],

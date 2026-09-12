@@ -605,6 +605,64 @@ def test_payload_lifecycle_defaults_when_no_sweep_yet(client):
     }
 
 
+def test_payload_includes_silent_devices(client):
+    fake_summary = {
+        "status": "ok",
+        "devices_silent": 2,
+        "silent_devices_details": [
+            {"devid": "SN-B", "devname": "fw-b", "last_log_at": None}
+        ],
+        "device_sweep_collected_at": "2026-09-12T00:00:00+00:00",
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value=fake_summary),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["silent_devices"] == {
+        "devices_silent": 2,
+        "details": [{"devid": "SN-B", "devname": "fw-b", "last_log_at": None}],
+        "collected_at": "2026-09-12T00:00:00+00:00",
+    }
+
+
+def test_payload_silent_devices_defaults_when_no_sweep_yet(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "pending"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["silent_devices"] == {
+        "devices_silent": None,
+        "details": [],
+        "collected_at": None,
+    }
+
+
 def test_payload_includes_device_backup(client):
     fake_record = {
         "devices_backup_ok": 4,
