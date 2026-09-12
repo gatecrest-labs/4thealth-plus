@@ -758,6 +758,65 @@ def test_run_device_sweep_sets_error_status_on_exception(monkeypatch, app_ctx):
     assert "boom" in summary["error"]
 
 
+def test_run_device_sweep_still_succeeds_when_sqlite_write_fails(monkeypatch, app_ctx):
+    """A SQLite mirroring failure must never downgrade an already-successful
+    in-memory sweep to 'error' — write_snapshot is best-effort mirroring on
+    top of the in-memory store, not a condition of sweep success."""
+    monkeypatch.setattr(
+        "app.app_settings.get_setting", lambda key, default=None: default
+    )
+    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", lambda: {})
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_cache_status",
+        lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
+    )
+    monkeypatch.setattr(
+        cache_mod.collector_store,
+        "write_snapshot",
+        MagicMock(side_effect=RuntimeError("disk full")),
+    )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = cache_mod._run_device_sweep(app_ctx)
+
+    assert result is True
+    summary = cache_mod.get_summary()
+    assert summary["status"] == "ok"
+    assert summary["device_sweep_status"] == "ok"
+    assert summary["error"] is None
+    assert summary["firewalls_total"] == 2
+
+
+def test_run_device_sweep_writes_and_reads_back_snapshot_via_sqlite(monkeypatch, app_ctx):
+    """End-to-end: running the real sweep should leave a snapshot in SQLite
+    that collector_store.read_snapshot can read back, including the
+    silent-devices drill-down fields."""
+    from app import collector_store
+
+    monkeypatch.setattr(
+        "app.app_settings.get_setting",
+        lambda key, default=None: ["v7.4.3"] if key == "executive_compliant_versions" else default,
+    )
+    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", lambda: {})
+    monkeypatch.setattr(
+        "app.pending_status_cache.get_cache_status",
+        lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
+    )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = cache_mod._run_device_sweep(app_ctx)
+
+    assert result is True
+    snapshot = collector_store.read_snapshot("executive_summary_device")
+    assert snapshot is not None
+    assert snapshot["firewalls_total"] == 2
+    assert snapshot["firewall_online_count"] == 1
+    assert "devices_silent" in snapshot
+    assert "silent_devices_details" in snapshot
+
+
 def test_run_device_sweep_skips_when_already_running():
     cache_mod._device_running.set()
     try:
@@ -827,6 +886,43 @@ def test_run_hygiene_sweep_sets_error_status_on_exception():
     summary = cache_mod.get_summary()
     assert summary["status"] == "error"
     assert "boom" in summary["error"]
+
+
+def test_run_hygiene_sweep_still_succeeds_when_sqlite_write_fails(monkeypatch, app_ctx):
+    """A SQLite mirroring failure must never downgrade an already-successful
+    in-memory hygiene sweep to 'error'."""
+    monkeypatch.setattr(
+        cache_mod.collector_store,
+        "write_snapshot",
+        MagicMock(side_effect=RuntimeError("disk full")),
+    )
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = cache_mod._run_hygiene_sweep(app_ctx)
+
+    assert result is True
+    summary = cache_mod.get_summary()
+    assert summary["status"] == "ok"
+    assert summary["hygiene_sweep_status"] == "ok"
+    assert summary["error"] is None
+    assert summary["hygiene_score"] is not None
+
+
+def test_run_hygiene_sweep_writes_and_reads_back_snapshot_via_sqlite(app_ctx):
+    """End-to-end: running the real hygiene sweep should leave a snapshot in
+    SQLite that collector_store.read_snapshot can read back."""
+    from app import collector_store
+
+    fake_client = _fake_client()
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = cache_mod._run_hygiene_sweep(app_ctx)
+
+    assert result is True
+    snapshot = collector_store.read_snapshot("executive_summary_hygiene")
+    assert snapshot is not None
+    assert snapshot["hygiene_score"] is not None
+    assert snapshot["hygiene_sweep_status"] == "ok"
 
 
 def test_run_hygiene_sweep_skips_when_already_running():

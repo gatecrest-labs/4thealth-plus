@@ -588,34 +588,41 @@ def _run_device_sweep(app) -> bool:
                 }
             )
 
-        collector_store.write_snapshot(
-            "executive_summary_device",
-            {
-                k: v
-                for k, v in _store.items()
-                if k
-                in {
-                    "version_compliance_pct",
-                    "pending_config_diff_count",
-                    "firewall_online_count",
-                    "firewalls_total",
-                    "adom_count",
-                    "status",
-                    "last_updated",
-                    "device_sweep_status",
-                    "device_sweep_collected_at",
-                    "devices_out_of_sync",
-                    "devices_hw_eos",
-                    "devices_hw_eos_12m",
-                    "models_unknown",
-                    "by_adom",
-                    "infra",
-                    "devices_silent",
-                    "silent_devices_details",
-                }
-            },
-            collected_at=_store.get("device_sweep_collected_at"),
-        )
+        try:
+            collector_store.write_snapshot(
+                "executive_summary_device",
+                {
+                    k: v
+                    for k, v in _store.items()
+                    if k
+                    in {
+                        "version_compliance_pct",
+                        "pending_config_diff_count",
+                        "firewall_online_count",
+                        "firewalls_total",
+                        "adom_count",
+                        "status",
+                        "last_updated",
+                        "device_sweep_status",
+                        "device_sweep_collected_at",
+                        "devices_out_of_sync",
+                        "devices_hw_eos",
+                        "devices_hw_eos_12m",
+                        "models_unknown",
+                        "by_adom",
+                        "infra",
+                        "devices_silent",
+                        "silent_devices_details",
+                    }
+                },
+                collected_at=_store.get("device_sweep_collected_at"),
+            )
+        except Exception as exc:
+            logger.warning(
+                "executive_summary_cache: SQLite snapshot write failed (device "
+                "sweep still succeeded in-memory): %s",
+                exc,
+            )
         return True
 
     except Exception as exc:
@@ -777,22 +784,29 @@ def _run_hygiene_sweep(app) -> bool:
                 }
             )
 
-        collector_store.write_snapshot(
-            "executive_summary_hygiene",
-            {
-                k: v
-                for k, v in _store.items()
-                if k
-                in {
-                    "hygiene_score",
-                    "rule_count_total",
-                    "rule_hygiene",
-                    "hygiene_sweep_status",
-                    "hygiene_sweep_collected_at",
-                }
-            },
-            collected_at=_store.get("hygiene_sweep_collected_at"),
-        )
+        try:
+            collector_store.write_snapshot(
+                "executive_summary_hygiene",
+                {
+                    k: v
+                    for k, v in _store.items()
+                    if k
+                    in {
+                        "hygiene_score",
+                        "rule_count_total",
+                        "rule_hygiene",
+                        "hygiene_sweep_status",
+                        "hygiene_sweep_collected_at",
+                    }
+                },
+                collected_at=_store.get("hygiene_sweep_collected_at"),
+            )
+        except Exception as exc:
+            logger.warning(
+                "executive_summary_cache: SQLite snapshot write failed (hygiene "
+                "sweep still succeeded in-memory): %s",
+                exc,
+            )
         return True
 
     except Exception as exc:
