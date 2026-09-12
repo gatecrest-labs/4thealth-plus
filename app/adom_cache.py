@@ -11,9 +11,12 @@ snapshot copy so the lock is held only briefly.
 from __future__ import annotations
 
 import datetime
+import logging
 import threading
 
 from flask import Flask
+
+logger = logging.getLogger(__name__)
 
 _lock = threading.RLock()
 
@@ -30,16 +33,32 @@ _REFRESH_MINUTES = 30
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
+def _read_through() -> dict:
+    """Return the current state, falling back to the collector's latest
+    persisted snapshot when this process has never completed its own run
+    (RUN_SCHEDULERS != "inline", i.e. a web worker in the split
+    deployment — or a process that just restarted)."""
+    with _lock:
+        local = dict(_state)
+
+    if local.get("status") == "pending":
+        from app import collector_store
+
+        snapshot = collector_store.read_snapshot("adom_cache")
+        if snapshot:
+            local.update(snapshot)
+
+    return local
+
+
 def get_cached() -> dict:
     """Return a shallow copy of the current cache state."""
-    with _lock:
-        return dict(_state)
+    return _read_through()
 
 
 def get_adom_names() -> list[str]:
     """Return the current list of known ADOM names (snapshot)."""
-    with _lock:
-        return list(_state["adoms"])
+    return list(_read_through().get("adoms") or [])
 
 
 # ── Refresh logic ─────────────────────────────────────────────────────────────
@@ -66,6 +85,20 @@ def _run_refresh(app: Flask) -> None:
                 )
                 _state["status"] = "ok"
                 _state["error"] = None
+                snapshot = dict(_state)
+
+            try:
+                from app import collector_store
+
+                collector_store.write_snapshot(
+                    "adom_cache", snapshot, collected_at=snapshot.get("last_updated")
+                )
+            except Exception as exc:
+                logger.warning(
+                    "adom_cache: SQLite snapshot write failed (in-memory cache "
+                    "update still succeeded): %s",
+                    exc,
+                )
         except Exception as exc:
             with _lock:
                 _state["status"] = "error"
