@@ -70,6 +70,14 @@ services:
     command: ["python", "-m", "app.collector"]
     env_file:
       - .env
+    environment:
+      # `python -m app.collector` imports the `app` package (running
+      # app/__init__.py, which reads RUN_SCHEDULERS at import time) before
+      # collector.py's own top-level `os.environ[...] = "inline"` line
+      # ever runs, so that in-process override is too late to take effect
+      # under `-m` invocation. Setting it here, before the interpreter
+      # even starts, is what actually makes the schedulers start.
+      - RUN_SCHEDULERS=inline
     volumes:
       - ./users.json:/app/users.json:rw
       - ./groups.json:/app/groups.json:rw
@@ -79,6 +87,7 @@ services:
       - ./review_requirements.yaml:/app/review_requirements.yaml:ro
       - ./ai_usage.db:/app/ai_usage.db:rw
       - ./host_metrics.db:/app/host_metrics.db:rw
+      - ./login_events.db:/app/login_events.db:rw
       - ./psirt.db:/app/psirt.db:rw
       - ./collector_state.db:/app/collector_state.db:rw
       - ./app_settings.json:/app/app_settings.json:rw

@@ -287,6 +287,7 @@ sudo journalctl -u 4thealth -f
 > WorkingDirectory=/opt/4thealth
 > EnvironmentFile=/opt/4thealth/.env
 > Environment=TZ=America/Chicago
+> Environment=RUN_SCHEDULERS=inline
 > ExecStart=/opt/4thealth/.venv/bin/python -m app.collector
 > Restart=on-failure
 > RestartSec=5
@@ -302,8 +303,19 @@ sudo journalctl -u 4thealth -f
 > sudo journalctl -u 4thealth-collector -f
 > ```
 >
-> `app/collector.py` forces `RUN_SCHEDULERS=inline` on itself regardless of
-> `.env`, so no environment change is needed for this unit.
+> **The `Environment=RUN_SCHEDULERS=inline` line above is required — do not
+> rely on `app/collector.py` to set it for you.** `app/collector.py` does
+> set `os.environ["RUN_SCHEDULERS"] = "inline"` at its own top, but that
+> line runs too late to matter: `python -m app.collector` imports the
+> parent `app` package first (executing `app/__init__.py`, which reads
+> `RUN_SCHEDULERS` from the environment at that moment) *before*
+> `collector.py`'s own code ever runs. Without the `Environment=` line
+> here, `Config.RUN_SCHEDULERS` is permanently baked in as `"off"` and the
+> collector unit runs with zero background jobs — no error, no crash, just
+> a process that sits idle forever while looking healthy in `systemctl
+> status`. Verify a running unit is actually scheduling anything with
+> `systemctl status 4thealth-collector` (thread count) or by checking that
+> `host_metrics.db` / `login_events.db` timestamps keep advancing.
 >
 > **Single-process (no separate collector unit):** for a small bare-metal
 > deployment that doesn't want a second systemd unit, set
