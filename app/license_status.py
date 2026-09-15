@@ -29,10 +29,20 @@ def parse_license_payload(raw_payload: dict | None) -> dict:
     """
     results = raw_payload if isinstance(raw_payload, dict) else {}
     forticare = results.get("forticare", {})
-    enhanced = forticare.get("support", {}).get("enhanced", {})
+    if not isinstance(forticare, dict):
+        return {"status": "unknown", "expires": None}
+    support = forticare.get("support", {})
+    if not isinstance(support, dict):
+        return {"status": "unknown", "expires": None}
+    enhanced = support.get("enhanced", {})
+    if not isinstance(enhanced, dict):
+        return {"status": "unknown", "expires": None}
     status = enhanced.get("status", "")
     expires_ts = enhanced.get("expires")
-    if status == "licensed" and expires_ts:
+    is_real_number = isinstance(expires_ts, (int, float)) and not isinstance(
+        expires_ts, bool
+    )
+    if status == "licensed" and is_real_number and expires_ts:
         if expires_ts > time.time():
             exp_str = datetime.fromtimestamp(expires_ts, tz=UTC).strftime("%Y-%m-%d")
             return {"status": "licensed", "expires": exp_str}

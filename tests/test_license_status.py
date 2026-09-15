@@ -42,3 +42,26 @@ def test_status_not_licensed_is_unknown():
 def test_licensed_status_without_expires_is_unknown():
     payload = {"forticare": {"support": {"enhanced": {"status": "licensed"}}}}
     assert parse_license_payload(payload) == {"status": "unknown", "expires": None}
+
+
+def test_forticare_not_a_dict_is_unknown():
+    assert parse_license_payload({"forticare": []}) == {"status": "unknown", "expires": None}
+
+
+def test_support_not_a_dict_is_unknown():
+    payload = {"forticare": {"support": None}}
+    assert parse_license_payload(payload) == {"status": "unknown", "expires": None}
+
+
+def test_enhanced_not_a_dict_is_unknown():
+    payload = {"forticare": {"support": {"enhanced": []}}}
+    assert parse_license_payload(payload) == {"status": "unknown", "expires": None}
+
+
+def test_non_numeric_expires_is_unknown():
+    payload = {
+        "forticare": {
+            "support": {"enhanced": {"status": "licensed", "expires": "2027-01-01"}}
+        }
+    }
+    assert parse_license_payload(payload) == {"status": "unknown", "expires": None}
