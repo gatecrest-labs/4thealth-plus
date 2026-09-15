@@ -2,8 +2,6 @@
 
 import json
 import re
-import time
-from datetime import datetime, timezone
 
 from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 
@@ -11,6 +9,7 @@ from app.config import Config
 from app.decorators import admin_required, check_adom_access, tab_required
 from app.fmg_client import PROXY_ENDPOINTS, FMGClient, FMGError
 from app.fmg_helpers import make_client as _make_client
+from app.license_status import parse_license_payload
 from app.security import internal_api_error, upstream_api_error
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -652,23 +651,7 @@ def _assemble_health(
     if not isinstance(perf_raw, dict):
         perf_raw = {}
 
-    def _parse_license(raw_payload) -> dict:
-        # _proxy() already unwraps response.results, so raw_payload IS the results dict
-        results = raw_payload if isinstance(raw_payload, dict) else {}
-        forticare = results.get("forticare", {})
-        enhanced = forticare.get("support", {}).get("enhanced", {})
-        status = enhanced.get("status", "")
-        expires_ts = enhanced.get("expires")
-        if status == "licensed" and expires_ts:
-            if expires_ts > time.time():
-                exp_str = datetime.fromtimestamp(expires_ts, tz=timezone.utc).strftime(
-                    "%Y-%m-%d"
-                )
-                return {"status": "licensed", "expires": exp_str}
-            return {"status": "expired", "expires": None}
-        return {"status": "unknown", "expires": None}
-
-    license_info = _parse_license(payload("license_status"))
+    license_info = parse_license_payload(payload("license_status"))
 
     def _parse_vdom_routes(r) -> dict:
         by_vdom = {}
