@@ -9,6 +9,7 @@ from app.config import Config
 from app.decorators import admin_required, check_adom_access, tab_required
 from app.fmg_client import PROXY_ENDPOINTS, FMGClient, FMGError
 from app.fmg_helpers import make_client as _make_client
+from app.license_status import parse_license_payload
 from app.security import internal_api_error, upstream_api_error
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -650,7 +651,7 @@ def _assemble_health(
     if not isinstance(perf_raw, dict):
         perf_raw = {}
 
-    uptime = sys_status.get("uptime") or perf_raw.get("uptime") or "n/a"
+    license_info = parse_license_payload(payload("license_status"))
 
     def _parse_vdom_routes(r) -> dict:
         by_vdom = {}
@@ -696,8 +697,8 @@ def _assemble_health(
         "desc": desc,
         "dot_status": dot_status,
         "version": version,
-        "uptime": uptime,
         "serial": serial,
+        "license": license_info,
         "platform": platform,
         "mgmt_ip": mgmt_ip,
         "cpu": cpu_val,

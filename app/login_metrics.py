@@ -38,8 +38,19 @@ _RANGES = {
 _DEFAULT_RANGE = "1h"
 
 
+def _connect() -> sqlite3.Connection:
+    # timeout=30 + WAL: this file is written by the web process (on every
+    # login) and pruned by the collector process concurrently (see
+    # app/collector.py) — WAL avoids the reader/writer lock contention the
+    # default rollback journal hits under that access pattern (same fix as
+    # app/collector_store.py).
+    conn = sqlite3.connect(_DB_PATH, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
 def _init_db() -> None:
-    conn = sqlite3.connect(_DB_PATH)
+    conn = _connect()
     try:
         conn.executescript(_SCHEMA)
         conn.commit()
@@ -51,7 +62,7 @@ def record_event(success: bool) -> None:
     """Insert one login attempt row. Never raises."""
     try:
         _init_db()
-        conn = sqlite3.connect(_DB_PATH)
+        conn = _connect()
         try:
             conn.execute(
                 "INSERT INTO login_events (ts, success) VALUES (?, ?)",
@@ -69,7 +80,7 @@ def prune_old_data() -> None:
     try:
         cutoff = int(time.time()) - _RETENTION_DAYS * 86_400
         _init_db()
-        conn = sqlite3.connect(_DB_PATH)
+        conn = _connect()
         try:
             conn.execute("DELETE FROM login_events WHERE ts < ?", (cutoff,))
             conn.commit()
@@ -86,7 +97,7 @@ def get_metrics(range_key: str) -> dict:
         range_key = _DEFAULT_RANGE
 
     _init_db()
-    conn = sqlite3.connect(_DB_PATH)
+    conn = _connect()
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
