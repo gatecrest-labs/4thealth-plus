@@ -29,7 +29,7 @@ import json
 import logging
 import threading
 import time as _time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.atomic_io import atomic_write_json
@@ -180,6 +180,15 @@ def _run_sweep(app) -> bool:
                             exc,
                         )
                         raw = {}
+                    if not raw:
+                        logger.warning(
+                            "license_status_cache: get_device_license_status(%s, %s) "
+                            "returned no data — device will be classified 'unknown', "
+                            "which may indicate a fetch failure rather than a genuine "
+                            "unlicensed device",
+                            adom,
+                            name,
+                        )
                     return {"name": name, "license": parse_license_payload(raw)}
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
@@ -209,6 +218,33 @@ def _run_sweep(app) -> bool:
         return False
     finally:
         _running.clear()
+
+
+_STARTUP_SWEEP_MIN_AGE = timedelta(hours=12)
+
+
+def _should_skip_startup_sweep(latest: dict | None, now: datetime) -> bool:
+    """True if the immediate startup sweep should be skipped because a
+    sweep already succeeded recently (within _STARTUP_SWEEP_MIN_AGE).
+
+    Guards against every gthread worker process re-running a full,
+    per-device fleet sweep on every app restart/deploy. Returns False
+    (i.e. run the startup sweep) whenever `latest` is None, missing
+    "collected_at", or "collected_at" fails to parse — the safe default
+    is to sweep, not to silently skip forever on bad data.
+    """
+    if not isinstance(latest, dict):
+        return False
+    collected_at = latest.get("collected_at")
+    if not collected_at:
+        return False
+    try:
+        collected_dt = datetime.fromisoformat(collected_at)
+    except (TypeError, ValueError):
+        return False
+    if collected_dt.tzinfo is None:
+        collected_dt = collected_dt.replace(tzinfo=UTC)
+    return (now - collected_dt) < _STARTUP_SWEEP_MIN_AGE
 
 
 def refresh_now(app) -> None:
@@ -247,11 +283,16 @@ def init_scheduler(app):
         refresh_minute,
     )
 
-    threading.Thread(
-        target=_run_sweep,
-        args=[app],
-        name="license_status_cache_startup",
-        daemon=True,
-    ).start()
+    if _should_skip_startup_sweep(get_latest(), datetime.now(UTC)):
+        logger.info(
+            "license_status_cache: skipping startup sweep — last sweep is still fresh"
+        )
+    else:
+        threading.Thread(
+            target=_run_sweep,
+            args=[app],
+            name="license_status_cache_startup",
+            daemon=True,
+        ).start()
 
     return scheduler
