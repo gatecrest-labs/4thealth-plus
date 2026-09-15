@@ -3,7 +3,7 @@
 import json
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 
@@ -661,7 +661,7 @@ def _assemble_health(
         expires_ts = enhanced.get("expires")
         if status == "licensed" and expires_ts:
             if expires_ts > time.time():
-                exp_str = datetime.fromtimestamp(expires_ts, tz=timezone.utc).strftime(
+                exp_str = datetime.fromtimestamp(expires_ts, tz=UTC).strftime(
                     "%Y-%m-%d"
                 )
                 return {"status": "licensed", "expires": exp_str}
