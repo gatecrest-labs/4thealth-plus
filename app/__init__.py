@@ -202,6 +202,18 @@ def start_all_schedulers(app: Flask) -> None:
         except Exception as exc:
             app.logger.warning("Device backup scheduler failed to start: %s", exc)
 
+    if not app.config.get("_LICENSE_STATUS_SCHEDULER_STARTED"):
+        app.config["_LICENSE_STATUS_SCHEDULER_STARTED"] = True
+        try:
+            from app.license_status_cache import (
+                init_scheduler as init_license_status_scheduler,
+            )
+
+            with app.app_context():
+                init_license_status_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("License status scheduler failed to start: %s", exc)
+
 
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")

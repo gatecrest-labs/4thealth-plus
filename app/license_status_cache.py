@@ -25,9 +25,15 @@ treatment.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
+import time as _time
+from datetime import UTC, datetime
 from pathlib import Path
+
+from app.atomic_io import atomic_write_json
+from app.license_status import parse_license_payload
 
 logger = logging.getLogger(__name__)
 
@@ -91,3 +97,161 @@ def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> di
         "devices_unknown": unknown,
         "details": details,
     }
+
+
+def _list_target_adoms(client) -> list[str]:
+    """Return non-forti* ADOM names — same convention as every other
+    ADOM-enumerating sweep in this codebase (see CLAUDE.md)."""
+    adoms_raw = client.get_adoms()
+    return [
+        a.get("name", "")
+        for a in adoms_raw
+        if isinstance(a, dict)
+        and a.get("name")
+        and not a.get("name", "").lower().startswith("forti")
+    ]
+
+
+# ── Persistence ──────────────────────────────────────────────────────────────
+
+
+def get_latest() -> dict | None:
+    """The last successfully persisted {devices_licensed, devices_expired,
+    devices_unknown, details, collected_at}, or None if no sweep has ever
+    succeeded."""
+    if not _STORE_PATH.exists():
+        return None
+    try:
+        data = json.loads(_STORE_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _save(record: dict) -> None:
+    atomic_write_json(_STORE_PATH, record)
+
+
+# ── Sweep ────────────────────────────────────────────────────────────────────
+
+
+def _run_sweep(app) -> bool:
+    """Fetch device rosters + per-device license status once per non-forti*
+    ADOM, classify, and persist. Returns True on success, False on error or
+    overlap — on either failure mode the previously persisted result is
+    left in place."""
+    if _running.is_set():
+        logger.info("license_status_cache: already running, skipping overlap")
+        return False
+
+    _running.set()
+    t0 = _time.monotonic()
+    try:
+        import concurrent.futures
+
+        from app.fmg_helpers import make_client
+
+        devices_by_adom_with_license: dict[str, list[dict]] = {}
+
+        with make_client() as client:
+            adom_names = _list_target_adoms(client)
+            for adom in adom_names:
+                try:
+                    devices = client.get_devices(adom) or []
+                except Exception as exc:
+                    logger.warning(
+                        "license_status_cache: get_devices(%s) failed: %s", adom, exc
+                    )
+                    devices = []
+
+                valid_devices = [
+                    d for d in devices if isinstance(d, dict) and d.get("name")
+                ]
+
+                def _fetch_one(dev: dict, adom=adom) -> dict:
+                    name = dev["name"]
+                    try:
+                        raw = client.get_device_license_status(adom, name)
+                    except Exception as exc:
+                        logger.warning(
+                            "license_status_cache: get_device_license_status(%s, %s) failed: %s",
+                            adom,
+                            name,
+                            exc,
+                        )
+                        raw = {}
+                    return {"name": name, "license": parse_license_payload(raw)}
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                    devices_by_adom_with_license[adom] = list(
+                        pool.map(_fetch_one, valid_devices)
+                    )
+
+        counts = _classify_devices(devices_by_adom_with_license)
+        record = {**counts, "collected_at": datetime.now(UTC).isoformat()}
+
+        with _lock:
+            _save(record)
+
+        elapsed = round(_time.monotonic() - t0, 1)
+        logger.info(
+            "license_status_cache: sweep done in %ss — licensed=%d expired=%d unknown=%d",
+            elapsed,
+            counts["devices_licensed"],
+            counts["devices_expired"],
+            counts["devices_unknown"],
+        )
+        return True
+    except Exception:
+        logger.exception(
+            "license_status_cache: sweep failed — keeping last persisted result"
+        )
+        return False
+    finally:
+        _running.clear()
+
+
+def refresh_now(app) -> None:
+    """Trigger an immediate background sweep (non-blocking)."""
+    threading.Thread(
+        target=_run_sweep,
+        args=[app],
+        name="license_status_cache_refresh",
+        daemon=True,
+    ).start()
+
+
+def init_scheduler(app):
+    """Register the daily sweep with APScheduler and fire it once immediately."""
+    import os
+
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    refresh_hour = int(os.environ.get("DEVICE_LICENSE_REFRESH_HOUR", "3"))
+    refresh_minute = int(os.environ.get("DEVICE_LICENSE_REFRESH_MINUTE", "0"))
+
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(
+        func=_run_sweep,
+        args=[app],
+        trigger="cron",
+        hour=refresh_hour,
+        minute=refresh_minute,
+        id="license_status_refresh",
+        name="Daily license status sweep",
+    )
+    scheduler.start()
+    logger.info(
+        "license_status_cache: scheduler started — daily at %02d:%02d local time",
+        refresh_hour,
+        refresh_minute,
+    )
+
+    threading.Thread(
+        target=_run_sweep,
+        args=[app],
+        name="license_status_cache_startup",
+        daemon=True,
+    ).start()
+
+    return scheduler
