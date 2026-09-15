@@ -238,6 +238,17 @@ function renderHealthModal(deviceName, d) {
   const cpu = d.cpu ?? 0;
   const mem = d.mem ?? 0;
 
+  const lic = d.license || {};
+  const licStatus = lic.status || 'unknown';
+  const licColor  = licStatus === 'licensed' ? '#16a34a'
+                  : licStatus === 'expired'  ? '#dc2626'
+                  : '#6b7280';
+  const licLabel  = licStatus === 'licensed'
+    ? `Licensed${lic.expires ? ' · exp ' + escHtml(lic.expires) : ''}`
+    : licStatus === 'expired' ? 'EXPIRED'
+    : 'Unknown';
+  const licBadgeHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:4px;font-size:.8rem;font-weight:600;background:${licColor}1a;color:${licColor};border:1px solid ${licColor}66">${licLabel}</span>`;
+
   // Filter: hide interfaces that have no meaningful IP AND are not up
   const visibleIfaces = (d.interfaces || []).filter(i => {
     const ip   = ifaceIp(i);
@@ -322,7 +333,7 @@ ${(d.vdoms || []).map(v => `<tr><td>${vdomBadge(v.name)}</td><td>${escHtml(v.opm
   <div class="detail-item"><span class="detail-label">Platform</span><span class="detail-value">${escHtml(d.platform || '')}</span></div>
   <div class="detail-item"><span class="detail-label">Version</span><span class="detail-value">${escHtml(d.version)}</span></div>
   <div class="detail-item"><span class="detail-label">Serial</span><span class="detail-value">${escHtml(d.serial)}</span></div>
-  <div class="detail-item"><span class="detail-label">Uptime</span><span class="detail-value">${escHtml(d.uptime)}</span></div>
+  <div class="detail-item"><span class="detail-label">License</span><span class="detail-value">${licBadgeHtml}</span></div>
   <div class="detail-item"><span class="detail-label">CPU</span><span class="detail-value">${cpu}%</span></div>
   <div class="detail-item"><span class="detail-label">Memory</span><span class="detail-value">${mem}%</span></div>
   <div class="detail-item"><span class="detail-label">HA Mode</span><span class="detail-value">${escHtml(haMode)}</span></div>

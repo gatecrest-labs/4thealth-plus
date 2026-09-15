@@ -2,6 +2,8 @@
 
 import json
 import re
+import time
+from datetime import datetime, timezone
 
 from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 
@@ -650,7 +652,23 @@ def _assemble_health(
     if not isinstance(perf_raw, dict):
         perf_raw = {}
 
-    uptime = sys_status.get("uptime") or perf_raw.get("uptime") or "n/a"
+    def _parse_license(raw_payload) -> dict:
+        # _proxy() already unwraps response.results, so raw_payload IS the results dict
+        results = raw_payload if isinstance(raw_payload, dict) else {}
+        forticare = results.get("forticare", {})
+        enhanced = forticare.get("support", {}).get("enhanced", {})
+        status = enhanced.get("status", "")
+        expires_ts = enhanced.get("expires")
+        if status == "licensed" and expires_ts:
+            if expires_ts > time.time():
+                exp_str = datetime.fromtimestamp(expires_ts, tz=timezone.utc).strftime(
+                    "%Y-%m-%d"
+                )
+                return {"status": "licensed", "expires": exp_str}
+            return {"status": "expired", "expires": None}
+        return {"status": "unknown", "expires": None}
+
+    license_info = _parse_license(payload("license_status"))
 
     def _parse_vdom_routes(r) -> dict:
         by_vdom = {}
@@ -696,8 +714,8 @@ def _assemble_health(
         "desc": desc,
         "dot_status": dot_status,
         "version": version,
-        "uptime": uptime,
         "serial": serial,
+        "license": license_info,
         "platform": platform,
         "mgmt_ip": mgmt_ip,
         "cpu": cpu_val,

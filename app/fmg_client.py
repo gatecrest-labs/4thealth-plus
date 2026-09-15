@@ -93,6 +93,12 @@ PROXY_ENDPOINTS = [
         "resource": "/api/v2/monitor/vpn/ipsec?vdom=root",
         "required": False,
     },
+    {
+        "key": "license_status",
+        "label": "License status",
+        "resource": "/api/v2/monitor/license/status",
+        "required": False,
+    },
 ]
 
 PREVIEW_TIMEOUT_SECS = 120
