@@ -401,12 +401,80 @@ def all_devices():
 @tab_required("versions")
 def all_devices_refresh():
     """Trigger a manual cache refresh (non-blocking — returns immediately)."""
-    from app import current_app
+    from flask import current_app
+
     from app.versions_cache import get_cached, refresh_now
 
     refresh_now(current_app._get_current_object())
     cached = get_cached()
     return jsonify({"status": cached["status"], "queued": True})
+
+
+# ── License status (Device Versions tab → License Status section) ───────────
+# Reuses app.license_status_cache's existing daily sweep (see that module's
+# docstring) rather than running a second, more-frequent per-device sweep.
+
+
+def _license_cache_status() -> str:
+    from app import license_status_cache
+
+    if license_status_cache.is_running():
+        return "running"
+    return "ok" if license_status_cache.get_latest() is not None else "pending"
+
+
+@bp.route("/devices/all/license")
+@tab_required("versions")
+def all_devices_license():
+    from app import license_status_cache
+    from app.groups import get_allowed_adoms
+
+    latest = license_status_cache.get_latest() or {}
+    devices = latest.get("all_devices", [])
+    allowed = get_allowed_adoms(
+        session.get("user", ""),
+        ad_groups=session.get("ad_groups", []),
+        role=session.get("role"),
+    )
+    if allowed is not None:
+        devices = [d for d in devices if d.get("adom") in allowed]
+    return jsonify(
+        {
+            "devices": devices,
+            "last_updated": latest.get("collected_at"),
+            "status": _license_cache_status(),
+        }
+    )
+
+
+@bp.route("/devices/all/license/refresh", methods=["POST"])
+@tab_required("versions")
+def all_devices_license_refresh():
+    """Trigger a manual license sweep (non-blocking — returns immediately)."""
+    from flask import current_app
+
+    from app import license_status_cache
+
+    license_status_cache.refresh_now(current_app._get_current_object())
+    return jsonify({"status": "running", "queued": True})
+
+
+@bp.route("/adoms/<adom>/license")
+@tab_required("versions")
+def adom_license(adom: str):
+    from app import license_status_cache
+
+    if err := check_adom_access(adom):
+        return err
+    latest = license_status_cache.get_latest() or {}
+    devices = [d for d in latest.get("all_devices", []) if d.get("adom") == adom]
+    return jsonify(
+        {
+            "devices": devices,
+            "last_updated": latest.get("collected_at"),
+            "status": _license_cache_status(),
+        }
+    )
 
 
 # ── ADOM list ────────────────────────────────────────────────────────────────

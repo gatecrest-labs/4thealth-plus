@@ -2891,3 +2891,9 @@ a:hover { text-decoration: underline; }
   white-space: nowrap;
   overflow: hidden;
 }
+
+/* ── License donut chart (Device Versions → License Status) ─────────────── */
+.lic-donut-wrap { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+.lic-legend { display: flex; flex-direction: column; gap: .4rem; }
+.lic-legend-item { display: flex; align-items: center; gap: .4rem; font-size: .95rem; cursor: pointer; }
+.lic-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }

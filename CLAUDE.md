@@ -357,6 +357,45 @@ separate PSIRT toggle.
 No persistence — each assessment is a one-off analysis, same as NAT Lookup
 and Rule Validation's AI Assist.
 
+### Device Versions tab
+
+`GET /versions` → `versions.html` + `versions.js` (tab key: `versions`)
+
+Two independent sections:
+
+1. **Device Version** (top) — global all-ADOM firmware version bar chart
+   (pre-warmed cache, `app/versions_cache.py`) + per-ADOM version bar chart.
+   Select an ADOM from the dropdown; click a bar to list devices on that
+   version.
+2. **License Status** (below) — SVG donut charts showing Licensed / Expired
+   / Unknown device counts for the selected ADOM (or fleet-wide when no
+   ADOM is selected), plus a second "Expiring Soon" donut bucketing
+   licensed devices with a known expiry into ≤30 / 31–90 / >90 days. Click
+   a slice or legend item to expand a paginated, exportable (CSV/JSON/PDF)
+   device list (Device, Status, Expires, Firmware, ADOM). A **Refresh**
+   button triggers an immediate sweep.
+
+**Data source — deliberately reuses `app/license_status_cache.py` rather
+than adding a second sweep:** that module already runs a daily,
+per-device fleet sweep for the `/external/api/executive/summary` payload
+(see External API section above) — the only per-device call FortiOS
+exposes for license status, hence the daily (not 15-minute) cadence. Its
+`_classify_devices()` now also returns an `all_devices` list (every
+device, every status, `{device, adom, status, expires, firmware}`) rather
+than only the non-licensed `details` the executive summary uses; `firmware`
+is built from the same `os_ver`/`mr`/`patch` roster fields
+`app/versions_cache.py` uses. Adding a second, independently-scheduled
+per-device sweep for this tab would double the FMG load of the one
+expensive call this module exists to amortize — so the tab's **Refresh**
+button calls the *same* `license_status_cache.refresh_now()` used
+fleet-wide, and both consumers (this tab and the executive summary) always
+see the same underlying sweep result.
+
+**API endpoints** (all `@tab_required("versions")`):
+- `GET  /api/devices/all/license` — fleet-wide `all_devices`, ADOM-access filtered
+- `POST /api/devices/all/license/refresh` — trigger an immediate sweep (non-blocking)
+- `GET  /api/adoms/<adom>/license` — `all_devices` filtered to one ADOM (`check_adom_access` enforced)
+
 ### Rule Validation tab
 
 `GET /rule-review` → `rule_review.html` + `rule_review.js`

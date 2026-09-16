@@ -1,6 +1,6 @@
 """Tests for app.license_status_cache's pure aggregation logic."""
 
-from app.license_status_cache import _classify_devices
+from app.license_status_cache import _build_firmware_version, _classify_devices
 
 
 def test_classify_devices_counts_and_details():
@@ -9,6 +9,7 @@ def test_classify_devices_counts_and_details():
             {
                 "name": "fw-licensed",
                 "license": {"status": "licensed", "expires": "2027-01-01"},
+                "firmware": "v7.4.5",
             },
             {"name": "fw-expired", "license": {"status": "expired", "expires": None}},
             {"name": "fw-unknown", "license": {"status": "unknown", "expires": None}},
@@ -24,6 +25,50 @@ def test_classify_devices_counts_and_details():
         {"device": "fw-expired", "adom": "Corp", "status": "expired", "expires": None},
         {"device": "fw-unknown", "adom": "Corp", "status": "unknown", "expires": None},
     ]
+
+
+def test_classify_devices_all_devices_includes_every_status_with_firmware():
+    devices_by_adom = {
+        "Corp": [
+            {
+                "name": "fw-licensed",
+                "license": {"status": "licensed", "expires": "2027-01-01"},
+                "firmware": "v7.4.5",
+            },
+            {
+                "name": "fw-expired",
+                "license": {"status": "expired", "expires": None},
+                "firmware": "v7.2.1",
+            },
+        ]
+    }
+
+    result = _classify_devices(devices_by_adom)
+
+    assert result["all_devices"] == [
+        {
+            "device": "fw-licensed",
+            "adom": "Corp",
+            "status": "licensed",
+            "expires": "2027-01-01",
+            "firmware": "v7.4.5",
+        },
+        {
+            "device": "fw-expired",
+            "adom": "Corp",
+            "status": "expired",
+            "expires": None,
+            "firmware": "v7.2.1",
+        },
+    ]
+
+
+def test_classify_devices_all_devices_defaults_firmware_to_na():
+    devices_by_adom = {
+        "Corp": [{"name": "fw-a", "license": {"status": "licensed", "expires": None}}]
+    }
+    result = _classify_devices(devices_by_adom)
+    assert result["all_devices"][0]["firmware"] == "n/a"
 
 
 def test_classify_devices_details_excludes_licensed():
@@ -63,6 +108,7 @@ def test_classify_devices_empty_input():
         "devices_expired": 0,
         "devices_unknown": 0,
         "details": [],
+        "all_devices": [],
     }
 
 
@@ -74,7 +120,20 @@ def test_classify_devices_skips_entries_missing_name():
         "devices_expired": 0,
         "devices_unknown": 0,
         "details": [],
+        "all_devices": [],
     }
+
+
+def test_build_firmware_version_major_mr_patch():
+    assert _build_firmware_version({"os_ver": 700, "mr": 4, "patch": 5}) == "v7.4.5"
+
+
+def test_build_firmware_version_major_mr_only():
+    assert _build_firmware_version({"os_ver": 700, "mr": 4, "patch": None}) == "v7.4"
+
+
+def test_build_firmware_version_missing_fields():
+    assert _build_firmware_version({}) == "n/a"
 
 
 import json
@@ -85,6 +144,7 @@ from app.license_status_cache import (
     _run_sweep,
     _should_skip_startup_sweep,
     get_latest,
+    is_running,
 )
 
 
@@ -127,6 +187,15 @@ def test_run_sweep_persists_classified_result(tmp_path, monkeypatch):
     assert persisted["devices_licensed"] == 1
     assert persisted["devices_expired"] == 0
     assert "collected_at" in persisted
+    assert persisted["all_devices"] == [
+        {
+            "device": "fw-a",
+            "adom": "Corp",
+            "status": "licensed",
+            "expires": "2286-11-20",
+            "firmware": "n/a",
+        }
+    ]
 
 
 def test_run_sweep_skips_forti_prefixed_adoms(tmp_path, monkeypatch):
@@ -155,6 +224,17 @@ def test_run_sweep_overlap_returns_false():
     _running.set()
     try:
         assert _run_sweep(app=None) is False
+    finally:
+        _running.clear()
+
+
+def test_is_running_reflects_running_event():
+    from app.license_status_cache import _running
+
+    assert is_running() is False
+    _running.set()
+    try:
+        assert is_running() is True
     finally:
         _running.clear()
 

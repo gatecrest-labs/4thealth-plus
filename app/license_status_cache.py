@@ -21,6 +21,16 @@ atomic_write_json after every successful sweep -- same single-latest-record,
 app.device_backup_cache. Because this is a plain JSON file on shared disk
 rather than an in-memory store, it needs no SQLite collector/web split
 treatment.
+
+Two consumers share this one sweep: app.routes.external_api_routes reads
+the aggregate counts + "details" (expired/unknown only) for the executive
+summary; the Device Versions tab's License Status section (routes in
+app.routes.api_routes) reads "all_devices" (every device, every status,
+with a "firmware" string) for its donut charts and per-device export. A
+second, more-frequent sweep was deliberately NOT added for the interactive
+tab -- it would double the FMG load of the one expensive (no-bulk-endpoint)
+license call this module exists to amortize. The manual "Refresh" button on
+the Versions page calls the same refresh_now() as everything else here.
 """
 
 from __future__ import annotations
@@ -46,18 +56,45 @@ _running = threading.Event()
 # ── Pure aggregation (no I/O — unit-tested directly) ────────────────────────
 
 
+def _build_firmware_version(device: dict) -> str:
+    """Render a device roster dict's os_ver/mr/patch fields as "vX.Y.Z".
+
+    Same shape as the inline logic in app.versions_cache._run_job — pulled
+    out here so app.license_status_cache can attach a firmware string to
+    every device record without duplicating that parsing untested.
+    """
+    os_ver = device.get("os_ver", 0)
+    mr = device.get("mr")
+    patch = device.get("patch")
+    major = (
+        int(os_ver) // 100 if str(os_ver).isdigit() and int(os_ver) >= 100 else os_ver
+    )
+    if mr is not None and patch is not None and int(patch) >= 0:
+        return f"v{major}.{mr}.{patch}"
+    if mr is not None:
+        return f"v{major}.{mr}"
+    return "n/a"
+
+
 def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> dict:
     """Bucket every device across all ADOMs into licensed/expired/unknown.
 
     devices_by_adom_with_license: {adom: [{"name": str, "license": {"status",
-    "expires"}}, ...]} — each device dict must already carry its parsed
-    "license" sub-dict (see _run_sweep(), which attaches it before calling
-    this function).
+    "expires"}, "firmware": str}, ...]} — each device dict must already
+    carry its parsed "license" sub-dict (see _run_sweep(), which attaches
+    it before calling this function). "firmware" is optional — missing or
+    absent devices are recorded as "n/a" in all_devices.
+
+    Returns "details" (unchanged: only expired/unknown devices, no
+    firmware — kept exactly as before for the executive-summary consumer)
+    plus "all_devices" (every device regardless of status, WITH firmware —
+    used by the Device Versions tab's License Status section).
     """
     licensed = 0
     expired = 0
     unknown = 0
     details: list[dict] = []
+    all_devices: list[dict] = []
 
     for adom, devices in devices_by_adom_with_license.items():
         for device in devices:
@@ -68,6 +105,7 @@ def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> di
                 continue
             license_info = device.get("license") or {}
             status = license_info.get("status", "unknown")
+            expires = license_info.get("expires")
             if status == "licensed":
                 licensed += 1
             elif status == "expired":
@@ -77,7 +115,7 @@ def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> di
                         "device": name,
                         "adom": adom,
                         "status": "expired",
-                        "expires": license_info.get("expires"),
+                        "expires": expires,
                     }
                 )
             else:
@@ -87,15 +125,26 @@ def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> di
                         "device": name,
                         "adom": adom,
                         "status": "unknown",
-                        "expires": license_info.get("expires"),
+                        "expires": expires,
                     }
                 )
+
+            all_devices.append(
+                {
+                    "device": name,
+                    "adom": adom,
+                    "status": status,
+                    "expires": expires,
+                    "firmware": device.get("firmware", "n/a"),
+                }
+            )
 
     return {
         "devices_licensed": licensed,
         "devices_expired": expired,
         "devices_unknown": unknown,
         "details": details,
+        "all_devices": all_devices,
     }
 
 
@@ -189,7 +238,11 @@ def _run_sweep(app) -> bool:
                             adom,
                             name,
                         )
-                    return {"name": name, "license": parse_license_payload(raw)}
+                    return {
+                        "name": name,
+                        "license": parse_license_payload(raw),
+                        "firmware": _build_firmware_version(dev),
+                    }
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                     devices_by_adom_with_license[adom] = list(
@@ -245,6 +298,12 @@ def _should_skip_startup_sweep(latest: dict | None, now: datetime) -> bool:
     if collected_dt.tzinfo is None:
         collected_dt = collected_dt.replace(tzinfo=UTC)
     return (now - collected_dt) < _STARTUP_SWEEP_MIN_AGE
+
+
+def is_running() -> bool:
+    """True while a sweep is in progress — used by the Device Versions
+    tab's License Status section to show a "refreshing…" state."""
+    return _running.is_set()
 
 
 def refresh_now(app) -> None:
