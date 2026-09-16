@@ -800,6 +800,14 @@ def device_health(adom: str, device_name: str):
             dev_rec = client.get_device(adom, device_name)
             vdoms_raw = client.get_device_vdoms(adom, device_name)
             raw = client.get_device_health(adom, device_name)
+            if not raw.get("license_status", {}).get("payload"):
+                mgt_vdom = dev_rec.get("mgt_vdom", "").strip('"')
+                if mgt_vdom and mgt_vdom.lower() != "root":
+                    raw["license_status"] = {
+                        "payload": client.get_device_license_status(
+                            adom, device_name, vdom=mgt_vdom
+                        )
+                    }
             pkgs = client.get_device_policy_package(adom, device_name)
         return jsonify(
             _assemble_health(adom, device_name, dev_rec, vdoms_raw, raw, pkgs)
@@ -834,6 +842,14 @@ def device_health_stream(adom: str, device_name: str):
                 ):
                     raw[key] = result
                     yield f"data: {json.dumps({'done': inv_steps + done_idx, 'total': total, 'label': label})}\n\n"
+                if not raw.get("license_status", {}).get("payload"):
+                    mgt_vdom = dev_rec.get("mgt_vdom", "").strip('"')
+                    if mgt_vdom and mgt_vdom.lower() != "root":
+                        raw["license_status"] = {
+                            "payload": client.get_device_license_status(
+                                adom, device_name, vdom=mgt_vdom
+                            )
+                        }
             payload = _assemble_health(adom, device_name, dev_rec, vdoms_raw, raw, pkgs)
             yield f"event: done\ndata: {json.dumps(payload)}\n\n"
         except Exception as exc:
