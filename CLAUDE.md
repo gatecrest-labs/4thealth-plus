@@ -441,6 +441,14 @@ treats it identically to `"licensed"` (the device/subscription is still
 fully licensed; the `expires` date itself, not the status string, is what
 communicates urgency — see the Device Versions tab's "Expiring Soon" donut
 and the executive-summary `devices_expiring_30/60/90` fields above).
+Since a "licensed" status can now mean "renewing soon" per the above, the
+Firewalls tab's live detail modal (`firewalls.js::renderHealthModal()`)
+colors the License badge and each FortiGuard Subscriptions row by days
+until `expires` rather than a flat green: red if `<30` days, amber
+(`#ca8a04`) if `<=90`, green otherwise (`<=0` — i.e. no `expires` date —
+also green, since an unbounded license has no expiry to warn about). Local
+to that live path only — the Device Versions tab's donut charts already
+have their own dedicated 30/60/90-day bucketing.
 
 ### Rule Validation tab
 

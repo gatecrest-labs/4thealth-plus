@@ -240,7 +240,14 @@ function renderHealthModal(deviceName, d) {
 
   const lic = d.license || {};
   const licStatus = lic.status || 'unknown';
-  const licColor  = licStatus === 'licensed' ? '#16a34a'
+  const _expiryColor = expires => {
+    if (!expires) return '#16a34a';
+    const days = Math.floor((new Date(expires) - Date.now()) / 86400000);
+    if (days < 30)  return '#dc2626';
+    if (days <= 90) return '#ca8a04';
+    return '#16a34a';
+  };
+  const licColor  = licStatus === 'licensed' ? _expiryColor(lic.expires)
                   : licStatus === 'expired'  ? '#dc2626'
                   : '#6b7280';
   const licLabel  = licStatus === 'licensed'
@@ -256,7 +263,7 @@ function renderHealthModal(deviceName, d) {
   const fgRows = FG_SUB_KEYS.map(key => {
     const sub = fgSubs[key] || {};
     const s   = sub.status || 'unknown';
-    const col = s === 'licensed' ? '#16a34a' : s === 'expired' ? '#dc2626' : '#6b7280';
+    const col = s === 'licensed' ? _expiryColor(sub.expires) : s === 'expired' ? '#dc2626' : '#6b7280';
     const lbl = s === 'licensed' ? 'Licensed' : s === 'expired' ? 'Expired' : s === 'none' ? 'No License' : 'Unknown';
     return `<tr><td>${escHtml(FG_SUB_LABELS[key])}</td><td><span style="color:${col};font-weight:600">&#x25cf; ${escHtml(lbl)}</span></td><td style="color:var(--text-muted)">${escHtml(sub.expires || '—')}</td></tr>`;
   }).join('');
