@@ -53,7 +53,7 @@ def _parse_subscriptions(results: dict, now: float) -> dict:
         is_real_number = isinstance(expires_ts, (int, float)) and not isinstance(
             expires_ts, bool
         )
-        if status == "licensed":
+        if status in ("licensed", "expires_soon"):
             if is_real_number and expires_ts and expires_ts <= now:
                 subscriptions[key] = {"status": "expired", "expires": None}
             elif is_real_number and expires_ts:
@@ -79,9 +79,14 @@ def parse_license_payload(raw_payload: dict | None) -> dict:
 
     Returns {"status": "licensed" | "expired" | "unknown", "expires":
     "YYYY-MM-DD" | None, "subscriptions": {key: {"status", "expires"},
-    ...}}. "unknown" covers every failure mode for the FortiCare support
-    status: missing/malformed forticare block, a non-"licensed" status
-    string, or a "licensed" status with no expires timestamp — never
+    ...}}. FortiOS reports "expires_soon" (not just "licensed") once a
+    contract is inside its renewal window — treated identically to
+    "licensed" here since the device is still fully licensed, just due for
+    renewal; the expiry date itself is what actually communicates urgency
+    (see app.license_status_cache.compute_expiring_soon()). "unknown"
+    covers every other failure mode for the FortiCare support status:
+    missing/malformed forticare block, an unrecognized status string, or a
+    "licensed"/"expires_soon" status with no expires timestamp — never
     fabricated. "subscriptions" is always present (each key defaults to
     "unknown" when its entry is missing/malformed) regardless of whether
     the FortiCare block itself parsed.
@@ -104,7 +109,7 @@ def parse_license_payload(raw_payload: dict | None) -> dict:
     is_real_number = isinstance(expires_ts, (int, float)) and not isinstance(
         expires_ts, bool
     )
-    if status == "licensed" and is_real_number and expires_ts:
+    if status in ("licensed", "expires_soon") and is_real_number and expires_ts:
         if expires_ts > now:
             exp_str = datetime.fromtimestamp(expires_ts, tz=UTC).strftime("%Y-%m-%d")
             return {

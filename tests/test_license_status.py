@@ -22,6 +22,29 @@ def test_licensed_with_future_expiry():
     assert result["subscriptions"] == _NO_SUBS
 
 
+def test_expires_soon_with_future_expiry_is_treated_as_licensed():
+    future_ts = int(time.time()) + 86400 * 20
+    payload = {
+        "forticare": {
+            "support": {"enhanced": {"status": "expires_soon", "expires": future_ts}}
+        }
+    }
+    result = parse_license_payload(payload)
+    assert result["status"] == "licensed"
+    assert result["expires"] is not None
+
+
+def test_expires_soon_with_past_expiry_is_expired():
+    past_ts = int(time.time()) - 86400
+    payload = {
+        "forticare": {
+            "support": {"enhanced": {"status": "expires_soon", "expires": past_ts}}
+        }
+    }
+    result = parse_license_payload(payload)
+    assert result == {"status": "expired", "expires": None, "subscriptions": _NO_SUBS}
+
+
 def test_licensed_but_expiry_in_past_is_expired():
     past_ts = int(time.time()) - 86400
     payload = {
@@ -117,6 +140,14 @@ def test_subscription_licensed_with_future_expiry():
     other_keys = [k for k in FORTIGUARD_SUBSCRIPTION_KEYS if k != "antivirus"]
     for key in other_keys:
         assert result["subscriptions"][key] == {"status": "unknown", "expires": None}
+
+
+def test_subscription_expires_soon_with_future_expiry_is_treated_as_licensed():
+    future_ts = int(time.time()) + 86400 * 20
+    payload = {"ips": {"status": "expires_soon", "expires": future_ts}}
+    result = parse_license_payload(payload)
+    assert result["subscriptions"]["ips"]["status"] == "licensed"
+    assert result["subscriptions"]["ips"]["expires"] is not None
 
 
 def test_subscription_licensed_with_past_expiry_is_expired():

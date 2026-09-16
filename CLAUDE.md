@@ -421,14 +421,34 @@ the daily sweep above.
 
 **Multi-VDOM `mgt_vdom` fallback:** `FMGClient.get_device_license_status()`
 takes an optional `vdom` argument (appends `?vdom=<vdom>` to the proxy
-path). The daily sweep's `_fetch_one()` calls it without a VDOM first
-(FortiOS's implicit default is root); if that comes back empty, it retries
-once against the device roster's own `mgt_vdom` field (skipped when
-`mgt_vdom` is missing or already `"root"`) — multi-VDOM devices whose
+path). Every path that fetches license status calls it without a VDOM
+first (FortiOS's implicit default is root); if that comes back empty, it
+retries once against the device roster's own `mgt_vdom` field (skipped
+when `mgt_vdom` is missing or already `"root"`) — multi-VDOM devices whose
 management VDOM isn't root otherwise show "Unknown" license status even
-though the data exists, just not under root. The live single-device path
-(`_assemble_health()`) does not have this fallback yet — only the sweep
-does.
+though the data exists, just not under root. This applies to both the
+daily sweep's `_fetch_one()` (`app/license_status_cache.py`) and the live
+single-device path — `device_health()` and `device_health_stream()`
+(`app/routes/api_routes.py`) both retry the same way before calling
+`_assemble_health()`, wrapping the retried payload back into the
+`{"payload": ...}` shape `_assemble_health()`'s internal `payload()`
+helper expects.
+
+**`expires_soon` treated as licensed:** FortiOS reports a FortiCare/
+FortiGuard subscription's status as `"expires_soon"` (not `"licensed"`)
+once its contract enters the renewal window — `app/license_status.py`
+treats it identically to `"licensed"` (the device/subscription is still
+fully licensed; the `expires` date itself, not the status string, is what
+communicates urgency — see the Device Versions tab's "Expiring Soon" donut
+and the executive-summary `devices_expiring_30/60/90` fields above).
+Since a "licensed" status can now mean "renewing soon" per the above, the
+Firewalls tab's live detail modal (`firewalls.js::renderHealthModal()`)
+colors the License badge and each FortiGuard Subscriptions row by days
+until `expires` rather than a flat green: red if `<30` days, amber
+(`#ca8a04`) if `<=90`, green otherwise (`<=0` — i.e. no `expires` date —
+also green, since an unbounded license has no expiry to warn about). Local
+to that live path only — the Device Versions tab's donut charts already
+have their own dedicated 30/60/90-day bucketing.
 
 ### Rule Validation tab
 
