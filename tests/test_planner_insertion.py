@@ -7,13 +7,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.planner.insertion import plan_insertion
 from app.planner.matching import (
     AddressCatalog,
     PolicyMatcher,
     ServiceCatalog,
     parse_service_request,
 )
-from app.planner.insertion import plan_insertion
 
 
 def _matcher():

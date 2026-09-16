@@ -1,7 +1,8 @@
 import os
 import time
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("FMG_PRIMARY_HOST", "127.0.0.1")

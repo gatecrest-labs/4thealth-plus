@@ -357,6 +357,67 @@ separate PSIRT toggle.
 No persistence — each assessment is a one-off analysis, same as NAT Lookup
 and Rule Validation's AI Assist.
 
+### Device Versions tab
+
+`GET /versions` → `versions.html` + `versions.js` (tab key: `versions`)
+
+Two independent sections:
+
+1. **Device Version** (top) — global all-ADOM firmware version bar chart
+   (pre-warmed cache, `app/versions_cache.py`) + per-ADOM version bar chart.
+   Select an ADOM from the dropdown; click a bar to list devices on that
+   version.
+2. **License Status** (below) — SVG donut charts showing Licensed / Expired
+   / Unknown device counts for the selected ADOM (or fleet-wide when no
+   ADOM is selected), plus a second "Expiring Soon" donut bucketing
+   licensed devices with a known expiry into ≤30 / 31–90 / >90 days. Click
+   a slice or legend item to expand a paginated, exportable (CSV/JSON/PDF)
+   device list (Device, Status, Expires, Firmware, ADOM). A **Refresh**
+   button triggers an immediate sweep.
+3. **FortiGuard Subscriptions** (below License Status) — a mini-donut card
+   per subscription type (Antivirus, IPS, Web Filtering, App Control,
+   Anti-Spam, Outbreak Prevention, Firmware Updates, FortiCloud Sandbox —
+   `FORTIGUARD_SUBSCRIPTION_KEYS` in `app/license_status.py`) showing
+   Licensed / Expired / No License counts across the same device set as
+   the License Status section above. Click a card's slice or legend to
+   expand the same paginated/exportable device-list pattern. Shown only
+   once at least one device's `all_devices` record carries a non-empty
+   `subscriptions` dict — this is the same sweep, not a separate fetch.
+
+**Data source — deliberately reuses `app/license_status_cache.py` rather
+than adding a second sweep:** that module already runs a daily,
+per-device fleet sweep for the `/external/api/executive/summary` payload
+(see External API section above) — the only per-device call FortiOS
+exposes for license status, hence the daily (not 15-minute) cadence. Its
+`_classify_devices()` now also returns an `all_devices` list (every
+device, every status, `{device, adom, status, expires, firmware,
+subscriptions}`) rather than only the non-licensed `details` the
+executive summary uses; `firmware` is built from the same
+`os_ver`/`mr`/`patch` roster fields `app/versions_cache.py` uses.
+`subscriptions` (`{key: {status, expires}}`, one entry per
+`FORTIGUARD_SUBSCRIPTION_KEYS` member) comes from the same
+`app/license_status.py::parse_license_payload()` call already made for
+the FortiCare licensed/expired/unknown classification — FortiOS returns
+both in one `/api/v2/monitor/license/status` response, so no extra FMG
+call. Adding a second, independently-scheduled per-device sweep for this
+tab would double the FMG load of the one expensive call this module
+exists to amortize — so the tab's **Refresh** button calls the *same*
+`license_status_cache.refresh_now()` used fleet-wide, and both consumers
+(this tab and the executive summary) always see the same underlying
+sweep result.
+
+**API endpoints** (all `@tab_required("versions")`):
+- `GET  /api/devices/all/license` — fleet-wide `all_devices`, ADOM-access filtered
+- `POST /api/devices/all/license/refresh` — trigger an immediate sweep (non-blocking)
+- `GET  /api/adoms/<adom>/license` — `all_devices` filtered to one ADOM (`check_adom_access` enforced)
+
+**FortiGuard Subscriptions table on the Firewalls tab:** the same
+`parse_license_payload()` `subscriptions` dict is also rendered as a table
+in the firewall detail modal (`app/static/js/firewalls.js::renderHealthModal()`),
+sourced from the live (not cached) `payload("license_status")` call
+`_assemble_health()` already makes for the License badge — no relation to
+the daily sweep above.
+
 ### Rule Validation tab
 
 `GET /rule-review` → `rule_review.html` + `rule_review.js`
@@ -692,7 +753,7 @@ Provides read-only zone policy access to external programs (e.g. FW-Analyst) via
 - `POST /external/api/zone/query` — same payload/response as internal `/api/zone/query`
 - `GET  /external/api/zone/zones` — zone list
 - `GET  /external/api/zone/policies` — policy list
-- `GET  /external/api/executive/summary` — fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance %, pending config-diff count, firewall online count/total); backed by `app/executive_summary_cache.py`, which runs TWO independent scheduled sweeps at different cadences — a cheap device sweep (online count, version compliance, pending diffs; default every 15 min, `EXEC_SUMMARY_REFRESH_MINUTES`) and an expensive hygiene sweep (downloads every policy in every ADOM; default every 60 min, `EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES` — raise this in large environments to reduce FMG load). Each sweep only updates its own fields in the shared store, so a slow hygiene sweep never blanks out fresh device data. The payload also includes `lifecycle` (hardware EOS, from the device sweep), `change_control` (admin audit-log aggregation, hourly), `psirt` (persisted advisory exposure), and `device_backup` (see below) — each sourced from its own independent module/cadence, not the device sweep's 15-min loop.
+- `GET  /external/api/executive/summary` — fleet-wide metrics for the 4tExecutive dashboard (hygiene score, version compliance %, pending config-diff count, firewall online count/total); backed by `app/executive_summary_cache.py`, which runs TWO independent scheduled sweeps at different cadences — a cheap device sweep (online count, version compliance, pending diffs; default every 15 min, `EXEC_SUMMARY_REFRESH_MINUTES`) and an expensive hygiene sweep (downloads every policy in every ADOM; default every 60 min, `EXEC_SUMMARY_HYGIENE_REFRESH_MINUTES` — raise this in large environments to reduce FMG load). Each sweep only updates its own fields in the shared store, so a slow hygiene sweep never blanks out fresh device data. The payload also includes `lifecycle` (hardware EOS, from the device sweep), `change_control` (admin audit-log aggregation, hourly), `psirt` (persisted advisory exposure), `device_backup`, and `license_status` (see below) — each sourced from its own independent module/cadence, not the device sweep's 15-min loop.
 
 **CSRF:** `/external/api/` requests are exempt from CSRF validation (bearer token is the auth mechanism, no session cookie exists).
 
@@ -701,6 +762,7 @@ Provides read-only zone policy access to external programs (e.g. FW-Analyst) via
 - `app/api_tokens.py` — token create/list/revoke/validate; tokens stored as SHA-256 hashes
 - `app/executive_summary_cache.py` — background sweep computing the four executive-summary metrics; same pending|running|ok|error store pattern as `summary_job.py`
 - `app/device_backup_cache.py` — daily sweep (`DEVICE_BACKUP_REFRESH_HOUR`/`_MINUTE`, default 02:00 local) computing device configuration backup age fleet-wide, feeding the `device_backup` executive-summary key: `{devices_backup_ok, devices_backup_stale_7d, devices_backup_never, collected_at}`. One `FMGClient.get_devices(adom)` call plus one `FMGClient.get_adom_revisions(adom)` call per non-forti\* ADOM (not per device — the revision endpoint is ADOM-scoped and returns every device's revisions in one list). `get_adom_revisions()`/`get_device_last_revision()` in `app/fmg_client.py` wrap `GET /dvmdb/adom/<adom>/revision` — confirmed live against a lab FMG-VM64-KVM (v7.6.7-build3737) on 2026-09-11; each revision's `name` field embeds the device name as a literal `<device>-` prefix (e.g. `FortiWiFi-71G-New_2026-08-27-07-03-18-PDT`), used to match revisions to devices. Only one real revision was observed in the lab (single device, single snapshot) — see `docs/superpowers/specs/2026-09-10-device-backup-age-spike.md` for the original spike and its resolution. Persisted to `device_backup.json` (gitignored, project root) after every successful sweep, same atomic-write/single-latest-record pattern as `app/change_control_cache.py`; a failed sweep leaves the prior result in place.
+- `app/license_status_cache.py` — daily sweep (`DEVICE_LICENSE_REFRESH_HOUR`/`_MINUTE`, default 03:00 local — staggered after `device_backup`'s 02:00) computing fleet-wide FortiGate license status, feeding the `license_status` executive-summary key: `{devices_licensed, devices_expired, devices_unknown, details, devices_expiring_30, devices_expiring_60, devices_expiring_90, expiring_soon, collected_at}`. Unlike `device_backup_cache`'s one-call-per-ADOM bulk revision fetch, license status has no bulk FMG endpoint — one `FMGClient.get_device_license_status(adom, device)` proxy call per device, fetched with a 4-worker thread pool per ADOM (same concurrency pattern as `bulk_device_review_adom()`). `details` lists only non-`"licensed"` devices (expired or unknown), same "surface problems, not clean state" convention as `models_unknown`. `devices_expiring_30/60/90` and `expiring_soon` (`[{device, adom, expires, days_until}]`, sorted soonest-first) are a 30/60/90-day cumulative lookahead over currently-licensed devices — same "within N" convention as `lifecycle.devices_hw_eos_12m` below — computed by `license_status_cache.compute_expiring_soon()` from the sweep's full `all_devices` list *at request time* (not persisted alongside the sweep, so "days until" is always current) and consumed by 4tExecutive's Lifecycle & Support domain. Shares `app/license_status.py::parse_license_payload()` with the firewall detail panel's live license badge so both paths classify licenses identically. The [Device Versions tab](#device-versions-tab)'s License Status section reads the same sweep's `all_devices` (every device, every status, with firmware) directly via `app/routes/api_routes.py`, not through this executive-summary path. Persisted to `license_status.json` (gitignored, project root) after every successful sweep, same atomic-write/single-latest-record pattern as `app/device_backup_cache.py`; a failed sweep leaves the prior result in place.
 
 **Admin endpoints added to `admin_routes.py`:**
 - `GET/PUT /admin/api/settings` — get/set `external_api_enabled` and `executive_compliant_versions`

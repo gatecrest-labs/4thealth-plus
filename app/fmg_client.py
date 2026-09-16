@@ -1414,6 +1414,18 @@ class FMGClient:
         except Exception:
             return []
 
+    def get_device_license_status(self, adom: str, device_name: str) -> dict:
+        """Return the raw /api/v2/monitor/license/status proxy payload for
+        one device, or {} on any error (including a non-dict payload) —
+        callers pass this straight into app.license_status.parse_license_payload(),
+        which already treats {} as "unknown" rather than crashing."""
+        try:
+            r = self._proxy(adom, device_name, "/api/v2/monitor/license/status")
+            payload = r.get("payload", {})
+            return payload if isinstance(payload, dict) else {}
+        except Exception:
+            return {}
+
     def get_device_system_global(self, adom: str, device_name: str) -> dict:
         """Return system/global config from the device via FMG proxy."""
         try:

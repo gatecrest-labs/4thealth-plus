@@ -16,6 +16,36 @@ let globalSelVer    = null; // selected version in the global chart
 let globalDetPage   = 1;
 let globalDetSize   = 10;
 
+/* ── License state ─────────────────────────────────────────────────────── */
+let licenseDevices   = [];
+let licenseSelStatus = null;
+let licenseSelExpiry = null;   // 'within30' | 'within90' | 'beyond90' | null
+let licenseDetPage   = 1;
+let licenseDetSize   = 20;
+
+/* ── FortiGuard subscription state ──────────────────────────────────── */
+let fgDevices   = [];
+let fgSelSub    = null;
+let fgSelStatus = null;
+let fgDetPage   = 1;
+let fgDetSize   = 20;
+
+const FG_KEYS = [
+  'antivirus', 'ips', 'web_filtering', 'appctrl',
+  'antispam', 'outbreak_prevention', 'firmware_updates', 'forticloud_sandbox',
+];
+const FG_LABELS = {
+  antivirus:           'Antivirus (AV)',
+  ips:                 'IPS / NIDS',
+  web_filtering:       'Web Filtering',
+  appctrl:             'App Control',
+  antispam:            'Anti-Spam',
+  outbreak_prevention: 'Outbreak Prevention',
+  firmware_updates:    'Firmware Updates',
+  forticloud_sandbox:  'FortiCloud Sandbox',
+};
+const FG_STATUS_DISPLAY = { licensed: 'Licensed', expired: 'Expired', none: 'No License', unknown: 'Unknown' };
+
 /* ── Version sort helper ───────────────────────────────────────────────── */
 function sortedVersionEntries(counts) {
   return Object.entries(counts).sort((a, b) => {
@@ -374,6 +404,7 @@ async function loadVersions(adom) {
 
   const container = document.getElementById('versionsContent');
   container.innerHTML = '<div class="loading-placeholder">Loading devices…</div>';
+  loadLicenseStatus(adom);
   try {
     const resp = await fetch(`/api/adoms/${encodeURIComponent(adom)}/devices`);
     if (resp.status === 401) { location.href = '/login'; return; }
@@ -575,6 +606,647 @@ function exportData(format, devices) {
   URL.revokeObjectURL(url);
 }
 
+/* ── License donut chart ───────────────────────────────────────────────── */
+function buildDonutSVG(licensed, expired, unknown) {
+  const total = licensed + expired + unknown;
+  if (total === 0) return '<p class="text-muted">No data</p>';
+
+  const r = 54;
+  const cx = 70;
+  const cy = 70;
+  const circumference = 2 * Math.PI * r;
+
+  const counts  = [licensed, expired, unknown];
+  const colours = ['#28a745', '#dc3545', '#ffc107'];
+  const labels  = ['Licensed', 'Expired', 'Unknown'];
+
+  let offset = 0;
+  const arcs = counts.map((c, i) => {
+    const dash   = ((c / total) * circumference).toFixed(2);
+    const gap    = (circumference - dash).toFixed(2);
+    const rotate = ((offset / total) * 360).toFixed(2);
+    offset += c;
+    return `<circle
+      cx="${cx}" cy="${cy}" r="${r}"
+      fill="none"
+      stroke="${colours[i]}"
+      stroke-width="18"
+      stroke-dasharray="${dash} ${gap}"
+      transform="rotate(${rotate - 90} ${cx} ${cy})"
+      data-status="${labels[i].toLowerCase()}"
+      style="cursor:pointer"
+      title="${labels[i]}: ${c}"
+    />`;
+  }).join('');
+
+  const legendItems = counts.map((c, i) =>
+    `<span class="lic-legend-item" data-status="${labels[i].toLowerCase()}" style="cursor:pointer">
+       <span class="lic-dot" style="background:${colours[i]}"></span>
+       ${escHtml(labels[i])} <strong>${c}</strong>
+     </span>`
+  ).join('');
+
+  return `
+<div class="lic-donut-wrap">
+  <svg width="140" height="140" viewBox="0 0 140 140" aria-hidden="true">
+    ${arcs}
+    <text x="${cx}" y="${cy + 6}" text-anchor="middle" font-size="16" font-weight="bold" fill="currentColor">${total}</text>
+  </svg>
+  <div class="lic-legend">${legendItems}</div>
+</div>`;
+}
+
+/* ── Expiring-soon donut (licensed devices, three expiry brackets) ────────── */
+function buildExpiryDonutSVG(within30, within90, beyond90) {
+  const total = within30 + within90 + beyond90;
+  if (total === 0) return '<p style="font-size:.85em;color:var(--text-muted)">No expiry data</p>';
+
+  const r = 54, cx = 70, cy = 70;
+  const circumference = 2 * Math.PI * r;
+
+  const counts  = [within30, within90, beyond90];
+  const colours = ['#dc3545', '#fd7e14', '#28a745'];
+  const labels  = ['≤30 days', '31–90 days', '>90 days'];
+  const keys    = ['within30', 'within90', 'beyond90'];
+
+  let offset = 0;
+  const arcs = counts.map((c, i) => {
+    const dash   = ((c / total) * circumference).toFixed(2);
+    const gap    = (circumference - dash).toFixed(2);
+    const rotate = ((offset / total) * 360).toFixed(2);
+    offset += c;
+    return `<circle
+      cx="${cx}" cy="${cy}" r="${r}"
+      fill="none"
+      stroke="${colours[i]}"
+      stroke-width="18"
+      stroke-dasharray="${dash} ${gap}"
+      transform="rotate(${rotate - 90} ${cx} ${cy})"
+      data-status="${keys[i]}"
+      style="cursor:pointer"
+      title="${labels[i]}: ${c}"
+    />`;
+  }).join('');
+
+  const legendItems = counts.map((c, i) =>
+    `<span class="lic-legend-item" data-status="${keys[i]}" style="cursor:pointer">
+       <span class="lic-dot" style="background:${colours[i]}"></span>
+       ${escHtml(labels[i])} <strong>${c}</strong>
+     </span>`
+  ).join('');
+
+  return `
+<div class="lic-donut-wrap">
+  <svg width="140" height="140" viewBox="0 0 140 140" aria-hidden="true">
+    ${arcs}
+    <text x="${cx}" y="${cy + 6}" text-anchor="middle" font-size="16" font-weight="bold" fill="currentColor">${total}</text>
+  </svg>
+  <div class="lic-legend">${legendItems}</div>
+</div>`;
+}
+
+/* ── FortiGuard mini-donut (per-subscription card) ───────────────────────── */
+function buildMiniDonutSVG(licensed, expired, noLicense, subKey) {
+  const total = licensed + expired + noLicense;
+  const r = 36, cx = 45, cy = 45;
+  const circ = 2 * Math.PI * r;
+  const counts   = [licensed, expired, noLicense];
+  const colours  = ['#28a745', '#dc3545', '#6c757d'];
+  const statuses = ['licensed', 'expired', 'none'];
+
+  let offset = 0;
+  const arcs = total === 0
+    ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border)" stroke-width="11"/>`
+    : counts.map((c, i) => {
+        if (c === 0) { offset += c; return ''; }
+        const dash   = ((c / total) * circ).toFixed(2);
+        const gap    = (circ - dash).toFixed(2);
+        const rotate = ((offset / total) * 360).toFixed(2);
+        offset += c;
+        return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${colours[i]}" stroke-width="11"
+          stroke-dasharray="${dash} ${gap}" transform="rotate(${rotate - 90} ${cx} ${cy})"
+          data-subkey="${subKey}" data-status="${statuses[i]}" style="cursor:pointer"/>`;
+      }).join('');
+
+  const legend = counts.map((c, i) =>
+    `<span class="lic-legend-item" data-subkey="${subKey}" data-status="${statuses[i]}" style="font-size:.82em;cursor:pointer">
+       <span class="lic-dot" style="background:${colours[i]}"></span><strong>${c}</strong>
+     </span>`
+  ).join('');
+
+  return `<div class="lic-donut-wrap" style="gap:.6rem">
+  <svg width="90" height="90" viewBox="0 0 90 90" aria-hidden="true">
+    ${arcs}
+    <text x="${cx}" y="${cy + 5}" text-anchor="middle" font-size="13" font-weight="bold" fill="currentColor">${total}</text>
+  </svg>
+  <div class="lic-legend" style="gap:.25rem">${legend}</div>
+</div>`;
+}
+
+/* ── FortiGuard subscription grid ────────────────────────────────────────── */
+function renderFortiGuardSection(data, adom) {
+  const container = document.getElementById('fortiGuardContent');
+  if (!container) return;
+
+  fgSelSub  = null; fgSelStatus = null; fgDetPage = 1;
+  fgDevices = data.devices || [];
+
+  if (fgDevices.length === 0) { container.innerHTML = ''; return; }
+
+  const hasSubs = fgDevices.some(d => d.subscriptions && Object.keys(d.subscriptions).length > 0);
+  if (!hasSubs) {
+    container.innerHTML = `
+<div class="table-wrapper" style="margin-top:1rem">
+  <div class="table-controls"><strong>FortiGuard Subscriptions</strong></div>
+  <p style="padding:1rem;color:var(--text-muted);font-size:.9em">
+    Subscription data not yet loaded. Click &#8635; Refresh in the License Status card above to fetch it.
+  </p>
+</div>`;
+    return;
+  }
+
+  // Aggregate counts per subscription
+  const counts = {};
+  for (const key of FG_KEYS) counts[key] = { licensed: 0, expired: 0, none: 0 };
+  for (const d of fgDevices) {
+    const subs = d.subscriptions || {};
+    for (const key of FG_KEYS) {
+      const s = (subs[key] || {}).status || 'unknown';
+      if (s === 'licensed') counts[key].licensed++;
+      else if (s === 'expired') counts[key].expired++;
+      else counts[key].none++;
+    }
+  }
+
+  const cards = FG_KEYS.map(key => {
+    const c = counts[key];
+    return `<div class="fg-card" data-subkey="${key}">
+  <div class="fg-card-title">${escHtml(FG_LABELS[key])}</div>
+  ${buildMiniDonutSVG(c.licensed, c.expired, c.none, key)}
+</div>`;
+  }).join('');
+
+  container.innerHTML = `
+<div class="table-wrapper" style="margin-top:1rem">
+  <div class="table-controls">
+    <strong>FortiGuard Subscriptions</strong>
+    <div class="table-controls-right">
+      <span style="color:var(--text-muted);font-size:.85em">Click a slice or legend item to list devices.</span>
+    </div>
+  </div>
+  <div class="fg-grid">${cards}</div>
+</div>
+<div id="fgListContent"></div>`;
+
+  container.addEventListener('click', e => {
+    const target = e.target.closest('[data-subkey]');
+    if (!target) return;
+    const sub    = target.dataset.subkey;
+    const status = target.dataset.status || null;
+    if (fgSelSub === sub && fgSelStatus === status) {
+      fgSelSub = null; fgSelStatus = null;
+    } else {
+      fgSelSub = sub; fgSelStatus = status;
+    }
+    fgDetPage = 1;
+    container.querySelectorAll('.fg-card').forEach(c =>
+      c.classList.toggle('fg-active', c.dataset.subkey === fgSelSub)
+    );
+    renderFortiGuardList();
+  });
+}
+
+/* ── FortiGuard device list ──────────────────────────────────────────────── */
+function renderFortiGuardList() {
+  const listEl = document.getElementById('fgListContent');
+  if (!listEl) return;
+  if (!fgSelSub) { listEl.innerHTML = ''; return; }
+
+  const filtered = fgDevices.filter(d => {
+    const s = ((d.subscriptions || {})[fgSelSub] || {}).status || 'unknown';
+    const bucket = (s === 'none' || s === 'unknown') ? 'none' : s;
+    return fgSelStatus === null || bucket === fgSelStatus || s === fgSelStatus;
+  });
+
+  const total = filtered.length;
+  const start = (fgDetPage - 1) * fgDetSize;
+  const page  = filtered.slice(start, start + fgDetSize);
+
+  const subLabel = FG_LABELS[fgSelSub] || fgSelSub;
+  const heading  = fgSelStatus
+    ? `${escHtml(subLabel)} — ${escHtml(FG_STATUS_DISPLAY[fgSelStatus] || fgSelStatus)}`
+    : escHtml(subLabel);
+
+  const colourMap = { licensed: '#28a745', expired: '#dc3545', none: '#6c757d', unknown: '#6c757d' };
+
+  const rows = page.map(d => {
+    const sub    = ((d.subscriptions || {})[fgSelSub] || {});
+    const s      = sub.status || 'unknown';
+    const bucket = (s === 'none' || s === 'unknown') ? 'none' : s;
+    const colour = colourMap[bucket] || '#6c757d';
+    const label  = FG_STATUS_DISPLAY[s] || s;
+    return `<tr>
+  <td>${escHtml(d.device)}</td>
+  <td><span style="color:${colour};font-weight:600">${escHtml(label)}</span></td>
+  <td>${escHtml(sub.expires || '—')}</td>
+  <td>${escHtml(d.firmware || 'n/a')}</td>
+  <td>${escHtml(d.adom || '—')}</td>
+</tr>`;
+  }).join('');
+
+  const totalPages  = Math.max(1, Math.ceil(total / fgDetSize));
+  const sizeOptions = [10, 20, 25, 50].map(n =>
+    `<option value="${n}" ${n === fgDetSize ? 'selected' : ''}>${n}</option>`
+  ).join('');
+
+  listEl.innerHTML = `
+<div class="table-wrapper" style="margin-top:1rem">
+  <div class="table-controls">
+    <span>Showing: <strong>${heading}</strong> (${total} device${total !== 1 ? 's' : ''})</span>
+    <div class="table-controls-right">
+      <button class="btn btn-sm btn-secondary" onclick="exportFGData('csv')">CSV</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportFGData('json')">JSON</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportFGData('pdf')">PDF</button>
+    </div>
+  </div>
+  <table class="data-table">
+    <thead><tr><th>Device</th><th>Status</th><th>Expires</th><th>Firmware</th><th>ADOM</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="5" style="padding:.75rem 1rem;text-align:center">No devices</td></tr>'}</tbody>
+  </table>
+  <div class="table-controls">
+    <div id="fgPagination">${renderFGPagination(fgDetPage, totalPages)}</div>
+    <div class="table-controls-right">
+      <span style="font-size:.85em">Per page:</span>
+      <select id="fgSizeSelect" class="form-select-sm">${sizeOptions}</select>
+    </div>
+  </div>
+</div>`;
+
+  document.getElementById('fgSizeSelect').addEventListener('change', e => {
+    fgDetSize = parseInt(e.target.value, 10); fgDetPage = 1; renderFortiGuardList();
+  });
+  listEl.querySelectorAll('[data-fgpage]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = parseInt(btn.dataset.fgpage, 10);
+      if (!isNaN(p) && p !== fgDetPage) { fgDetPage = p; renderFortiGuardList(); }
+    });
+  });
+}
+
+/* ── FortiGuard pagination ───────────────────────────────────────────────── */
+function renderFGPagination(current, total) {
+  if (total <= 1) return '';
+  function fgBtn(label, page, disabled, active) {
+    return `<button class="pg-btn${active ? ' active' : ''}" data-fgpage="${page}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+  }
+  let h = fgBtn('&laquo;&laquo;', 1, current === 1, false) + fgBtn('&lsaquo;', current - 1, current === 1, false);
+  const s = Math.max(1, current - 2), e = Math.min(total, s + 4);
+  for (let i = s; i <= e; i++) h += fgBtn(i, i, false, i === current);
+  h += fgBtn('&rsaquo;', current + 1, current === total, false) + fgBtn('&raquo;&raquo;', total, current === total, false);
+  return `<div class="pagination">${h}</div>`;
+}
+
+/* ── FortiGuard data export ──────────────────────────────────────────────── */
+function exportFGData(format) {
+  if (!fgSelSub) return;
+  const subLabel = FG_LABELS[fgSelSub] || fgSelSub;
+  const rows = fgDevices.filter(d => {
+    const s = ((d.subscriptions || {})[fgSelSub] || {}).status || 'unknown';
+    const bucket = (s === 'none' || s === 'unknown') ? 'none' : s;
+    return fgSelStatus === null || bucket === fgSelStatus || s === fgSelStatus;
+  });
+
+  const safeAdom   = (currentAdom || 'all').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const safeSub    = fgSelSub.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const safeStatus = (fgSelStatus || 'all').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const date = new Date().toISOString().slice(0, 10);
+  const base = `fortiguard_${safeAdom}_${safeSub}_${safeStatus}_${date}`;
+
+  if (format === 'csv') {
+    const header = 'Device,Subscription,Status,Expires,Firmware,ADOM';
+    const lines = rows.map(d => {
+      const sub = ((d.subscriptions || {})[fgSelSub] || {});
+      return [d.device, subLabel, sub.status || 'unknown', sub.expires || '', d.firmware || '', d.adom]
+        .map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+    });
+    const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `${base}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  } else if (format === 'json') {
+    const out = rows.map(d => {
+      const sub = ((d.subscriptions || {})[fgSelSub] || {});
+      return { device: d.device, subscription: subLabel, status: sub.status || 'unknown', expires: sub.expires || null, firmware: d.firmware, adom: d.adom };
+    });
+    const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `${base}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  } else if (format === 'pdf') {
+    const filterLabel = fgSelStatus ? `${subLabel} — ${FG_STATUS_DISPLAY[fgSelStatus] || fgSelStatus}` : subLabel;
+    const tableRows = rows.map(d => {
+      const sub  = ((d.subscriptions || {})[fgSelSub] || {});
+      const sLbl = FG_STATUS_DISPLAY[sub.status || 'unknown'] || sub.status || 'Unknown';
+      return `<tr><td>${escHtml(d.device)}</td><td>${escHtml(sLbl)}</td><td>${escHtml(sub.expires || '—')}</td><td>${escHtml(d.firmware || 'n/a')}</td><td>${escHtml(d.adom || '—')}</td></tr>`;
+    }).join('');
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><title>${base}</title>
+<style>body{font-family:sans-serif;font-size:12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 8px}th{background:#f0f0f0}</style>
+</head><body>
+<h2>FortiGuard Subscriptions — ${escHtml(filterLabel)}</h2>
+<p>ADOM: ${escHtml(currentAdom || 'all')} &nbsp;|&nbsp; Generated: ${new Date().toLocaleString()}</p>
+<table><thead><tr><th>Device</th><th>Status</th><th>Expires</th><th>Firmware</th><th>ADOM</th></tr></thead>
+<tbody>${tableRows}</tbody></table>
+</body></html>`);
+    win.document.close(); win.print();
+  }
+}
+
+function loadLicenseStatus(adom) {
+  const container = document.getElementById('licenseContent');
+  if (!container) return;
+  container.innerHTML = '<p class="text-muted" style="padding:1rem">Loading license data…</p>';
+
+  const url = adom
+    ? `/api/adoms/${encodeURIComponent(adom)}/license`
+    : '/api/devices/all/license';
+
+  fetch(url)
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then(data => {
+      renderLicenseSection(data, adom);
+      renderFortiGuardSection(data, adom);
+    })
+    .catch(err => {
+      container.innerHTML = `<p style="padding:1rem;color:var(--danger)">Failed to load license data: ${escHtml(String(err))}</p>`;
+      const fg = document.getElementById('fortiGuardContent');
+      if (fg) fg.innerHTML = '';
+    });
+}
+
+function renderLicenseSection(data, adom) {
+  const container = document.getElementById('licenseContent');
+  if (!container) return;
+
+  licenseDevices   = data.devices || [];
+  licenseSelStatus = null;
+  licenseSelExpiry = null;
+  licenseDetPage   = 1;
+
+  const devices  = licenseDevices;
+  const licensed = devices.filter(d => d.status === 'licensed').length;
+  const expired  = devices.filter(d => d.status === 'expired').length;
+  const unknown  = devices.filter(d => d.status === 'unknown').length;
+
+  // Expiry buckets — licensed devices with a known expiry date only
+  const now = Date.now(), ms30 = 30 * 864e5, ms90 = 90 * 864e5;
+  const withExpiry = devices.filter(d => d.status === 'licensed' && d.expires);
+  const exWithin30 = withExpiry.filter(d => new Date(d.expires) - now <= ms30).length;
+  const exWithin90 = withExpiry.filter(d => { const df = new Date(d.expires) - now; return df > ms30 && df <= ms90; }).length;
+  const exBeyond90 = withExpiry.filter(d => new Date(d.expires) - now > ms90).length;
+  const showExpiry = withExpiry.length > 0;
+
+  const lastUpdated = data.last_updated
+    ? `Last updated: ${new Date(data.last_updated).toLocaleString()}`
+    : 'Not yet updated';
+  const cacheStatus = data.status === 'running' ? ' (refreshing…)' : '';
+
+  container.innerHTML = `
+<div class="table-wrapper" style="margin-top:1.5rem">
+  <div class="table-controls">
+    <strong>License Status</strong>
+    <div class="table-controls-right">
+      <span style="color:var(--text-muted);font-size:.85em">${escHtml(lastUpdated)}${escHtml(cacheStatus)}</span>
+      <button class="btn btn-sm btn-ghost" id="licRefreshBtn">&#8635; Refresh</button>
+    </div>
+  </div>
+  <div style="padding:1rem">
+    ${devices.length === 0
+      ? `<p style="color:var(--text-muted)">${data.status === 'pending' ? 'Cache is warming up — check back in a moment.' : 'No devices found.'}</p>`
+      : `<div style="display:flex;gap:3rem;flex-wrap:wrap;align-items:flex-start">
+           <div>
+             <div style="font-size:.78em;font-weight:600;color:var(--text-muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em">By License</div>
+             ${buildDonutSVG(licensed, expired, unknown)}
+           </div>
+           ${showExpiry ? `<div>
+             <div style="font-size:.78em;font-weight:600;color:var(--text-muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em">Expiring Soon</div>
+             ${buildExpiryDonutSVG(exWithin30, exWithin90, exBeyond90)}
+           </div>` : ''}
+         </div>`
+    }
+    <p style="margin-top:.5rem;color:var(--text-muted);font-size:.85em">Click a slice or legend item to list devices.</p>
+  </div>
+</div>
+<div id="licenseListContent"></div>`;
+
+  // Wire all slice/legend clicks — status keys vs expiry bracket keys
+  const statusKeys = new Set(['licensed', 'expired', 'unknown']);
+  container.querySelectorAll('[data-status]').forEach(el => {
+    el.addEventListener('click', () => {
+      const s = el.dataset.status;
+      if (statusKeys.has(s)) {
+        licenseSelStatus = (licenseSelStatus === s) ? null : s;
+        licenseSelExpiry = null;
+      } else {
+        licenseSelExpiry = (licenseSelExpiry === s) ? null : s;
+        licenseSelStatus = null;
+      }
+      licenseDetPage = 1;
+      renderLicenseList();
+    });
+  });
+
+  // Wire refresh button
+  document.getElementById('licRefreshBtn').addEventListener('click', () => {
+    fetch('/api/devices/all/license/refresh', { method: 'POST' })
+      .then(r => { if (!r.ok) throw new Error(r.status); })
+      .then(() => setTimeout(() => loadLicenseStatus(currentAdom), 2000))
+      .catch(err => console.warn('License refresh failed:', err));
+  });
+}
+
+/* ── License pagination helper (uses data-lpage to avoid clash with data-dpage) */
+function renderLicPagination(current, total) {
+  if (total <= 1) return '';
+  function licPgBtn(label, page, disabled, active) {
+    return `<button class="pg-btn${active ? ' active' : ''}" data-lpage="${page}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+  }
+  let h = licPgBtn('&laquo;&laquo;', 1, current === 1, false);
+  h    += licPgBtn('&lsaquo;', current - 1, current === 1, false);
+  const s = Math.max(1, current - 2), e = Math.min(total, s + 4);
+  for (let i = s; i <= e; i++) h += licPgBtn(i, i, false, i === current);
+  h += licPgBtn('&rsaquo;', current + 1, current === total, false);
+  h += licPgBtn('&raquo;&raquo;', total, current === total, false);
+  return `<div class="pagination">${h}</div>`;
+}
+
+/* ── License device list with pagination and export ─────────────────────── */
+function renderLicenseList() {
+  const listEl = document.getElementById('licenseListContent');
+  if (!listEl) return;
+
+  if (!licenseSelStatus && !licenseSelExpiry) {
+    listEl.innerHTML = '';
+    return;
+  }
+
+  const now = Date.now(), ms30 = 30 * 864e5, ms90 = 90 * 864e5;
+  const expiryMeta = {
+    within30: { label: 'Expiring ≤30 days',    colour: '#dc3545' },
+    within90: { label: 'Expiring 31–90 days',  colour: '#fd7e14' },
+    beyond90: { label: 'Expiring >90 days',    colour: '#28a745' },
+  };
+  const statusColours = { licensed: '#28a745', expired: '#dc3545', unknown: '#ffc107' };
+
+  let filtered, statusLabel, colour;
+  if (licenseSelExpiry) {
+    const meta = expiryMeta[licenseSelExpiry];
+    statusLabel = meta.label;
+    colour      = meta.colour;
+    filtered = licenseDevices.filter(d => {
+      if (d.status !== 'licensed' || !d.expires) return false;
+      const diff = new Date(d.expires) - now;
+      if (licenseSelExpiry === 'within30') return diff <= ms30;
+      if (licenseSelExpiry === 'within90') return diff > ms30 && diff <= ms90;
+      return diff > ms90;
+    });
+  } else {
+    statusLabel = licenseSelStatus.charAt(0).toUpperCase() + licenseSelStatus.slice(1);
+    colour      = statusColours[licenseSelStatus] || '#6c757d';
+    filtered    = licenseDevices.filter(d => d.status === licenseSelStatus);
+  }
+
+  const total    = filtered.length;
+  const start    = (licenseDetPage - 1) * licenseDetSize;
+  const page     = filtered.slice(start, start + licenseDetSize);
+
+  const rows = page.map(d => `
+<tr>
+  <td>${escHtml(d.device)}</td>
+  <td><span style="color:${colour};font-weight:600">${escHtml(statusLabel)}</span></td>
+  <td>${escHtml(d.expires || '—')}</td>
+  <td>${escHtml(d.firmware || 'n/a')}</td>
+  <td>${escHtml(d.adom || '—')}</td>
+</tr>`).join('');
+
+  const totalPages = Math.max(1, Math.ceil(total / licenseDetSize));
+
+  const sizeOptions = [10, 20, 25, 50].map(n =>
+    `<option value="${n}" ${n === licenseDetSize ? 'selected' : ''}>${n}</option>`
+  ).join('');
+
+  listEl.innerHTML = `
+<div class="table-wrapper" style="margin-top:1rem">
+  <div class="table-controls">
+    <span>Showing: <strong>${escHtml(statusLabel)}</strong> (${total} device${total !== 1 ? 's' : ''})</span>
+    <div class="table-controls-right">
+      <button class="btn btn-sm btn-secondary" onclick="exportCurrentLicenseData('csv')">CSV</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportCurrentLicenseData('json')">JSON</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportCurrentLicenseData('pdf')">PDF</button>
+    </div>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Device</th><th>Status</th><th>Expires</th><th>Firmware</th><th>ADOM</th>
+      </tr>
+    </thead>
+    <tbody>${rows || '<tr><td colspan="5" class="empty-state" style="padding:.75rem 1rem;text-align:center">No devices</td></tr>'}</tbody>
+  </table>
+  <div class="table-controls">
+    <div id="licPagination">${renderLicPagination(licenseDetPage, totalPages)}</div>
+    <div class="table-controls-right">
+      <span style="font-size:.85em">Per page:</span>
+      <select id="licSizeSelect" class="form-select-sm">${sizeOptions}</select>
+    </div>
+  </div>
+</div>`;
+
+  // Wire page-size select
+  document.getElementById('licSizeSelect').addEventListener('change', e => {
+    licenseDetSize = parseInt(e.target.value, 10);
+    licenseDetPage = 1;
+    renderLicenseList();
+  });
+
+  // Wire pagination buttons
+  listEl.querySelectorAll('[data-lpage]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = parseInt(btn.dataset.lpage, 10);
+      if (!isNaN(p) && p !== licenseDetPage) {
+        licenseDetPage = p;
+        renderLicenseList();
+      }
+    });
+  });
+}
+
+/* ── Export helper — re-filters from current state ───────────────────────── */
+function exportCurrentLicenseData(format) {
+  const now = Date.now(), ms30 = 30 * 864e5, ms90 = 90 * 864e5;
+  let rows, label;
+  if (licenseSelExpiry) {
+    rows = licenseDevices.filter(d => {
+      if (d.status !== 'licensed' || !d.expires) return false;
+      const diff = new Date(d.expires) - now;
+      if (licenseSelExpiry === 'within30') return diff <= ms30;
+      if (licenseSelExpiry === 'within90') return diff > ms30 && diff <= ms90;
+      return diff > ms90;
+    });
+    label = licenseSelExpiry;
+  } else {
+    rows  = licenseDevices.filter(d => d.status === licenseSelStatus);
+    label = licenseSelStatus;
+  }
+  exportLicenseData(format, rows, label);
+}
+
+/* ── License data export ─────────────────────────────────────────────────── */
+function exportLicenseData(format, rows, status) {
+  const safeAdom = (currentAdom || 'all').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const date = new Date().toISOString().slice(0, 10);
+  const base = `license_${safeAdom}_${status}_${date}`;
+
+  if (format === 'csv') {
+    const header = 'Device,Status,Expires,Firmware,ADOM';
+    const lines  = rows.map(d =>
+      [d.device, d.status, d.expires || '', d.firmware || '', d.adom].map(v =>
+        `"${String(v).replace(/"/g, '""')}"`
+      ).join(',')
+    );
+    const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `${base}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  } else if (format === 'json') {
+    const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `${base}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  } else if (format === 'pdf') {
+    const expLabels = { within30: 'Expiring ≤30 days', within90: 'Expiring 31–90 days', beyond90: 'Expiring >90 days' };
+    const statusLabel = expLabels[status] || (status.charAt(0).toUpperCase() + status.slice(1));
+    const tableRows = rows.map(d =>
+      `<tr><td>${escHtml(d.device)}</td><td>${escHtml(statusLabel)}</td><td>${escHtml(d.expires || '—')}</td><td>${escHtml(d.firmware || 'n/a')}</td><td>${escHtml(d.adom || '—')}</td></tr>`
+    ).join('');
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><title>${base}</title>
+<style>body{font-family:sans-serif;font-size:12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 8px}th{background:#f0f0f0}</style>
+</head><body>
+<h2>License Status — ${statusLabel}</h2>
+<p>ADOM: ${escHtml(currentAdom || 'all')} &nbsp;|&nbsp; Generated: ${new Date().toLocaleString()}</p>
+<table><thead><tr><th>Device</th><th>Status</th><th>Expires</th><th>Firmware</th><th>ADOM</th></tr></thead>
+<tbody>${tableRows}</tbody></table>
+</body></html>`);
+    win.document.close();
+    win.print();
+  }
+}
+
 /* ── Event wiring ──────────────────────────────────────────────────────── */
 document.getElementById('adomSelect').addEventListener('change', function () {
   if (this.value) loadVersions(this.value);
@@ -582,6 +1254,8 @@ document.getElementById('adomSelect').addEventListener('change', function () {
     allDevices = []; selectedVer = null;
     document.getElementById('versionsContent').innerHTML = '';
     document.getElementById('adomCloseBtn').style.display = 'none';
+    document.getElementById('licenseContent').innerHTML = '';
+    loadLicenseStatus('');
   }
 });
 
@@ -590,6 +1264,8 @@ document.getElementById('adomCloseBtn').addEventListener('click', () => {
   document.getElementById('adomSelect').value = '';
   document.getElementById('versionsContent').innerHTML = '';
   document.getElementById('adomCloseBtn').style.display = 'none';
+  document.getElementById('licenseContent').innerHTML = '';
+  loadLicenseStatus('');
 });
 
 document.getElementById('refreshBtn').addEventListener('click', () => {
@@ -601,3 +1277,4 @@ document.getElementById('refreshBtn').addEventListener('click', () => {
 
 loadAdoms();
 loadGlobalVersions(false);
+loadLicenseStatus('');

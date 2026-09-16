@@ -17,7 +17,7 @@ def usage_db(tmp_path, monkeypatch):
 
 
 def _dt(hours_ago: float) -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours_ago)
+    return dt.datetime.now(dt.UTC) - dt.timedelta(hours=hours_ago)
 
 
 def test_record_usage_persists_a_row(usage_db):

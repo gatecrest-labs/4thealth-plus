@@ -29,6 +29,7 @@ psirt.db
 collector_state.db
 change_control.json
 device_backup.json
+license_status.json
 api_tokens.json
 app_settings.json
 

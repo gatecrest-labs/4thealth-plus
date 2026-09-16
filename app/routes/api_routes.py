@@ -2,8 +2,6 @@
 
 import json
 import re
-import time
-from datetime import UTC, datetime
 
 from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 
@@ -11,6 +9,7 @@ from app.config import Config
 from app.decorators import admin_required, check_adom_access, tab_required
 from app.fmg_client import PROXY_ENDPOINTS, FMGClient, FMGError
 from app.fmg_helpers import make_client as _make_client
+from app.license_status import parse_license_payload
 from app.security import internal_api_error, upstream_api_error
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -402,12 +401,80 @@ def all_devices():
 @tab_required("versions")
 def all_devices_refresh():
     """Trigger a manual cache refresh (non-blocking — returns immediately)."""
-    from app import current_app
+    from flask import current_app
+
     from app.versions_cache import get_cached, refresh_now
 
     refresh_now(current_app._get_current_object())
     cached = get_cached()
     return jsonify({"status": cached["status"], "queued": True})
+
+
+# ── License status (Device Versions tab → License Status section) ───────────
+# Reuses app.license_status_cache's existing daily sweep (see that module's
+# docstring) rather than running a second, more-frequent per-device sweep.
+
+
+def _license_cache_status() -> str:
+    from app import license_status_cache
+
+    if license_status_cache.is_running():
+        return "running"
+    return "ok" if license_status_cache.get_latest() is not None else "pending"
+
+
+@bp.route("/devices/all/license")
+@tab_required("versions")
+def all_devices_license():
+    from app import license_status_cache
+    from app.groups import get_allowed_adoms
+
+    latest = license_status_cache.get_latest() or {}
+    devices = latest.get("all_devices", [])
+    allowed = get_allowed_adoms(
+        session.get("user", ""),
+        ad_groups=session.get("ad_groups", []),
+        role=session.get("role"),
+    )
+    if allowed is not None:
+        devices = [d for d in devices if d.get("adom") in allowed]
+    return jsonify(
+        {
+            "devices": devices,
+            "last_updated": latest.get("collected_at"),
+            "status": _license_cache_status(),
+        }
+    )
+
+
+@bp.route("/devices/all/license/refresh", methods=["POST"])
+@tab_required("versions")
+def all_devices_license_refresh():
+    """Trigger a manual license sweep (non-blocking — returns immediately)."""
+    from flask import current_app
+
+    from app import license_status_cache
+
+    license_status_cache.refresh_now(current_app._get_current_object())
+    return jsonify({"status": "running", "queued": True})
+
+
+@bp.route("/adoms/<adom>/license")
+@tab_required("versions")
+def adom_license(adom: str):
+    from app import license_status_cache
+
+    if err := check_adom_access(adom):
+        return err
+    latest = license_status_cache.get_latest() or {}
+    devices = [d for d in latest.get("all_devices", []) if d.get("adom") == adom]
+    return jsonify(
+        {
+            "devices": devices,
+            "last_updated": latest.get("collected_at"),
+            "status": _license_cache_status(),
+        }
+    )
 
 
 # ── ADOM list ────────────────────────────────────────────────────────────────
@@ -652,23 +719,7 @@ def _assemble_health(
     if not isinstance(perf_raw, dict):
         perf_raw = {}
 
-    def _parse_license(raw_payload) -> dict:
-        # _proxy() already unwraps response.results, so raw_payload IS the results dict
-        results = raw_payload if isinstance(raw_payload, dict) else {}
-        forticare = results.get("forticare", {})
-        enhanced = forticare.get("support", {}).get("enhanced", {})
-        status = enhanced.get("status", "")
-        expires_ts = enhanced.get("expires")
-        if status == "licensed" and expires_ts:
-            if expires_ts > time.time():
-                exp_str = datetime.fromtimestamp(expires_ts, tz=UTC).strftime(
-                    "%Y-%m-%d"
-                )
-                return {"status": "licensed", "expires": exp_str}
-            return {"status": "expired", "expires": None}
-        return {"status": "unknown", "expires": None}
-
-    license_info = _parse_license(payload("license_status"))
+    license_info = parse_license_payload(payload("license_status"))
 
     def _parse_vdom_routes(r) -> dict:
         by_vdom = {}

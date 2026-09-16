@@ -1,9 +1,10 @@
 """Tests for interface and NAT lookup endpoints."""
-import os
 import json
+import os
 import time
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 
 @pytest.fixture

@@ -4,7 +4,6 @@ Verifies that _assemble_health correctly maps live link state for interfaces
 that live in non-root VDOMs when the monitor endpoint returns vdom=* envelope.
 """
 import os
-import pytest
 
 os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("FMG_PRIMARY_HOST", "127.0.0.1")

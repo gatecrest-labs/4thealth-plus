@@ -245,6 +245,7 @@ def _freshness(payload: dict, summary: dict) -> dict:
     psirt = payload.get("psirt") or {}
     change_control = payload.get("change_control") or {}
     lifecycle = payload.get("lifecycle") or {}
+    license_status = payload.get("license_status") or {}
 
     return {
         "device_review": device_review.get("collected_at"),
@@ -254,6 +255,7 @@ def _freshness(payload: dict, summary: dict) -> dict:
         "psirt": psirt.get("collected_at"),
         "change_control": change_control.get("collected_at"),
         "lifecycle": lifecycle.get("collected_at"),
+        "license_status": license_status.get("collected_at"),
         "infra": summary.get("device_sweep_collected_at"),
         "pending_status": get_cache_status().get("last_updated"),
     }
@@ -280,6 +282,50 @@ def _device_backup() -> dict:
         "devices_backup_ok": latest.get("devices_backup_ok"),
         "devices_backup_stale_7d": latest.get("devices_backup_stale_7d"),
         "devices_backup_never": latest.get("devices_backup_never"),
+        "collected_at": latest.get("collected_at"),
+    }
+
+
+def _license_status() -> dict:
+    """Fleet-wide FortiGate license status, from the daily
+    app.license_status_cache sweep — see that module and
+    app.license_status.parse_license_payload() for how devices are
+    classified. None counts (never swept yet) rather than 0, same
+    "unknown never renders as a false negative" convention as
+    app.model_eos and app.device_backup_cache.
+
+    devices_expiring_30/60/90 and expiring_soon are derived from the
+    sweep's "all_devices" at request time via
+    app.license_status_cache.compute_expiring_soon() — see that function's
+    docstring for why this isn't persisted alongside the sweep. Consumed by
+    4tExecutive's Lifecycle & Support domain (its app/devices.py drill-down
+    table and app/domains.py's informational member rows) the same way
+    devices_hw_eos_12m already is."""
+    from app.license_status_cache import compute_expiring_soon, get_latest
+
+    latest = get_latest()
+    if latest is None:
+        return {
+            "devices_licensed": None,
+            "devices_expired": None,
+            "devices_unknown": None,
+            "details": [],
+            "devices_expiring_30": None,
+            "devices_expiring_60": None,
+            "devices_expiring_90": None,
+            "expiring_soon": [],
+            "collected_at": None,
+        }
+    expiring = compute_expiring_soon(latest.get("all_devices") or [])
+    return {
+        "devices_licensed": latest.get("devices_licensed"),
+        "devices_expired": latest.get("devices_expired"),
+        "devices_unknown": latest.get("devices_unknown"),
+        "details": latest.get("details") or [],
+        "devices_expiring_30": expiring["devices_expiring_30"],
+        "devices_expiring_60": expiring["devices_expiring_60"],
+        "devices_expiring_90": expiring["devices_expiring_90"],
+        "expiring_soon": expiring["expiring_soon"],
         "collected_at": latest.get("collected_at"),
     }
 
@@ -445,6 +491,7 @@ def ext_executive_summary():
         "lifecycle": _lifecycle(summary),
         "silent_devices": _silent_devices(summary),
         "device_backup": _device_backup(),
+        "license_status": _license_status(),
         "by_adom": summary.get("by_adom") or {},
         "infra": summary.get("infra") or [],
     }

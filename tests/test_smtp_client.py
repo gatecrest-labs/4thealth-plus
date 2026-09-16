@@ -1,7 +1,6 @@
-import json
+from unittest.mock import MagicMock, patch
+
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 
 def test_load_smtp_config_defaults(tmp_path, monkeypatch):

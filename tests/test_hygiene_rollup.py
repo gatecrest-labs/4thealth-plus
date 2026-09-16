@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import app.hygiene_rollup as hygiene_rollup
+from app import hygiene_rollup
 from app.hygiene_rollup import build_details
 
 

@@ -1,5 +1,6 @@
 """Tests for GET /external/api/executive/summary."""
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
 from unittest.mock import patch
@@ -902,3 +903,111 @@ def test_version_breakdown_includes_eol_devices_oldest_first(client):
         {"device": "fw-old-a", "adom": "branch", "version": "v6.0.0"},
         {"device": "fw-old-b", "adom": "root", "version": "v6.2.0"},
     ]
+
+
+def test_payload_includes_license_status(client):
+    fake_record = {
+        "devices_licensed": 40,
+        "devices_expired": 2,
+        "devices_unknown": 1,
+        "details": [
+            {"device": "fw-a", "adom": "Corp", "status": "expired", "expires": None}
+        ],
+        "all_devices": [
+            {
+                "device": "fw-b",
+                "adom": "Corp",
+                "status": "licensed",
+                "expires": "2026-09-26",
+                "firmware": "v7.6.7",
+            }
+        ],
+        "collected_at": "2026-09-16T03:00:00+00:00",
+    }
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "ok"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+        patch("app.device_backup_cache.get_latest", return_value=None),
+        patch("app.license_status_cache.get_latest", return_value=fake_record),
+        patch(
+            "app.license_status_cache.compute_expiring_soon",
+            return_value={
+                "devices_expiring_30": 1,
+                "devices_expiring_60": 1,
+                "devices_expiring_90": 1,
+                "expiring_soon": [
+                    {
+                        "device": "fw-b",
+                        "adom": "Corp",
+                        "expires": "2026-09-26",
+                        "days_until": 10,
+                    }
+                ],
+            },
+        ),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["license_status"] == {
+        "devices_licensed": 40,
+        "devices_expired": 2,
+        "devices_unknown": 1,
+        "details": fake_record["details"],
+        "devices_expiring_30": 1,
+        "devices_expiring_60": 1,
+        "devices_expiring_90": 1,
+        "expiring_soon": [
+            {
+                "device": "fw-b",
+                "adom": "Corp",
+                "expires": "2026-09-26",
+                "days_until": 10,
+            }
+        ],
+        "collected_at": "2026-09-16T03:00:00+00:00",
+    }
+    assert data["freshness"]["license_status"] == "2026-09-16T03:00:00+00:00"
+
+
+def test_payload_license_status_defaults_when_no_sweep_yet(client):
+    with (
+        patch("app.routes.external_api_routes.get_setting", return_value=True),
+        patch(
+            "app.routes.external_api_routes.validate_token",
+            return_value={"id": "tok1", "name": "4tExecutive"},
+        ),
+        patch("app.executive_summary_cache.get_summary", return_value={"status": "pending"}),
+        patch("app.versions_cache.get_cached", return_value={"devices": []}),
+        patch("app.backup_scheduler.get_all_jobs", return_value=[]),
+        patch("app.psirt_store.compute_psirt_rollup", return_value={}),
+        patch("app.change_control_cache.get_latest", return_value=None),
+        patch("app.device_backup_cache.get_latest", return_value=None),
+        patch("app.license_status_cache.get_latest", return_value=None),
+    ):
+        resp = client.get(
+            "/external/api/executive/summary",
+            headers={"Authorization": "Bearer good-token"},
+        )
+    data = resp.get_json()
+    assert data["license_status"] == {
+        "devices_licensed": None,
+        "devices_expired": None,
+        "devices_unknown": None,
+        "details": [],
+        "devices_expiring_30": None,
+        "devices_expiring_60": None,
+        "devices_expiring_90": None,
+        "expiring_soon": [],
+        "collected_at": None,
+    }

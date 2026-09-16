@@ -1,9 +1,8 @@
-import csv
-import io
-import json
 import datetime
+import itertools
+import json
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture
@@ -39,7 +38,7 @@ def test_create_job_assigns_id(jobs_path):
 
 def test_create_job_persists_all_fields(jobs_path):
     from app import device_review_scheduler as sched
-    job = sched.create_job({
+    sched.create_job({
         "name": "CIS Audit",
         "adom": "Enterprise",
         "days_of_week": ["MON", "FRI"],
@@ -160,8 +159,8 @@ def test_is_job_running_false_initially(jobs_path):
 
 def test_prune_old_runs(jobs_path):
     from app import device_review_scheduler as sched
-    old_ts = (datetime.datetime.utcnow() - datetime.timedelta(days=40)).isoformat() + "Z"
-    recent_ts = datetime.datetime.utcnow().isoformat() + "Z"
+    old_ts = (datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - datetime.timedelta(days=40)).isoformat() + "Z"
+    recent_ts = datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z"
     job = sched.create_job({
         "name": "T", "adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
         "checks": [], "check_params": {}, "format": "pdf",
@@ -272,8 +271,8 @@ def test_execute_job_check_summary_in_email_body(jobs_path, monkeypatch):
 
 
 def test_execute_job_persists_device_review_rollup(jobs_path, monkeypatch, tmp_path):
-    from app import device_review_scheduler as sched
     import app.device_review_rollup as dr_rollup
+    from app import device_review_scheduler as sched
 
     fake_meta = [
         {"key": "default_admin", "name": "Default 'admin' Account (CIS)",
@@ -638,7 +637,7 @@ def test_summary_html_check_summary_has_6_columns():
     for col in cols:
         assert col in html
     # Columns in correct order: PASS | INFO | WARN | CONFIG_MISSING | FAIL | INSECURE
-    for a, b in zip(cols, cols[1:]):
+    for a, b in itertools.pairwise(cols):
         assert html.index(a) < html.index(b), f"{a} should appear before {b}"
 
 
@@ -871,7 +870,7 @@ def test_html_report_filter_bar_before_findings():
 
 def test_html_report_css_injected():
     """_REPORT_CSS content is present in the <style> block."""
-    from app.device_review_scheduler import _build_pdf_html_dr, _REPORT_CSS
+    from app.device_review_scheduler import _build_pdf_html_dr
     html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
     assert "dr-filter-bar" in html
     assert "dr-result-btn" in html

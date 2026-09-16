@@ -1,11 +1,8 @@
 """Tests for app/backup_engine.py"""
 import time
-from pathlib import Path
-from unittest import mock
 
-import pyzipper
 import pytest
-
+import pyzipper
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,10 +51,9 @@ def test_create_backup_aes256_wrong_password_fails(tmp_path, monkeypatch):
 
     path, _ = engine.create_backup(_make_config(tmp_path, password="correctpass"))
 
-    with pytest.raises(Exception):
-        with pyzipper.AESZipFile(path) as zf:
-            zf.setpassword(b"wrongpass")
-            zf.extractall(tmp_path / "extracted_wrong")
+    with pytest.raises(Exception), pyzipper.AESZipFile(path) as zf:
+        zf.setpassword(b"wrongpass")
+        zf.extractall(tmp_path / "extracted_wrong")
 
 
 def test_create_backup_correct_password_opens(tmp_path, monkeypatch):

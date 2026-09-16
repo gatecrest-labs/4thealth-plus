@@ -1,7 +1,6 @@
 """Tests for app/backup_scheduler.py"""
 import datetime
 import json
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -117,11 +116,11 @@ def test_run_history_pruned_after_30_days(tmp_path, monkeypatch):
     monkeypatch.setattr(sched, "_CONFIG_PATH", tmp_path / "backup_config.json")
 
     old_run = {
-        "started_at": (datetime.datetime.utcnow() - datetime.timedelta(days=31)).isoformat() + "Z",
+        "started_at": (datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - datetime.timedelta(days=31)).isoformat() + "Z",
         "status": "success", "filename": "old.zip", "transferred": False,
     }
     recent_run = {
-        "started_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "started_at": datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z",
         "status": "success", "filename": "new.zip", "transferred": False,
     }
     job_id = "test-id-123"

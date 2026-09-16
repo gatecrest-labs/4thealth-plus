@@ -259,7 +259,12 @@ def test_poll_now_does_not_block_caller(snmp_targets):
     and the poll must still complete in the background."""
 
     async def _slow_snmp_get(host, oids, creds):
-        time.sleep(0.3)
+        # Deliberately blocking: this test double simulates a slow poll
+        # running in the cache's own background thread, not a real
+        # event-loop coroutine — a real `await asyncio.sleep()` here
+        # wouldn't actually block the background thread the way a slow
+        # SNMP call would.
+        time.sleep(0.3)  # noqa: ASYNC251
         return [7.0, 8.0, 100.0] if len(oids) == 3 else [7.0, 8.0]
 
     with patch.object(cache_mod, "_snmp_get", new=_slow_snmp_get):

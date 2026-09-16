@@ -658,9 +658,9 @@ def test_plan_fqdn_change_invalid_firewall_spec_yields_error_plan():
 def test_to_fqdn_report_payload_shape():
     from app.planner.engine import to_fqdn_report_payload
     from app.planner.models import (
+        FQDNAllowlistRequest,
         FQDNChangePlan,
         FQDNFirewallPlan,
-        FQDNAllowlistRequest,
     )
 
     req = FQDNAllowlistRequest(

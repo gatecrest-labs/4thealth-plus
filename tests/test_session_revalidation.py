@@ -1,5 +1,6 @@
 import os
 import time
+
 import pytest
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
@@ -24,7 +25,7 @@ def client(tmp_path):
 
 def test_expired_session_is_rejected(client):
     """A session older than SESSION_ABSOLUTE_LIFETIME should be rejected."""
-    c, tmp_path = client
+    c, _tmp_path = client
     with c.session_transaction() as sess:
         sess["user"] = "alice"
         sess["role"] = "viewer"
@@ -37,7 +38,7 @@ def test_expired_session_is_rejected(client):
 
 def test_fresh_session_is_accepted(client):
     """A session stamped right now should pass the absolute cap check."""
-    c, tmp_path = client
+    c, _tmp_path = client
     with c.session_transaction() as sess:
         sess["user"] = "alice"
         sess["role"] = "viewer"
@@ -53,7 +54,7 @@ def test_fresh_session_is_accepted(client):
 
 def test_deleted_user_session_is_rejected(client):
     """If the user is removed from users.json, their session should be invalidated."""
-    c, tmp_path = client
+    c, _tmp_path = client
     with c.session_transaction() as sess:
         sess["user"] = "gone_user"
         sess["role"] = "viewer"

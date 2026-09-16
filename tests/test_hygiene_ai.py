@@ -69,7 +69,9 @@ def test_explain_finding_rejects_oversized_payload():
         "rule_detail": {"comment": "x" * 100_000},
     }
 
-    with patch("app.llm.get_provider") as mock_get_provider:
-        with pytest.raises(ValueError, match="too large"):
-            explain_finding(finding)
+    with (
+        patch("app.llm.get_provider") as mock_get_provider,
+        pytest.raises(ValueError, match="too large"),
+    ):
+        explain_finding(finding)
     mock_get_provider.return_value.narrate.assert_not_called()

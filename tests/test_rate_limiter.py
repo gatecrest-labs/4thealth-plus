@@ -1,7 +1,8 @@
-import os, time
+import os
+import time
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
-from unittest.mock import patch
 import importlib
 
 

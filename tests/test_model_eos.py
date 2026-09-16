@@ -6,7 +6,6 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
 from app.model_eos import _add_months, hw_eos_within, is_hw_eos
 
-
 # ── is_hw_eos ────────────────────────────────────────────────────────────────
 
 

@@ -1,4 +1,7 @@
-import os, json, inspect
+import inspect
+import json
+import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
 

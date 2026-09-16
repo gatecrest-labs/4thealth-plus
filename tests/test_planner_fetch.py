@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.fmg_client import FMGError
 from app.planner.fetch import (
     DeviceSnapshot,
     fetch_device_snapshot,

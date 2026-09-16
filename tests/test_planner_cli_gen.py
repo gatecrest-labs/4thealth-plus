@@ -9,11 +9,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.planner.cli_gen import (
     address_object_cli,
+    addrgrp_create_cli,
     exception_comment,
+    fqdn_address_object_cli,
     policy_cli,
     service_object_cli,
-    addrgrp_create_cli,
-    fqdn_address_object_cli,
     wildcard_fqdn_address_object_cli,
 )
 

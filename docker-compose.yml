@@ -47,6 +47,8 @@ services:
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
       - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
       - ./summary_history.json:/app/summary_history.json:rw
+      - ./license_status.json:/app/license_status.json:rw
+      - ./device_backup.json:/app/device_backup.json:rw
       - ./certs:/app/certs:ro
     healthcheck:
       # Unverified TLS context is intentional here: this probes the app's own
@@ -97,4 +99,6 @@ services:
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
       - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
       - ./summary_history.json:/app/summary_history.json:rw
+      - ./license_status.json:/app/license_status.json:rw
+      - ./device_backup.json:/app/device_backup.json:rw
       - ./certs:/app/certs:ro

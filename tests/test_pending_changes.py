@@ -1,13 +1,14 @@
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 os.environ.setdefault("FMG_PRIMARY_HOST", "127.0.0.1")
 
 import json as _json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 import pytest
 
 from app.fmg_client import FMGClient, FMGError
-
 
 # ── get_devices_with_sync_status ─────────────────────────────────────────────
 
@@ -167,9 +168,8 @@ def test_get_install_preview_raises_on_timeout(monkeypatch):
     with patch.object(client, "get_device_vdoms", return_value=vdoms), \
          patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK), \
          patch.object(client, "_post", side_effect=side_effect), \
-         patch("time.sleep"):
-        with pytest.raises(FMGError, match="timed out"):
-            client.get_install_preview("MyADOM", "FW1")
+         patch("time.sleep"), pytest.raises(FMGError, match="timed out"):
+        client.get_install_preview("MyADOM", "FW1")
 
 
 def test_get_install_preview_returns_empty_string_when_no_changes():
@@ -238,9 +238,8 @@ def test_get_install_preview_raises_on_task_error_state():
     with patch.object(client, "get_device_vdoms", return_value=vdoms), \
          patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK), \
          patch.object(client, "_post", side_effect=responses), \
-         patch("time.sleep"):
-        with pytest.raises(FMGError, match="Stage task"):
-            client.get_install_preview("MyADOM", "FW1")
+         patch("time.sleep"), pytest.raises(FMGError, match="Stage task"):
+        client.get_install_preview("MyADOM", "FW1")
 
 
 def test_get_install_preview_cleanup_runs_even_if_result_fails():
