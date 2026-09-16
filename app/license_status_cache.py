@@ -138,6 +138,7 @@ def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> di
                     "status": status,
                     "expires": expires,
                     "firmware": device.get("firmware", "n/a"),
+                    "subscriptions": license_info.get("subscriptions", {}),
                 }
             )
 

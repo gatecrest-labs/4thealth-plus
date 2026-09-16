@@ -23,6 +23,29 @@ let licenseSelExpiry = null;   // 'within30' | 'within90' | 'beyond90' | null
 let licenseDetPage   = 1;
 let licenseDetSize   = 20;
 
+/* ── FortiGuard subscription state ──────────────────────────────────── */
+let fgDevices   = [];
+let fgSelSub    = null;
+let fgSelStatus = null;
+let fgDetPage   = 1;
+let fgDetSize   = 20;
+
+const FG_KEYS = [
+  'antivirus', 'ips', 'web_filtering', 'appctrl',
+  'antispam', 'outbreak_prevention', 'firmware_updates', 'forticloud_sandbox',
+];
+const FG_LABELS = {
+  antivirus:           'Antivirus (AV)',
+  ips:                 'IPS / NIDS',
+  web_filtering:       'Web Filtering',
+  appctrl:             'App Control',
+  antispam:            'Anti-Spam',
+  outbreak_prevention: 'Outbreak Prevention',
+  firmware_updates:    'Firmware Updates',
+  forticloud_sandbox:  'FortiCloud Sandbox',
+};
+const FG_STATUS_DISPLAY = { licensed: 'Licensed', expired: 'Expired', none: 'No License', unknown: 'Unknown' };
+
 /* ── Version sort helper ───────────────────────────────────────────────── */
 function sortedVersionEntries(counts) {
   return Object.entries(counts).sort((a, b) => {
@@ -682,6 +705,263 @@ function buildExpiryDonutSVG(within30, within90, beyond90) {
 </div>`;
 }
 
+/* ── FortiGuard mini-donut (per-subscription card) ───────────────────────── */
+function buildMiniDonutSVG(licensed, expired, noLicense, subKey) {
+  const total = licensed + expired + noLicense;
+  const r = 36, cx = 45, cy = 45;
+  const circ = 2 * Math.PI * r;
+  const counts   = [licensed, expired, noLicense];
+  const colours  = ['#28a745', '#dc3545', '#6c757d'];
+  const statuses = ['licensed', 'expired', 'none'];
+
+  let offset = 0;
+  const arcs = total === 0
+    ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border)" stroke-width="11"/>`
+    : counts.map((c, i) => {
+        if (c === 0) { offset += c; return ''; }
+        const dash   = ((c / total) * circ).toFixed(2);
+        const gap    = (circ - dash).toFixed(2);
+        const rotate = ((offset / total) * 360).toFixed(2);
+        offset += c;
+        return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${colours[i]}" stroke-width="11"
+          stroke-dasharray="${dash} ${gap}" transform="rotate(${rotate - 90} ${cx} ${cy})"
+          data-subkey="${subKey}" data-status="${statuses[i]}" style="cursor:pointer"/>`;
+      }).join('');
+
+  const legend = counts.map((c, i) =>
+    `<span class="lic-legend-item" data-subkey="${subKey}" data-status="${statuses[i]}" style="font-size:.82em;cursor:pointer">
+       <span class="lic-dot" style="background:${colours[i]}"></span><strong>${c}</strong>
+     </span>`
+  ).join('');
+
+  return `<div class="lic-donut-wrap" style="gap:.6rem">
+  <svg width="90" height="90" viewBox="0 0 90 90" aria-hidden="true">
+    ${arcs}
+    <text x="${cx}" y="${cy + 5}" text-anchor="middle" font-size="13" font-weight="bold" fill="currentColor">${total}</text>
+  </svg>
+  <div class="lic-legend" style="gap:.25rem">${legend}</div>
+</div>`;
+}
+
+/* ── FortiGuard subscription grid ────────────────────────────────────────── */
+function renderFortiGuardSection(data, adom) {
+  const container = document.getElementById('fortiGuardContent');
+  if (!container) return;
+
+  fgSelSub  = null; fgSelStatus = null; fgDetPage = 1;
+  fgDevices = data.devices || [];
+
+  if (fgDevices.length === 0) { container.innerHTML = ''; return; }
+
+  const hasSubs = fgDevices.some(d => d.subscriptions && Object.keys(d.subscriptions).length > 0);
+  if (!hasSubs) {
+    container.innerHTML = `
+<div class="table-wrapper" style="margin-top:1rem">
+  <div class="table-controls"><strong>FortiGuard Subscriptions</strong></div>
+  <p style="padding:1rem;color:var(--text-muted);font-size:.9em">
+    Subscription data not yet loaded. Click &#8635; Refresh in the License Status card above to fetch it.
+  </p>
+</div>`;
+    return;
+  }
+
+  // Aggregate counts per subscription
+  const counts = {};
+  for (const key of FG_KEYS) counts[key] = { licensed: 0, expired: 0, none: 0 };
+  for (const d of fgDevices) {
+    const subs = d.subscriptions || {};
+    for (const key of FG_KEYS) {
+      const s = (subs[key] || {}).status || 'unknown';
+      if (s === 'licensed') counts[key].licensed++;
+      else if (s === 'expired') counts[key].expired++;
+      else counts[key].none++;
+    }
+  }
+
+  const cards = FG_KEYS.map(key => {
+    const c = counts[key];
+    return `<div class="fg-card" data-subkey="${key}">
+  <div class="fg-card-title">${escHtml(FG_LABELS[key])}</div>
+  ${buildMiniDonutSVG(c.licensed, c.expired, c.none, key)}
+</div>`;
+  }).join('');
+
+  container.innerHTML = `
+<div class="table-wrapper" style="margin-top:1rem">
+  <div class="table-controls">
+    <strong>FortiGuard Subscriptions</strong>
+    <div class="table-controls-right">
+      <span style="color:var(--text-muted);font-size:.85em">Click a slice or legend item to list devices.</span>
+    </div>
+  </div>
+  <div class="fg-grid">${cards}</div>
+</div>
+<div id="fgListContent"></div>`;
+
+  container.addEventListener('click', e => {
+    const target = e.target.closest('[data-subkey]');
+    if (!target) return;
+    const sub    = target.dataset.subkey;
+    const status = target.dataset.status || null;
+    if (fgSelSub === sub && fgSelStatus === status) {
+      fgSelSub = null; fgSelStatus = null;
+    } else {
+      fgSelSub = sub; fgSelStatus = status;
+    }
+    fgDetPage = 1;
+    container.querySelectorAll('.fg-card').forEach(c =>
+      c.classList.toggle('fg-active', c.dataset.subkey === fgSelSub)
+    );
+    renderFortiGuardList();
+  });
+}
+
+/* ── FortiGuard device list ──────────────────────────────────────────────── */
+function renderFortiGuardList() {
+  const listEl = document.getElementById('fgListContent');
+  if (!listEl) return;
+  if (!fgSelSub) { listEl.innerHTML = ''; return; }
+
+  const filtered = fgDevices.filter(d => {
+    const s = ((d.subscriptions || {})[fgSelSub] || {}).status || 'unknown';
+    const bucket = (s === 'none' || s === 'unknown') ? 'none' : s;
+    return fgSelStatus === null || bucket === fgSelStatus || s === fgSelStatus;
+  });
+
+  const total = filtered.length;
+  const start = (fgDetPage - 1) * fgDetSize;
+  const page  = filtered.slice(start, start + fgDetSize);
+
+  const subLabel = FG_LABELS[fgSelSub] || fgSelSub;
+  const heading  = fgSelStatus
+    ? `${escHtml(subLabel)} — ${escHtml(FG_STATUS_DISPLAY[fgSelStatus] || fgSelStatus)}`
+    : escHtml(subLabel);
+
+  const colourMap = { licensed: '#28a745', expired: '#dc3545', none: '#6c757d', unknown: '#6c757d' };
+
+  const rows = page.map(d => {
+    const sub    = ((d.subscriptions || {})[fgSelSub] || {});
+    const s      = sub.status || 'unknown';
+    const bucket = (s === 'none' || s === 'unknown') ? 'none' : s;
+    const colour = colourMap[bucket] || '#6c757d';
+    const label  = FG_STATUS_DISPLAY[s] || s;
+    return `<tr>
+  <td>${escHtml(d.device)}</td>
+  <td><span style="color:${colour};font-weight:600">${escHtml(label)}</span></td>
+  <td>${escHtml(sub.expires || '—')}</td>
+  <td>${escHtml(d.firmware || 'n/a')}</td>
+  <td>${escHtml(d.adom || '—')}</td>
+</tr>`;
+  }).join('');
+
+  const totalPages  = Math.max(1, Math.ceil(total / fgDetSize));
+  const sizeOptions = [10, 20, 25, 50].map(n =>
+    `<option value="${n}" ${n === fgDetSize ? 'selected' : ''}>${n}</option>`
+  ).join('');
+
+  listEl.innerHTML = `
+<div class="table-wrapper" style="margin-top:1rem">
+  <div class="table-controls">
+    <span>Showing: <strong>${heading}</strong> (${total} device${total !== 1 ? 's' : ''})</span>
+    <div class="table-controls-right">
+      <button class="btn btn-sm btn-secondary" onclick="exportFGData('csv')">CSV</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportFGData('json')">JSON</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportFGData('pdf')">PDF</button>
+    </div>
+  </div>
+  <table class="data-table">
+    <thead><tr><th>Device</th><th>Status</th><th>Expires</th><th>Firmware</th><th>ADOM</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="5" style="padding:.75rem 1rem;text-align:center">No devices</td></tr>'}</tbody>
+  </table>
+  <div class="table-controls">
+    <div id="fgPagination">${renderFGPagination(fgDetPage, totalPages)}</div>
+    <div class="table-controls-right">
+      <span style="font-size:.85em">Per page:</span>
+      <select id="fgSizeSelect" class="form-select-sm">${sizeOptions}</select>
+    </div>
+  </div>
+</div>`;
+
+  document.getElementById('fgSizeSelect').addEventListener('change', e => {
+    fgDetSize = parseInt(e.target.value, 10); fgDetPage = 1; renderFortiGuardList();
+  });
+  listEl.querySelectorAll('[data-fgpage]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = parseInt(btn.dataset.fgpage, 10);
+      if (!isNaN(p) && p !== fgDetPage) { fgDetPage = p; renderFortiGuardList(); }
+    });
+  });
+}
+
+/* ── FortiGuard pagination ───────────────────────────────────────────────── */
+function renderFGPagination(current, total) {
+  if (total <= 1) return '';
+  function fgBtn(label, page, disabled, active) {
+    return `<button class="pg-btn${active ? ' active' : ''}" data-fgpage="${page}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+  }
+  let h = fgBtn('&laquo;&laquo;', 1, current === 1, false) + fgBtn('&lsaquo;', current - 1, current === 1, false);
+  const s = Math.max(1, current - 2), e = Math.min(total, s + 4);
+  for (let i = s; i <= e; i++) h += fgBtn(i, i, false, i === current);
+  h += fgBtn('&rsaquo;', current + 1, current === total, false) + fgBtn('&raquo;&raquo;', total, current === total, false);
+  return `<div class="pagination">${h}</div>`;
+}
+
+/* ── FortiGuard data export ──────────────────────────────────────────────── */
+function exportFGData(format) {
+  if (!fgSelSub) return;
+  const subLabel = FG_LABELS[fgSelSub] || fgSelSub;
+  const rows = fgDevices.filter(d => {
+    const s = ((d.subscriptions || {})[fgSelSub] || {}).status || 'unknown';
+    const bucket = (s === 'none' || s === 'unknown') ? 'none' : s;
+    return fgSelStatus === null || bucket === fgSelStatus || s === fgSelStatus;
+  });
+
+  const safeAdom   = (currentAdom || 'all').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const safeSub    = fgSelSub.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const safeStatus = (fgSelStatus || 'all').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const date = new Date().toISOString().slice(0, 10);
+  const base = `fortiguard_${safeAdom}_${safeSub}_${safeStatus}_${date}`;
+
+  if (format === 'csv') {
+    const header = 'Device,Subscription,Status,Expires,Firmware,ADOM';
+    const lines = rows.map(d => {
+      const sub = ((d.subscriptions || {})[fgSelSub] || {});
+      return [d.device, subLabel, sub.status || 'unknown', sub.expires || '', d.firmware || '', d.adom]
+        .map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+    });
+    const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `${base}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  } else if (format === 'json') {
+    const out = rows.map(d => {
+      const sub = ((d.subscriptions || {})[fgSelSub] || {});
+      return { device: d.device, subscription: subLabel, status: sub.status || 'unknown', expires: sub.expires || null, firmware: d.firmware, adom: d.adom };
+    });
+    const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `${base}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  } else if (format === 'pdf') {
+    const filterLabel = fgSelStatus ? `${subLabel} — ${FG_STATUS_DISPLAY[fgSelStatus] || fgSelStatus}` : subLabel;
+    const tableRows = rows.map(d => {
+      const sub  = ((d.subscriptions || {})[fgSelSub] || {});
+      const sLbl = FG_STATUS_DISPLAY[sub.status || 'unknown'] || sub.status || 'Unknown';
+      return `<tr><td>${escHtml(d.device)}</td><td>${escHtml(sLbl)}</td><td>${escHtml(sub.expires || '—')}</td><td>${escHtml(d.firmware || 'n/a')}</td><td>${escHtml(d.adom || '—')}</td></tr>`;
+    }).join('');
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><title>${base}</title>
+<style>body{font-family:sans-serif;font-size:12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 8px}th{background:#f0f0f0}</style>
+</head><body>
+<h2>FortiGuard Subscriptions — ${escHtml(filterLabel)}</h2>
+<p>ADOM: ${escHtml(currentAdom || 'all')} &nbsp;|&nbsp; Generated: ${new Date().toLocaleString()}</p>
+<table><thead><tr><th>Device</th><th>Status</th><th>Expires</th><th>Firmware</th><th>ADOM</th></tr></thead>
+<tbody>${tableRows}</tbody></table>
+</body></html>`);
+    win.document.close(); win.print();
+  }
+}
+
 function loadLicenseStatus(adom) {
   const container = document.getElementById('licenseContent');
   if (!container) return;
@@ -693,9 +973,14 @@ function loadLicenseStatus(adom) {
 
   fetch(url)
     .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-    .then(data => renderLicenseSection(data, adom))
+    .then(data => {
+      renderLicenseSection(data, adom);
+      renderFortiGuardSection(data, adom);
+    })
     .catch(err => {
       container.innerHTML = `<p style="padding:1rem;color:var(--danger)">Failed to load license data: ${escHtml(String(err))}</p>`;
+      const fg = document.getElementById('fortiGuardContent');
+      if (fg) fg.innerHTML = '';
     });
 }
 

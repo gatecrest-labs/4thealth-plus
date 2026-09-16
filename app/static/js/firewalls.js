@@ -249,6 +249,22 @@ function renderHealthModal(deviceName, d) {
     : 'Unknown';
   const licBadgeHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:4px;font-size:.8rem;font-weight:600;background:${licColor}1a;color:${licColor};border:1px solid ${licColor}66">${licLabel}</span>`;
 
+  // FortiGuard subscription table (shown when subscription data is present)
+  const FG_SUB_KEYS   = ['antivirus','ips','web_filtering','appctrl','antispam','outbreak_prevention','firmware_updates','forticloud_sandbox'];
+  const FG_SUB_LABELS = { antivirus:'Antivirus (AV)', ips:'IPS / NIDS', web_filtering:'Web Filtering', appctrl:'App Control', antispam:'Anti-Spam', outbreak_prevention:'Outbreak Prevention', firmware_updates:'Firmware Updates', forticloud_sandbox:'FortiCloud Sandbox' };
+  const fgSubs = lic.subscriptions || {};
+  const fgRows = FG_SUB_KEYS.map(key => {
+    const sub = fgSubs[key] || {};
+    const s   = sub.status || 'unknown';
+    const col = s === 'licensed' ? '#16a34a' : s === 'expired' ? '#dc2626' : '#6b7280';
+    const lbl = s === 'licensed' ? 'Licensed' : s === 'expired' ? 'Expired' : s === 'none' ? 'No License' : 'Unknown';
+    return `<tr><td>${escHtml(FG_SUB_LABELS[key])}</td><td><span style="color:${col};font-weight:600">&#x25cf; ${escHtml(lbl)}</span></td><td style="color:var(--text-muted)">${escHtml(sub.expires || '—')}</td></tr>`;
+  }).join('');
+  const fgSubsHtml = Object.keys(fgSubs).length > 0
+    ? `<div class="section-title">FortiGuard Subscriptions</div>
+<table class="data-table" style="font-size:.85rem"><thead><tr><th>Subscription</th><th>Status</th><th>Expires</th></tr></thead><tbody>${fgRows}</tbody></table>`
+    : '';
+
   // Filter: hide interfaces that have no meaningful IP AND are not up
   const visibleIfaces = (d.interfaces || []).filter(i => {
     const ip   = ifaceIp(i);
@@ -339,6 +355,8 @@ ${(d.vdoms || []).map(v => `<tr><td>${vdomBadge(v.name)}</td><td>${escHtml(v.opm
   <div class="detail-item"><span class="detail-label">HA Mode</span><span class="detail-value">${escHtml(haMode)}</span></div>
   <div class="detail-item"><span class="detail-label">Policy Package</span><span class="detail-value">${escHtml(d.policy_package || '—')}</span></div>
 </div>
+
+${fgSubsHtml}
 
 ${vdomSection}
 

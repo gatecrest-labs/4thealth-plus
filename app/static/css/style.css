@@ -2897,3 +2897,10 @@ a:hover { text-decoration: underline; }
 .lic-legend { display: flex; flex-direction: column; gap: .4rem; }
 .lic-legend-item { display: flex; align-items: center; gap: .4rem; font-size: .95rem; cursor: pointer; }
 .lic-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+
+/* ── FortiGuard subscription grid ─────────────────────────────────────── */
+.fg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .75rem; padding: .75rem 1rem 1rem; }
+.fg-card { border: 1px solid var(--border); border-radius: 6px; padding: .75rem; cursor: pointer; transition: background .15s, border-color .15s; }
+.fg-card:hover { background: var(--surface-alt); }
+.fg-card.fg-active { border-color: var(--primary); background: var(--surface-alt); }
+.fg-card-title { font-size: .78em; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .35rem; }

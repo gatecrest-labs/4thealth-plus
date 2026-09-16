@@ -374,6 +374,15 @@ Two independent sections:
    a slice or legend item to expand a paginated, exportable (CSV/JSON/PDF)
    device list (Device, Status, Expires, Firmware, ADOM). A **Refresh**
    button triggers an immediate sweep.
+3. **FortiGuard Subscriptions** (below License Status) — a mini-donut card
+   per subscription type (Antivirus, IPS, Web Filtering, App Control,
+   Anti-Spam, Outbreak Prevention, Firmware Updates, FortiCloud Sandbox —
+   `FORTIGUARD_SUBSCRIPTION_KEYS` in `app/license_status.py`) showing
+   Licensed / Expired / No License counts across the same device set as
+   the License Status section above. Click a card's slice or legend to
+   expand the same paginated/exportable device-list pattern. Shown only
+   once at least one device's `all_devices` record carries a non-empty
+   `subscriptions` dict — this is the same sweep, not a separate fetch.
 
 **Data source — deliberately reuses `app/license_status_cache.py` rather
 than adding a second sweep:** that module already runs a daily,
@@ -381,20 +390,33 @@ per-device fleet sweep for the `/external/api/executive/summary` payload
 (see External API section above) — the only per-device call FortiOS
 exposes for license status, hence the daily (not 15-minute) cadence. Its
 `_classify_devices()` now also returns an `all_devices` list (every
-device, every status, `{device, adom, status, expires, firmware}`) rather
-than only the non-licensed `details` the executive summary uses; `firmware`
-is built from the same `os_ver`/`mr`/`patch` roster fields
-`app/versions_cache.py` uses. Adding a second, independently-scheduled
-per-device sweep for this tab would double the FMG load of the one
-expensive call this module exists to amortize — so the tab's **Refresh**
-button calls the *same* `license_status_cache.refresh_now()` used
-fleet-wide, and both consumers (this tab and the executive summary) always
-see the same underlying sweep result.
+device, every status, `{device, adom, status, expires, firmware,
+subscriptions}`) rather than only the non-licensed `details` the
+executive summary uses; `firmware` is built from the same
+`os_ver`/`mr`/`patch` roster fields `app/versions_cache.py` uses.
+`subscriptions` (`{key: {status, expires}}`, one entry per
+`FORTIGUARD_SUBSCRIPTION_KEYS` member) comes from the same
+`app/license_status.py::parse_license_payload()` call already made for
+the FortiCare licensed/expired/unknown classification — FortiOS returns
+both in one `/api/v2/monitor/license/status` response, so no extra FMG
+call. Adding a second, independently-scheduled per-device sweep for this
+tab would double the FMG load of the one expensive call this module
+exists to amortize — so the tab's **Refresh** button calls the *same*
+`license_status_cache.refresh_now()` used fleet-wide, and both consumers
+(this tab and the executive summary) always see the same underlying
+sweep result.
 
 **API endpoints** (all `@tab_required("versions")`):
 - `GET  /api/devices/all/license` — fleet-wide `all_devices`, ADOM-access filtered
 - `POST /api/devices/all/license/refresh` — trigger an immediate sweep (non-blocking)
 - `GET  /api/adoms/<adom>/license` — `all_devices` filtered to one ADOM (`check_adom_access` enforced)
+
+**FortiGuard Subscriptions table on the Firewalls tab:** the same
+`parse_license_payload()` `subscriptions` dict is also rendered as a table
+in the firewall detail modal (`app/static/js/firewalls.js::renderHealthModal()`),
+sourced from the live (not cached) `payload("license_status")` call
+`_assemble_health()` already makes for the License badge — no relation to
+the daily sweep above.
 
 ### Rule Validation tab
 

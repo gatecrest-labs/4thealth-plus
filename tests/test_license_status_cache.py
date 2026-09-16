@@ -38,7 +38,13 @@ def test_classify_devices_all_devices_includes_every_status_with_firmware():
         "Corp": [
             {
                 "name": "fw-licensed",
-                "license": {"status": "licensed", "expires": "2027-01-01"},
+                "license": {
+                    "status": "licensed",
+                    "expires": "2027-01-01",
+                    "subscriptions": {
+                        "antivirus": {"status": "licensed", "expires": None}
+                    },
+                },
                 "firmware": "v7.4.5",
             },
             {
@@ -58,6 +64,7 @@ def test_classify_devices_all_devices_includes_every_status_with_firmware():
             "status": "licensed",
             "expires": "2027-01-01",
             "firmware": "v7.4.5",
+            "subscriptions": {"antivirus": {"status": "licensed", "expires": None}},
         },
         {
             "device": "fw-expired",
@@ -65,6 +72,7 @@ def test_classify_devices_all_devices_includes_every_status_with_firmware():
             "status": "expired",
             "expires": None,
             "firmware": "v7.2.1",
+            "subscriptions": {},
         },
     ]
 
@@ -75,6 +83,14 @@ def test_classify_devices_all_devices_defaults_firmware_to_na():
     }
     result = _classify_devices(devices_by_adom)
     assert result["all_devices"][0]["firmware"] == "n/a"
+
+
+def test_classify_devices_all_devices_defaults_subscriptions_to_empty_dict():
+    devices_by_adom = {
+        "Corp": [{"name": "fw-a", "license": {"status": "licensed", "expires": None}}]
+    }
+    result = _classify_devices(devices_by_adom)
+    assert result["all_devices"][0]["subscriptions"] == {}
 
 
 def test_classify_devices_details_excludes_licensed():
@@ -279,6 +295,12 @@ def test_run_sweep_persists_classified_result(tmp_path, monkeypatch):
     assert persisted["devices_licensed"] == 1
     assert persisted["devices_expired"] == 0
     assert "collected_at" in persisted
+    from app.license_status import FORTIGUARD_SUBSCRIPTION_KEYS
+
+    no_subs = {
+        key: {"status": "unknown", "expires": None}
+        for key in FORTIGUARD_SUBSCRIPTION_KEYS
+    }
     assert persisted["all_devices"] == [
         {
             "device": "fw-a",
@@ -286,6 +308,7 @@ def test_run_sweep_persists_classified_result(tmp_path, monkeypatch):
             "status": "licensed",
             "expires": "2286-11-20",
             "firmware": "n/a",
+            "subscriptions": no_subs,
         }
     ]
 
