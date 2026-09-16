@@ -2,11 +2,9 @@
 import json
 import os
 import time
-from pathlib import Path
 from unittest import mock
 
 import pytest
-
 
 _TEST_USERS = {"admin": {"password_hash": "$2b$12$placeholder", "role": "admin"}}
 
@@ -158,12 +156,14 @@ def test_run_now_returns_zip_download(client, admin_session, tmp_path, monkeypat
     fake_zip = tmp_path / "SERVER-BACKUP_2026-08-10_0200.zip"
     fake_zip.write_bytes(b"PK\x03\x04fake")
 
-    with mock.patch("app.routes.backup_routes.backup_engine.create_backup",
-                    return_value=(fake_zip, fake_zip.name)):
-        with mock.patch("app.routes.backup_routes.backup_engine.load_config",
+    with (
+        mock.patch("app.routes.backup_routes.backup_engine.create_backup",
+                    return_value=(fake_zip, fake_zip.name)),
+        mock.patch("app.routes.backup_routes.backup_engine.load_config",
                         return_value={"password": "pw", "backup_dir": str(tmp_path),
-                                      "max_files": 20, "exclude_tls_key": False, "ftp": {}}):
-            resp = _post(client, "/admin/api/backup/run-now")
+                                      "max_files": 20, "exclude_tls_key": False, "ftp": {}}),
+    ):
+        resp = _post(client, "/admin/api/backup/run-now")
 
     assert resp.status_code == 200
     assert "zip" in resp.content_type

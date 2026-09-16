@@ -1,4 +1,5 @@
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
 import app.zone_db as zdb

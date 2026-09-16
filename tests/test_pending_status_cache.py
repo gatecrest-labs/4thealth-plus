@@ -1,13 +1,16 @@
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 os.environ.setdefault("FMG_PRIMARY_HOST", "127.0.0.1")
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
+
 import pytest
 
 
 def test_get_cached_devices_returns_none_when_empty():
     import importlib
+
     import app.pending_status_cache as mod
     importlib.reload(mod)  # reset module state
     assert mod.get_cached_devices("MyADOM") is None
@@ -15,6 +18,7 @@ def test_get_cached_devices_returns_none_when_empty():
 
 def test_get_cached_devices_returns_snapshot_after_refresh():
     import importlib
+
     import app.pending_status_cache as mod
     importlib.reload(mod)
 
@@ -32,6 +36,7 @@ def test_get_cached_devices_returns_snapshot_after_refresh():
 
 def test_get_cached_devices_returns_copy_not_reference():
     import importlib
+
     import app.pending_status_cache as mod
     importlib.reload(mod)
 
@@ -46,6 +51,7 @@ def test_get_cached_devices_returns_copy_not_reference():
 
 def test_get_cache_status_initial():
     import importlib
+
     import app.pending_status_cache as mod
     importlib.reload(mod)
     status = mod.get_cache_status()
@@ -55,6 +61,7 @@ def test_get_cache_status_initial():
 
 def test_get_all_cached_devices_returns_empty_dict_when_empty():
     import importlib
+
     import app.pending_status_cache as mod
     importlib.reload(mod)
     assert mod.get_all_cached_devices() == {}
@@ -62,6 +69,7 @@ def test_get_all_cached_devices_returns_empty_dict_when_empty():
 
 def test_get_all_cached_devices_returns_snapshot_across_adoms():
     import importlib
+
     import app.pending_status_cache as mod
     importlib.reload(mod)
 
@@ -84,6 +92,7 @@ def test_get_all_cached_devices_returns_snapshot_across_adoms():
 
 def test_get_all_cached_devices_returns_copies_not_references():
     import importlib
+
     import app.pending_status_cache as mod
     importlib.reload(mod)
 

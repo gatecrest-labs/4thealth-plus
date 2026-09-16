@@ -1,7 +1,7 @@
 import json
+from unittest.mock import MagicMock, patch
+
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture
@@ -76,10 +76,11 @@ def test_delete_job(jobs_path):
 
 
 def test_prune_old_runs(jobs_path):
-    from app import config_diff_scheduler as sched
     import datetime
-    old_ts = (datetime.datetime.utcnow() - datetime.timedelta(days=40)).isoformat() + "Z"
-    recent_ts = datetime.datetime.utcnow().isoformat() + "Z"
+
+    from app import config_diff_scheduler as sched
+    old_ts = (datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - datetime.timedelta(days=40)).isoformat() + "Z"
+    recent_ts = datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z"
     job = sched.create_job({"adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
                              "format": "pdf", "email": "x@x.com", "enabled": True})
     jobs = json.loads(jobs_path.read_text())
@@ -134,7 +135,6 @@ def test_validate_single_day_still_works(jobs_path):
 
 def test_register_multi_day_cron_string(jobs_path):
     from app import config_diff_scheduler as sched
-    from unittest.mock import MagicMock, patch
 
     mock_scheduler = MagicMock()
     sched._scheduler = mock_scheduler

@@ -33,7 +33,19 @@ package = false
 # cleanup code that must not fail the caller, narration/AI calls that must
 # always fall back to a deterministic result. Narrowing these to specific
 # exception types would defeat the point of that pattern, not improve it.
+#
+# TRY002/B017: the test suite exercises that same broad-catch pattern by
+# raising/asserting a plain `Exception` as a stand-in for "any upstream
+# failure" (an FMG call, a proxy call, a device fetch) — the code under
+# test is deliberately supposed to catch it via `except Exception`, so a
+# narrower test double would test something the production code doesn't
+# actually promise. Same rationale as the three rules above, scoped to
+# tests/ only since production code should still define real exception
+# types where it raises its own.
 ignore = ["BLE001", "S110", "S112"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["TRY002", "B017"]
 
 [dependency-groups]
 dev = [

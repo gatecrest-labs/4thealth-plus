@@ -1,5 +1,6 @@
 """Unit tests for the pure aggregation functions in app.executive_summary_cache."""
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
 import pytest
@@ -17,7 +18,6 @@ from app.executive_summary_cache import (
     _pending_diff_count,
     _version_compliance_pct,
 )
-
 
 # ── _HYGIENE_CHECKS ─────────────────────────────────────────────────────────
 
@@ -519,7 +519,7 @@ def test_run_device_sweep_preserves_existing_hygiene_score(monkeypatch, app_ctx)
         "app.app_settings.get_setting", lambda key, default=None: default
     )
     monkeypatch.setattr(
-        "app.pending_status_cache.get_all_cached_devices", lambda: {}
+        "app.pending_status_cache.get_all_cached_devices", dict
     )
     monkeypatch.setattr(
         "app.pending_status_cache.get_cache_status",
@@ -563,7 +563,7 @@ def test_run_device_sweep_only_counts_non_forti_adoms(monkeypatch, app_ctx):
         "app.app_settings.get_setting", lambda key, default=None: default
     )
     monkeypatch.setattr(
-        "app.pending_status_cache.get_all_cached_devices", lambda: {}
+        "app.pending_status_cache.get_all_cached_devices", dict
     )
     monkeypatch.setattr(
         "app.pending_status_cache.get_cache_status",
@@ -584,7 +584,7 @@ def test_run_device_sweep_computes_devices_out_of_sync(monkeypatch, app_ctx):
     monkeypatch.setattr(
         "app.app_settings.get_setting", lambda key, default=None: default
     )
-    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", lambda: {})
+    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", dict)
     monkeypatch.setattr(
         "app.pending_status_cache.get_cache_status",
         lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
@@ -607,7 +607,7 @@ def test_run_device_sweep_sums_out_of_sync_across_adoms(monkeypatch, app_ctx):
     monkeypatch.setattr(
         "app.app_settings.get_setting", lambda key, default=None: default
     )
-    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", lambda: {})
+    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", dict)
     monkeypatch.setattr(
         "app.pending_status_cache.get_cache_status",
         lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
@@ -681,7 +681,7 @@ def test_run_device_sweep_populates_by_adom(monkeypatch, app_ctx):
     monkeypatch.setattr(
         "app.app_settings.get_setting", lambda key, default=None: default
     )
-    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", lambda: {})
+    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", dict)
     monkeypatch.setattr(
         "app.pending_status_cache.get_cache_status",
         lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
@@ -702,7 +702,7 @@ def test_run_device_sweep_populates_infra_from_snmp_cache(monkeypatch, app_ctx):
     monkeypatch.setattr(
         "app.app_settings.get_setting", lambda key, default=None: default
     )
-    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", lambda: {})
+    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", dict)
     monkeypatch.setattr(
         "app.pending_status_cache.get_cache_status",
         lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
@@ -755,7 +755,7 @@ def test_run_device_sweep_still_succeeds_when_sqlite_write_fails(monkeypatch, ap
     monkeypatch.setattr(
         "app.app_settings.get_setting", lambda key, default=None: default
     )
-    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", lambda: {})
+    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", dict)
     monkeypatch.setattr(
         "app.pending_status_cache.get_cache_status",
         lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
@@ -788,7 +788,7 @@ def test_run_device_sweep_writes_and_reads_back_snapshot_via_sqlite(monkeypatch,
         "app.app_settings.get_setting",
         lambda key, default=None: ["v7.4.3"] if key == "executive_compliant_versions" else default,
     )
-    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", lambda: {})
+    monkeypatch.setattr("app.pending_status_cache.get_all_cached_devices", dict)
     monkeypatch.setattr(
         "app.pending_status_cache.get_cache_status",
         lambda: {"status": "ok", "last_updated": None, "adoms_cached": 0, "error": None},
@@ -944,7 +944,7 @@ def test_run_hygiene_sweep_stores_rule_count_total(app_ctx):
 
 
 def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tmp_path, monkeypatch):
-    import app.hygiene_rollup as hygiene_rollup
+    from app import hygiene_rollup
 
     client = MagicMock()
     client.__enter__ = MagicMock(return_value=client)
@@ -976,7 +976,7 @@ def test_run_hygiene_sweep_computes_and_persists_rule_hygiene_rollup(app_ctx, tm
 
 
 def test_run_hygiene_sweep_populates_details_per_package(app_ctx, tmp_path, monkeypatch):
-    import app.hygiene_rollup as hygiene_rollup
+    from app import hygiene_rollup
 
     client = MagicMock()
     client.__enter__ = MagicMock(return_value=client)

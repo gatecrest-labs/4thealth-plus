@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 def test_bulk_device_review_adom_aggregates(app_ctx):
@@ -20,11 +20,13 @@ def test_bulk_device_review_adom_aggregates(app_ctx):
         "protocols": [], "has_insecure": False, "has_secure": False,
     }
 
-    with patch("app.routes.audit_review_routes.make_client", return_value=mock_client):
-        with patch("app.routes.audit_review_routes.run_checks", return_value=[fake_row]):
-            results = bulk_device_review_adom(
-                "TEST", ["ntp_config"], {}, max_workers=2
-            )
+    with (
+        patch("app.routes.audit_review_routes.make_client", return_value=mock_client),
+        patch("app.routes.audit_review_routes.run_checks", return_value=[fake_row]),
+    ):
+        results = bulk_device_review_adom(
+            "TEST", ["ntp_config"], {}, max_workers=2
+        )
 
     assert len(results) == 2
     assert all("device" in r for r in results)

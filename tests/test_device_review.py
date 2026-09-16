@@ -10,16 +10,15 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.device_review import (
+    _match_host,
     _parse_host_list,
     _resolve_host,
-    _match_host,
-    _run_ntp_config,
-    _run_syslog_config,
-    _run_log_faz,
     _run_dns,
     _run_interface_protocols,
+    _run_log_faz,
+    _run_ntp_config,
+    _run_syslog_config,
 )
-
 
 # ── _parse_host_list ──────────────────────────────────────────────────────────
 
@@ -390,9 +389,11 @@ def test_load_proto_overrides_invalid_value_ignored(tmp_path, caplog):
     from app.device_review import _load_proto_overrides
     f = tmp_path / "protocol_severity.json"
     f.write_text(json.dumps({"ping": "badvalue", "http": "insecure"}))
-    with patch("app.device_review._PROTO_SEVERITY_PATH", str(f)):
-        with caplog.at_level(logging.WARNING):
-            result = _load_proto_overrides()
+    with (
+        patch("app.device_review._PROTO_SEVERITY_PATH", str(f)),
+        caplog.at_level(logging.WARNING),
+    ):
+        result = _load_proto_overrides()
     assert "ping" not in result
     assert result["http"] is False
     assert any("ping" in r.message for r in caplog.records if r.levelno == logging.WARNING)

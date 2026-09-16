@@ -1,8 +1,8 @@
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
-from unittest.mock import patch, MagicMock
-import requests
+from unittest.mock import MagicMock
 
 
 def test_fmg_client_uses_requests_session():

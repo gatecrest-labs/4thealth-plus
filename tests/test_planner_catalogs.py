@@ -53,7 +53,7 @@ def test_build_catalogs_degrades_gracefully_if_global_fetch_fails():
     client.get_service_objects.return_value = []
     client.get_service_groups.return_value = []
 
-    addr_catalog, svc_catalog = build_catalogs(client, "OT-ADOM")
+    addr_catalog, _svc_catalog = build_catalogs(client, "OT-ADOM")
     assert addr_catalog.exact_match_name("10.1.1.1/32") is None  # no crash, just empty
 
 

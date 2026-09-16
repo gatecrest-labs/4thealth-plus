@@ -1,8 +1,8 @@
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 os.environ.setdefault("FMG_PRIMARY_HOST", "127.0.0.1")
 
-import pytest
 
 
 def test_bulk_preview_adom_importable():

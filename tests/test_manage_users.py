@@ -23,6 +23,7 @@ def manage_users(monkeypatch):
     monkeypatch.delenv("SECRET_KEY", raising=False)
 
     import importlib
+
     import manage_users as mu
 
     importlib.reload(mu)

@@ -1,5 +1,6 @@
 """Tests for GET /external/api/executive/summary."""
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
 from unittest.mock import patch

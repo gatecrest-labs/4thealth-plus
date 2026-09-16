@@ -1,5 +1,5 @@
 """Tests for app.device_review_ai.build_narrative."""
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 def test_build_narrative_calls_provider_and_returns_text():
