@@ -313,6 +313,57 @@ def test_run_sweep_persists_classified_result(tmp_path, monkeypatch):
     ]
 
 
+def test_run_sweep_retries_with_mgt_vdom_when_default_call_is_empty(
+    tmp_path, monkeypatch
+):
+    fake_path = tmp_path / "license_status.json"
+    monkeypatch.setattr("app.license_status_cache._STORE_PATH", fake_path)
+
+    fake_client = MagicMock()
+    fake_client.get_adoms.return_value = [{"name": "Corp"}]
+    fake_client.get_devices.return_value = [{"name": "fw-a", "mgt_vdom": "mgmt"}]
+
+    def _fake_get_license_status(adom, name, vdom=None):
+        if vdom is None:
+            return {}
+        return {
+            "forticare": {
+                "support": {"enhanced": {"status": "licensed", "expires": 9999999999}}
+            }
+        }
+
+    fake_client.get_device_license_status.side_effect = _fake_get_license_status
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = _run_sweep(app=None)
+
+    assert result is True
+    persisted = json.loads(fake_path.read_text())
+    assert persisted["devices_licensed"] == 1
+    fake_client.get_device_license_status.assert_any_call("Corp", "fw-a")
+    fake_client.get_device_license_status.assert_any_call("Corp", "fw-a", vdom="mgmt")
+
+
+def test_run_sweep_does_not_retry_when_mgt_vdom_is_root(tmp_path, monkeypatch):
+    fake_path = tmp_path / "license_status.json"
+    monkeypatch.setattr("app.license_status_cache._STORE_PATH", fake_path)
+
+    fake_client = MagicMock()
+    fake_client.get_adoms.return_value = [{"name": "Corp"}]
+    fake_client.get_devices.return_value = [{"name": "fw-a", "mgt_vdom": "root"}]
+    fake_client.get_device_license_status.return_value = {}
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+
+    with patch("app.fmg_helpers.make_client", return_value=fake_client):
+        result = _run_sweep(app=None)
+
+    assert result is True
+    fake_client.get_device_license_status.assert_called_once_with("Corp", "fw-a")
+
+
 def test_run_sweep_skips_forti_prefixed_adoms(tmp_path, monkeypatch):
     fake_path = tmp_path / "license_status.json"
     monkeypatch.setattr("app.license_status_cache._STORE_PATH", fake_path)

@@ -250,8 +250,8 @@ function renderHealthModal(deviceName, d) {
   const licBadgeHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:4px;font-size:.8rem;font-weight:600;background:${licColor}1a;color:${licColor};border:1px solid ${licColor}66">${licLabel}</span>`;
 
   // FortiGuard subscription table (shown when subscription data is present)
-  const FG_SUB_KEYS   = ['antivirus','ips','web_filtering','appctrl','antispam','outbreak_prevention','firmware_updates','forticloud_sandbox'];
-  const FG_SUB_LABELS = { antivirus:'Antivirus (AV)', ips:'IPS / NIDS', web_filtering:'Web Filtering', appctrl:'App Control', antispam:'Anti-Spam', outbreak_prevention:'Outbreak Prevention', firmware_updates:'Firmware Updates', forticloud_sandbox:'FortiCloud Sandbox' };
+  const FG_SUB_KEYS   = ['antivirus','ips','web_filtering','appctrl','antispam','outbreak_prevention','firmware_updates','forticloud_sandbox','ai_malware_detection','blacklisted_certificates'];
+  const FG_SUB_LABELS = { antivirus:'Antivirus (AV)', ips:'IPS / NIDS', web_filtering:'Web Filtering', appctrl:'App Control', antispam:'Anti-Spam', outbreak_prevention:'Outbreak Prevention', firmware_updates:'Firmware Updates', forticloud_sandbox:'FortiCloud Sandbox', ai_malware_detection:'AI Malware Detection', blacklisted_certificates:'Blocklisted Certificates' };
   const fgSubs = lic.subscriptions || {};
   const fgRows = FG_SUB_KEYS.map(key => {
     const sub = fgSubs[key] || {};
