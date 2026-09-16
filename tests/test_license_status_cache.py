@@ -1,6 +1,12 @@
 """Tests for app.license_status_cache's pure aggregation logic."""
 
-from app.license_status_cache import _build_firmware_version, _classify_devices
+from datetime import date
+
+from app.license_status_cache import (
+    _build_firmware_version,
+    _classify_devices,
+    compute_expiring_soon,
+)
 
 
 def test_classify_devices_counts_and_details():
@@ -134,6 +140,92 @@ def test_build_firmware_version_major_mr_only():
 
 def test_build_firmware_version_missing_fields():
     assert _build_firmware_version({}) == "n/a"
+
+
+_AS_OF = date(2026, 9, 16)
+
+
+def test_compute_expiring_soon_buckets_are_cumulative():
+    all_devices = [
+        {
+            "device": "fw-10d",
+            "adom": "Corp",
+            "status": "licensed",
+            "expires": "2026-09-26",
+        },
+        {
+            "device": "fw-45d",
+            "adom": "Corp",
+            "status": "licensed",
+            "expires": "2026-10-31",
+        },
+        {
+            "device": "fw-75d",
+            "adom": "Corp",
+            "status": "licensed",
+            "expires": "2026-11-30",
+        },
+    ]
+    result = compute_expiring_soon(all_devices, as_of=_AS_OF)
+    assert result["devices_expiring_30"] == 1
+    assert result["devices_expiring_60"] == 2
+    assert result["devices_expiring_90"] == 3
+    assert [d["device"] for d in result["expiring_soon"]] == [
+        "fw-10d",
+        "fw-45d",
+        "fw-75d",
+    ]
+    assert result["expiring_soon"][0]["days_until"] == 10
+
+
+def test_compute_expiring_soon_excludes_beyond_90_days():
+    all_devices = [
+        {
+            "device": "fw-far",
+            "adom": "Corp",
+            "status": "licensed",
+            "expires": "2027-06-01",
+        }
+    ]
+    result = compute_expiring_soon(all_devices, as_of=_AS_OF)
+    assert result == {
+        "devices_expiring_30": 0,
+        "devices_expiring_60": 0,
+        "devices_expiring_90": 0,
+        "expiring_soon": [],
+    }
+
+
+def test_compute_expiring_soon_ignores_non_licensed_and_missing_expiry():
+    all_devices = [
+        {"device": "fw-expired", "adom": "Corp", "status": "expired", "expires": None},
+        {"device": "fw-unknown", "adom": "Corp", "status": "unknown", "expires": None},
+        {"device": "fw-no-date", "adom": "Corp", "status": "licensed", "expires": None},
+    ]
+    result = compute_expiring_soon(all_devices, as_of=_AS_OF)
+    assert result["expiring_soon"] == []
+
+
+def test_compute_expiring_soon_ignores_malformed_expiry():
+    all_devices = [
+        {
+            "device": "fw-bad",
+            "adom": "Corp",
+            "status": "licensed",
+            "expires": "not-a-date",
+        }
+    ]
+    result = compute_expiring_soon(all_devices, as_of=_AS_OF)
+    assert result["expiring_soon"] == []
+
+
+def test_compute_expiring_soon_empty_input():
+    assert compute_expiring_soon([], as_of=_AS_OF) == {
+        "devices_expiring_30": 0,
+        "devices_expiring_60": 0,
+        "devices_expiring_90": 0,
+        "expiring_soon": [],
+    }
 
 
 import json

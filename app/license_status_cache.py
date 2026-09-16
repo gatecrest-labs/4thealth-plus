@@ -22,15 +22,17 @@ app.device_backup_cache. Because this is a plain JSON file on shared disk
 rather than an in-memory store, it needs no SQLite collector/web split
 treatment.
 
-Two consumers share this one sweep: app.routes.external_api_routes reads
-the aggregate counts + "details" (expired/unknown only) for the executive
-summary; the Device Versions tab's License Status section (routes in
-app.routes.api_routes) reads "all_devices" (every device, every status,
-with a "firmware" string) for its donut charts and per-device export. A
-second, more-frequent sweep was deliberately NOT added for the interactive
-tab -- it would double the FMG load of the one expensive (no-bulk-endpoint)
-license call this module exists to amortize. The manual "Refresh" button on
-the Versions page calls the same refresh_now() as everything else here.
+Three consumers share this one sweep: app.routes.external_api_routes reads
+the aggregate counts + "details" (expired/unknown only) plus
+compute_expiring_soon()'s 30/60/90-day lookahead for the executive summary
+(consumed by 4tExecutive's Lifecycle & Support domain); the Device Versions
+tab's License Status section (routes in app.routes.api_routes) reads
+"all_devices" (every device, every status, with a "firmware" string) for
+its donut charts and per-device export. A second, more-frequent sweep was
+deliberately NOT added for the interactive tab -- it would double the FMG
+load of the one expensive (no-bulk-endpoint) license call this module
+exists to amortize. The manual "Refresh" button on the Versions page calls
+the same refresh_now() as everything else here.
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ import json
 import logging
 import threading
 import time as _time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from app.atomic_io import atomic_write_json
@@ -145,6 +147,54 @@ def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> di
         "devices_unknown": unknown,
         "details": details,
         "all_devices": all_devices,
+    }
+
+
+def compute_expiring_soon(all_devices: list[dict], as_of: date | None = None) -> dict:
+    """Bucket "licensed" devices with a known expiry date into 30/60/90-day
+    lookahead windows — same "within N" cumulative convention as
+    app.model_eos.hw_eos_within (a device expiring in 10 days counts toward
+    all three buckets). Unlike hw_eos_within, this is never inclusive of
+    devices already past their window: a "licensed" device's expires date is
+    always in the future by construction (app.license_status.parse_license_payload
+    reclassifies a past expiry as "expired" upstream), so devices_expired is
+    never double-counted here.
+
+    Pure/no I/O — unit-tested directly. Deliberately computed at request
+    time (see app.routes.external_api_routes._license_status()) rather than
+    persisted alongside the sweep, so "days until" is always relative to
+    when it's read, not to the (up to 24h-stale) last sweep time.
+    """
+    as_of = as_of or datetime.now(UTC).date()
+    soon: list[dict] = []
+    for device in all_devices:
+        if not isinstance(device, dict) or device.get("status") != "licensed":
+            continue
+        expires = device.get("expires")
+        if not expires:
+            continue
+        try:
+            expires_date = date.fromisoformat(expires)
+        except (TypeError, ValueError):
+            continue
+        days_until = (expires_date - as_of).days
+        if days_until < 0 or days_until > 90:
+            continue
+        soon.append(
+            {
+                "device": device.get("device", ""),
+                "adom": device.get("adom", ""),
+                "expires": expires,
+                "days_until": days_until,
+            }
+        )
+
+    soon.sort(key=lambda d: d["days_until"])
+    return {
+        "devices_expiring_30": sum(1 for d in soon if d["days_until"] <= 30),
+        "devices_expiring_60": sum(1 for d in soon if d["days_until"] <= 60),
+        "devices_expiring_90": sum(1 for d in soon if d["days_until"] <= 90),
+        "expiring_soon": soon,
     }
 
 

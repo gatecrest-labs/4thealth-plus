@@ -909,7 +909,18 @@ def test_payload_includes_license_status(client):
         "devices_licensed": 40,
         "devices_expired": 2,
         "devices_unknown": 1,
-        "details": [{"device": "fw-a", "adom": "Corp", "status": "expired", "expires": None}],
+        "details": [
+            {"device": "fw-a", "adom": "Corp", "status": "expired", "expires": None}
+        ],
+        "all_devices": [
+            {
+                "device": "fw-b",
+                "adom": "Corp",
+                "status": "licensed",
+                "expires": "2026-09-26",
+                "firmware": "v7.6.7",
+            }
+        ],
         "collected_at": "2026-09-16T03:00:00+00:00",
     }
     with (
@@ -925,13 +936,46 @@ def test_payload_includes_license_status(client):
         patch("app.change_control_cache.get_latest", return_value=None),
         patch("app.device_backup_cache.get_latest", return_value=None),
         patch("app.license_status_cache.get_latest", return_value=fake_record),
+        patch(
+            "app.license_status_cache.compute_expiring_soon",
+            return_value={
+                "devices_expiring_30": 1,
+                "devices_expiring_60": 1,
+                "devices_expiring_90": 1,
+                "expiring_soon": [
+                    {
+                        "device": "fw-b",
+                        "adom": "Corp",
+                        "expires": "2026-09-26",
+                        "days_until": 10,
+                    }
+                ],
+            },
+        ),
     ):
         resp = client.get(
             "/external/api/executive/summary",
             headers={"Authorization": "Bearer good-token"},
         )
     data = resp.get_json()
-    assert data["license_status"] == fake_record
+    assert data["license_status"] == {
+        "devices_licensed": 40,
+        "devices_expired": 2,
+        "devices_unknown": 1,
+        "details": fake_record["details"],
+        "devices_expiring_30": 1,
+        "devices_expiring_60": 1,
+        "devices_expiring_90": 1,
+        "expiring_soon": [
+            {
+                "device": "fw-b",
+                "adom": "Corp",
+                "expires": "2026-09-26",
+                "days_until": 10,
+            }
+        ],
+        "collected_at": "2026-09-16T03:00:00+00:00",
+    }
     assert data["freshness"]["license_status"] == "2026-09-16T03:00:00+00:00"
 
 
@@ -960,5 +1004,9 @@ def test_payload_license_status_defaults_when_no_sweep_yet(client):
         "devices_expired": None,
         "devices_unknown": None,
         "details": [],
+        "devices_expiring_30": None,
+        "devices_expiring_60": None,
+        "devices_expiring_90": None,
+        "expiring_soon": [],
         "collected_at": None,
     }

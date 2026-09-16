@@ -292,8 +292,16 @@ def _license_status() -> dict:
     app.license_status.parse_license_payload() for how devices are
     classified. None counts (never swept yet) rather than 0, same
     "unknown never renders as a false negative" convention as
-    app.model_eos and app.device_backup_cache."""
-    from app.license_status_cache import get_latest
+    app.model_eos and app.device_backup_cache.
+
+    devices_expiring_30/60/90 and expiring_soon are derived from the
+    sweep's "all_devices" at request time via
+    app.license_status_cache.compute_expiring_soon() — see that function's
+    docstring for why this isn't persisted alongside the sweep. Consumed by
+    4tExecutive's Lifecycle & Support domain (its app/devices.py drill-down
+    table and app/domains.py's informational member rows) the same way
+    devices_hw_eos_12m already is."""
+    from app.license_status_cache import compute_expiring_soon, get_latest
 
     latest = get_latest()
     if latest is None:
@@ -302,13 +310,22 @@ def _license_status() -> dict:
             "devices_expired": None,
             "devices_unknown": None,
             "details": [],
+            "devices_expiring_30": None,
+            "devices_expiring_60": None,
+            "devices_expiring_90": None,
+            "expiring_soon": [],
             "collected_at": None,
         }
+    expiring = compute_expiring_soon(latest.get("all_devices") or [])
     return {
         "devices_licensed": latest.get("devices_licensed"),
         "devices_expired": latest.get("devices_expired"),
         "devices_unknown": latest.get("devices_unknown"),
         "details": latest.get("details") or [],
+        "devices_expiring_30": expiring["devices_expiring_30"],
+        "devices_expiring_60": expiring["devices_expiring_60"],
+        "devices_expiring_90": expiring["devices_expiring_90"],
+        "expiring_soon": expiring["expiring_soon"],
         "collected_at": latest.get("collected_at"),
     }
 
