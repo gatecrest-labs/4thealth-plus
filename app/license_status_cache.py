@@ -272,6 +272,16 @@ def _run_sweep(app) -> bool:
                     name = dev["name"]
                     try:
                         raw = client.get_device_license_status(adom, name)
+                        if not raw:
+                            # Multi-VDOM devices whose management VDOM isn't
+                            # root come back empty under the implicit
+                            # default — retry once against mgt_vdom before
+                            # giving up.
+                            mgt_vdom = (dev.get("mgt_vdom") or "").strip('"')
+                            if mgt_vdom and mgt_vdom.lower() != "root":
+                                raw = client.get_device_license_status(
+                                    adom, name, vdom=mgt_vdom
+                                )
                     except Exception as exc:
                         logger.warning(
                             "license_status_cache: get_device_license_status(%s, %s) failed: %s",

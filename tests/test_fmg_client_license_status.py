@@ -17,7 +17,11 @@ def _make_client():
 
 def test_get_device_license_status_returns_payload():
     client = _make_client()
-    fake_payload = {"forticare": {"support": {"enhanced": {"status": "licensed", "expires": 9999999999}}}}
+    fake_payload = {
+        "forticare": {
+            "support": {"enhanced": {"status": "licensed", "expires": 9999999999}}
+        }
+    }
     with patch.object(
         client,
         "_proxy",
@@ -44,3 +48,27 @@ def test_get_device_license_status_returns_empty_dict_when_payload_not_a_dict():
     ):
         result = client.get_device_license_status("root", "FW-1")
     assert result == {}
+
+
+def test_get_device_license_status_appends_vdom_query_param():
+    client = _make_client()
+    with patch.object(
+        client,
+        "_proxy",
+        return_value={"rpc_code": 0, "http_status": 200, "payload": {}},
+    ) as mock_proxy:
+        client.get_device_license_status("root", "FW-1", vdom="mgmt")
+    mock_proxy.assert_called_once_with(
+        "root", "FW-1", "/api/v2/monitor/license/status?vdom=mgmt"
+    )
+
+
+def test_get_device_license_status_omits_vdom_query_param_when_not_given():
+    client = _make_client()
+    with patch.object(
+        client,
+        "_proxy",
+        return_value={"rpc_code": 0, "http_status": 200, "payload": {}},
+    ) as mock_proxy:
+        client.get_device_license_status("root", "FW-1")
+    mock_proxy.assert_called_once_with("root", "FW-1", "/api/v2/monitor/license/status")

@@ -1414,13 +1414,24 @@ class FMGClient:
         except Exception:
             return []
 
-    def get_device_license_status(self, adom: str, device_name: str) -> dict:
+    def get_device_license_status(
+        self, adom: str, device_name: str, vdom: str | None = None
+    ) -> dict:
         """Return the raw /api/v2/monitor/license/status proxy payload for
         one device, or {} on any error (including a non-dict payload) —
         callers pass this straight into app.license_status.parse_license_payload(),
-        which already treats {} as "unknown" rather than crashing."""
+        which already treats {} as "unknown" rather than crashing.
+
+        vdom is optional — pass a device's mgt_vdom to retry against that
+        VDOM instead of the implicit default (root) when the default call
+        returns no payload. Multi-VDOM devices whose management VDOM isn't
+        root otherwise come back "Unknown" even though the license data
+        exists, just not under root."""
         try:
-            r = self._proxy(adom, device_name, "/api/v2/monitor/license/status")
+            path = "/api/v2/monitor/license/status"
+            if vdom:
+                path += f"?vdom={vdom}"
+            r = self._proxy(adom, device_name, path)
             payload = r.get("payload", {})
             return payload if isinstance(payload, dict) else {}
         except Exception:

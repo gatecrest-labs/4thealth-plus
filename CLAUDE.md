@@ -376,7 +376,8 @@ Two independent sections:
    button triggers an immediate sweep.
 3. **FortiGuard Subscriptions** (below License Status) — a mini-donut card
    per subscription type (Antivirus, IPS, Web Filtering, App Control,
-   Anti-Spam, Outbreak Prevention, Firmware Updates, FortiCloud Sandbox —
+   Anti-Spam, Outbreak Prevention, Firmware Updates, FortiCloud Sandbox,
+   AI Malware Detection, Blocklisted Certificates —
    `FORTIGUARD_SUBSCRIPTION_KEYS` in `app/license_status.py`) showing
    Licensed / Expired / No License counts across the same device set as
    the License Status section above. Click a card's slice or legend to
@@ -417,6 +418,17 @@ in the firewall detail modal (`app/static/js/firewalls.js::renderHealthModal()`)
 sourced from the live (not cached) `payload("license_status")` call
 `_assemble_health()` already makes for the License badge — no relation to
 the daily sweep above.
+
+**Multi-VDOM `mgt_vdom` fallback:** `FMGClient.get_device_license_status()`
+takes an optional `vdom` argument (appends `?vdom=<vdom>` to the proxy
+path). The daily sweep's `_fetch_one()` calls it without a VDOM first
+(FortiOS's implicit default is root); if that comes back empty, it retries
+once against the device roster's own `mgt_vdom` field (skipped when
+`mgt_vdom` is missing or already `"root"`) — multi-VDOM devices whose
+management VDOM isn't root otherwise show "Unknown" license status even
+though the data exists, just not under root. The live single-device path
+(`_assemble_health()`) does not have this fallback yet — only the sweep
+does.
 
 ### Rule Validation tab
 

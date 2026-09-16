@@ -33,16 +33,19 @@ let fgDetSize   = 20;
 const FG_KEYS = [
   'antivirus', 'ips', 'web_filtering', 'appctrl',
   'antispam', 'outbreak_prevention', 'firmware_updates', 'forticloud_sandbox',
+  'ai_malware_detection', 'blacklisted_certificates',
 ];
 const FG_LABELS = {
-  antivirus:           'Antivirus (AV)',
-  ips:                 'IPS / NIDS',
-  web_filtering:       'Web Filtering',
-  appctrl:             'App Control',
-  antispam:            'Anti-Spam',
-  outbreak_prevention: 'Outbreak Prevention',
-  firmware_updates:    'Firmware Updates',
-  forticloud_sandbox:  'FortiCloud Sandbox',
+  antivirus:                'Antivirus (AV)',
+  ips:                      'IPS / NIDS',
+  web_filtering:            'Web Filtering',
+  appctrl:                  'App Control',
+  antispam:                 'Anti-Spam',
+  outbreak_prevention:      'Outbreak Prevention',
+  firmware_updates:         'Firmware Updates',
+  forticloud_sandbox:       'FortiCloud Sandbox',
+  ai_malware_detection:     'AI Malware Detection',
+  blacklisted_certificates: 'Blocklisted Certificates',
 };
 const FG_STATUS_DISPLAY = { licensed: 'Licensed', expired: 'Expired', none: 'No License', unknown: 'Unknown' };
 

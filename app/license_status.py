@@ -29,6 +29,8 @@ FORTIGUARD_SUBSCRIPTION_KEYS: tuple[str, ...] = (
     "outbreak_prevention",
     "firmware_updates",
     "forticloud_sandbox",
+    "ai_malware_detection",
+    "blacklisted_certificates",
 )
 
 
