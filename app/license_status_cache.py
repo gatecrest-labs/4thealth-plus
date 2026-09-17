@@ -79,7 +79,10 @@ def _build_firmware_version(device: dict) -> str:
 
 
 def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> dict:
-    """Bucket every device across all ADOMs into licensed/expired/unknown.
+    """Bucket every device across all ADOMs into licensed/expired/unknown
+    (the latter an aggregate of "unknown", "offline", and "unregistered" —
+    see app.license_status.parse_license_payload and the offline promotion
+    in _run_sweep()).
 
     devices_by_adom_with_license: {adom: [{"name": str, "license": {"status",
     "expires"}, "firmware": str}, ...]} — each device dict must already
@@ -126,7 +129,7 @@ def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> di
                     {
                         "device": name,
                         "adom": adom,
-                        "status": "unknown",
+                        "status": status,
                         "expires": expires,
                     }
                 )
@@ -299,9 +302,15 @@ def _run_sweep(app) -> bool:
                             adom,
                             name,
                         )
+                    license_info = parse_license_payload(raw)
+                    conn_status = dev.get(
+                        "conn_status", dev.get("connection_status", -1)
+                    )
+                    if license_info["status"] == "unknown" and conn_status != 1:
+                        license_info = {**license_info, "status": "offline"}
                     return {
                         "name": name,
-                        "license": parse_license_payload(raw),
+                        "license": license_info,
                         "firmware": _build_firmware_version(dev),
                     }
 

@@ -72,60 +72,60 @@ def test_none_payload_is_unknown():
     }
 
 
-def test_status_not_licensed_is_unknown():
+def test_status_not_licensed_is_unregistered():
     payload = {
         "forticare": {"support": {"enhanced": {"status": "unlicensed", "expires": 123}}}
     }
     assert parse_license_payload(payload) == {
-        "status": "unknown",
+        "status": "unregistered",
         "expires": None,
         "subscriptions": _NO_SUBS,
     }
 
 
-def test_licensed_status_without_expires_is_unknown():
+def test_licensed_status_without_expires_is_unregistered():
     payload = {"forticare": {"support": {"enhanced": {"status": "licensed"}}}}
     assert parse_license_payload(payload) == {
-        "status": "unknown",
+        "status": "unregistered",
         "expires": None,
         "subscriptions": _NO_SUBS,
     }
 
 
-def test_forticare_not_a_dict_is_unknown():
+def test_forticare_not_a_dict_is_unregistered():
     assert parse_license_payload({"forticare": []}) == {
-        "status": "unknown",
+        "status": "unregistered",
         "expires": None,
         "subscriptions": _NO_SUBS,
     }
 
 
-def test_support_not_a_dict_is_unknown():
+def test_support_not_a_dict_is_unregistered():
     payload = {"forticare": {"support": None}}
     assert parse_license_payload(payload) == {
-        "status": "unknown",
+        "status": "unregistered",
         "expires": None,
         "subscriptions": _NO_SUBS,
     }
 
 
-def test_enhanced_not_a_dict_is_unknown():
+def test_enhanced_not_a_dict_is_unregistered():
     payload = {"forticare": {"support": {"enhanced": []}}}
     assert parse_license_payload(payload) == {
-        "status": "unknown",
+        "status": "unregistered",
         "expires": None,
         "subscriptions": _NO_SUBS,
     }
 
 
-def test_non_numeric_expires_is_unknown():
+def test_non_numeric_expires_is_unregistered():
     payload = {
         "forticare": {
             "support": {"enhanced": {"status": "licensed", "expires": "2027-01-01"}}
         }
     }
     assert parse_license_payload(payload) == {
-        "status": "unknown",
+        "status": "unregistered",
         "expires": None,
         "subscriptions": _NO_SUBS,
     }

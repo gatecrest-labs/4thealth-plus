@@ -247,12 +247,16 @@ function renderHealthModal(deviceName, d) {
     if (days <= 90) return '#ca8a04';
     return '#16a34a';
   };
-  const licColor  = licStatus === 'licensed' ? _expiryColor(lic.expires)
-                  : licStatus === 'expired'  ? '#dc2626'
+  const licColor  = licStatus === 'licensed'      ? _expiryColor(lic.expires)
+                  : licStatus === 'expired'        ? '#dc2626'
+                  : licStatus === 'offline'        ? '#374151'
+                  : licStatus === 'unregistered'   ? '#94a3b8'
                   : '#6b7280';
   const licLabel  = licStatus === 'licensed'
     ? `Licensed${lic.expires ? ' · exp ' + escHtml(lic.expires) : ''}`
-    : licStatus === 'expired' ? 'EXPIRED'
+    : licStatus === 'expired'       ? 'EXPIRED'
+    : licStatus === 'offline'       ? 'Offline'
+    : licStatus === 'unregistered'  ? 'Not Registered'
     : 'Unknown';
   const licBadgeHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:4px;font-size:.8rem;font-weight:600;background:${licColor}1a;color:${licColor};border:1px solid ${licColor}66">${licLabel}</span>`;
 

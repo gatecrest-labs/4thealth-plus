@@ -2,8 +2,10 @@
 
 Used by both the live, single-device firewall detail panel
 (app.routes.api_routes._assemble_health) and the fleet-wide daily sweep
-(app.license_status_cache) so the "licensed / expired / unknown"
-classification has one implementation.
+(app.license_status_cache) so the "licensed / expired / unregistered /
+offline" classification has one implementation. "offline" is not produced
+by parse_license_payload() itself — both call sites promote "unknown" to
+"offline" once the device's own conn_status confirms it's unreachable.
 Source: FortiOS's /api/v2/monitor/license/status response, proxied
 through FortiManager (see app.fmg_client.PROXY_ENDPOINTS's "license_status"
 entry and FMGClient.get_device_license_status()).
@@ -77,33 +79,39 @@ def parse_license_payload(raw_payload: dict | None) -> dict:
     _proxy() returns (i.e. `payload("license_status")` in api_routes.py,
     or the direct return of FMGClient.get_device_license_status()).
 
-    Returns {"status": "licensed" | "expired" | "unknown", "expires":
-    "YYYY-MM-DD" | None, "subscriptions": {key: {"status", "expires"},
-    ...}}. FortiOS reports "expires_soon" (not just "licensed") once a
-    contract is inside its renewal window — treated identically to
+    Returns {"status": "licensed" | "expired" | "unregistered" | "unknown",
+    "expires": "YYYY-MM-DD" | None, "subscriptions": {key: {"status",
+    "expires"}, ...}}. FortiOS reports "expires_soon" (not just "licensed")
+    once a contract is inside its renewal window — treated identically to
     "licensed" here since the device is still fully licensed, just due for
     renewal; the expiry date itself is what actually communicates urgency
-    (see app.license_status_cache.compute_expiring_soon()). "unknown"
-    covers every other failure mode for the FortiCare support status:
-    missing/malformed forticare block, an unrecognized status string, or a
-    "licensed"/"expires_soon" status with no expires timestamp — never
-    fabricated. "subscriptions" is always present (each key defaults to
-    "unknown" when its entry is missing/malformed) regardless of whether
-    the FortiCare block itself parsed.
+    (see app.license_status_cache.compute_expiring_soon()). "unregistered"
+    covers every failure mode for the FortiCare support status when the
+    device actually returned a payload: missing/malformed forticare block,
+    an unrecognized status string, or a "licensed"/"expires_soon" status
+    with no expires timestamp — the device is reachable but not registered
+    with FortiCare. "unknown" is reserved for no payload at all (device
+    unreachable — see the offline promotion in license_status_cache.py and
+    api_routes.py, which further reclassifies "unknown" to "offline" when
+    conn_status confirms the device is down). "subscriptions" is always
+    present (each key defaults to "unknown" when its entry is
+    missing/malformed) regardless of whether the FortiCare block itself
+    parsed.
     """
     results = raw_payload if isinstance(raw_payload, dict) else {}
     now = time.time()
     subscriptions = _parse_subscriptions(results, now)
+    no_status = "unregistered" if results else "unknown"
 
     forticare = results.get("forticare", {})
     if not isinstance(forticare, dict):
-        return {"status": "unknown", "expires": None, "subscriptions": subscriptions}
+        return {"status": no_status, "expires": None, "subscriptions": subscriptions}
     support = forticare.get("support", {})
     if not isinstance(support, dict):
-        return {"status": "unknown", "expires": None, "subscriptions": subscriptions}
+        return {"status": no_status, "expires": None, "subscriptions": subscriptions}
     enhanced = support.get("enhanced", {})
     if not isinstance(enhanced, dict):
-        return {"status": "unknown", "expires": None, "subscriptions": subscriptions}
+        return {"status": no_status, "expires": None, "subscriptions": subscriptions}
     status = enhanced.get("status", "")
     expires_ts = enhanced.get("expires")
     is_real_number = isinstance(expires_ts, (int, float)) and not isinstance(
@@ -118,4 +126,4 @@ def parse_license_payload(raw_payload: dict | None) -> dict:
                 "subscriptions": subscriptions,
             }
         return {"status": "expired", "expires": None, "subscriptions": subscriptions}
-    return {"status": "unknown", "expires": None, "subscriptions": subscriptions}
+    return {"status": no_status, "expires": None, "subscriptions": subscriptions}
