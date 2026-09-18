@@ -14,7 +14,7 @@
       if (btn.dataset.panel === 'external-api' && !_extApiLoaded) loadExtApi();
       if (btn.dataset.panel === 'ai-assist' && !_aiAssistLoaded) loadAiAssist();
       if (btn.dataset.panel === 'scheduled') {
-        loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs();
+        loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); loadRPJobs();
         _wireJobPageSizes();
       }
       if (btn.dataset.panel === 'backup') { window.loadBackupConfig(); window.loadBackupJobs(); }
@@ -1319,6 +1319,8 @@ let _drPage = 0, _drPageSize = 10;
 let _rhJobs = [];
 let _rhPage = 0, _rhPageSize = 10;
 
+let _rpJobs = [];
+
 function renderPager(id, page, totalPages, onNav) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -2232,3 +2234,272 @@ async function pollRHJobStatus(id, btn) {
     }
   };
 })();
+
+// ── Rule Policy Scheduled Jobs ────────────────────────────────────────────────
+
+const _RP_DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+
+async function loadRPJobs() {
+  const tbody = document.getElementById('rp-jobs-tbody');
+  if (!tbody) return;
+  try {
+    const resp = await fetch('/admin/api/rule-policy/jobs');
+    _rpJobs = resp.ok ? await resp.json() : [];
+    renderRPJobsTable();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--danger);text-align:center">Error loading jobs: ${escH(String(e))}</td></tr>`;
+  }
+}
+
+function renderRPJobsTable() {
+  const tbody = document.getElementById('rp-jobs-tbody');
+  if (!tbody) return;
+  if (!_rpJobs.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-muted);text-align:center">No scheduled jobs.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _rpJobs.map(j => {
+    const sched = _rpScheduleDisplay(j);
+    const lastRun = j.runs && j.runs[0];
+    const lastRunStr = lastRun
+      ? `${lastRun.ran_at.slice(0,16).replace('T',' ')} — ${lastRun.status}`
+      : '—';
+    const statusBadge = lastRun
+      ? (lastRun.status === 'ok'
+          ? '<span class="badge badge-green">ok</span>'
+          : '<span class="badge badge-red">' + escH(lastRun.status) + '</span>')
+      : '<span style="color:var(--text-muted)">Never run</span>';
+    const enabledBadge = j.enabled
+      ? '<span class="badge badge-green">Enabled</span>'
+      : '<span class="badge badge-gray">Disabled</span>';
+    return `<tr>
+      <td>${escH(j.name || '—')}</td>
+      <td>${escH(j.adom)}</td>
+      <td>${escH(sched)}</td>
+      <td>${escH((j.format || 'html').toUpperCase())}</td>
+      <td style="font-size:11px">${escH(lastRunStr)}</td>
+      <td>${enabledBadge}</td>
+      <td>
+        <button class="btn-sm" onclick="rpEditJob('${j.id}')">Edit</button>
+        <button class="btn-sm" id="rpRunBtn-${j.id}" onclick="rpRunNow('${j.id}')">Run Now</button>
+        <button class="btn-sm btn-danger" onclick="rpDeleteJob('${j.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function _rpScheduleDisplay(job) {
+  const t = job.time || '';
+  if (job.schedule_type === 'daily') return `Daily @ ${t}`;
+  if (job.schedule_type === 'monthly') {
+    const pos = job.monthly_position === 'end' ? 'end of month' : 'start of month';
+    return `Monthly (${pos}) @ ${t}`;
+  }
+  const days = (job.days_of_week || []).join(', ');
+  return `Weekly (${days || '—'}) @ ${t}`;
+}
+
+function rpUpdateScheduleUI() {
+  const stype = document.querySelector('input[name="rp-schedule-type"]:checked')?.value || 'weekly';
+  document.getElementById('rp-days-row').style.display = stype === 'weekly' ? '' : 'none';
+  document.getElementById('rp-monthly-row').style.display = stype === 'monthly' ? '' : 'none';
+}
+
+async function rpLoadPackages() {
+  const adom = document.getElementById('rp-adom').value;
+  const listDiv = document.getElementById('rp-package-list');
+  if (!adom) { listDiv.innerHTML = '<em style="color:var(--text-muted)">Select an ADOM first</em>'; return; }
+  listDiv.innerHTML = '<em style="color:var(--text-muted)">Loading…</em>';
+  try {
+    const resp = await fetch(`/api/hygiene/adoms/${encodeURIComponent(adom)}/packages`);
+    const pkgs = resp.ok ? await resp.json() : [];
+    if (!pkgs.length) {
+      listDiv.innerHTML = '<em style="color:var(--text-muted)">No packages found.</em>';
+      return;
+    }
+    listDiv.innerHTML = pkgs.map(p => {
+      const name = typeof p === 'string' ? p : (p.name || p);
+      return `<label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer;padding:2px 0">
+        <input type="checkbox" class="rp-pkg-check" value="${escH(name)}">
+        <span>${escH(name)}</span>
+      </label>`;
+    }).join('');
+  } catch (e) {
+    listDiv.innerHTML = `<em style="color:var(--danger)">Error: ${escH(String(e))}</em>`;
+  }
+}
+
+function rpTogglePackageList() {
+  const allChecked = document.getElementById('rp-all-packages').checked;
+  document.getElementById('rp-package-list').style.display = allChecked ? 'none' : '';
+}
+
+function rpOpenNewModal() {
+  document.getElementById('rp-modal-title').textContent = 'New Rule Policy Job';
+  document.getElementById('rp-job-id').value = '';
+  document.getElementById('rp-name').value = '';
+  document.getElementById('rp-adom').innerHTML = '<option value="">— select ADOM —</option>';
+  document.getElementById('rp-all-packages').checked = true;
+  document.getElementById('rp-package-list').style.display = 'none';
+  document.getElementById('rp-package-list').innerHTML = '<em style="color:var(--text-muted)">Select an ADOM first</em>';
+  document.getElementById('rp-stype-weekly').checked = true;
+  _RP_DAYS.forEach(d => {
+    const el = document.getElementById(`rp-day-${d}`);
+    if (el) el.checked = false;
+  });
+  document.getElementById('rp-time').value = '02:00';
+  document.getElementById('rp-format').value = 'html';
+  document.getElementById('rp-batch-size').value = '10';
+  document.getElementById('rp-include-global').checked = false;
+  document.getElementById('rp-live-hits').checked = false;
+  document.getElementById('rp-email').value = '';
+  document.getElementById('rp-enabled').checked = true;
+  document.getElementById('rp-modal-error').style.display = 'none';
+  rpUpdateScheduleUI();
+  _rpPopulateAdomDropdown();
+  document.getElementById('rp-modal').classList.remove('hidden');
+}
+
+async function rpEditJob(jobId) {
+  const job = _rpJobs.find(j => j.id === jobId);
+  if (!job) return;
+  document.getElementById('rp-modal-title').textContent = 'Edit Rule Policy Job';
+  document.getElementById('rp-job-id').value = job.id;
+  document.getElementById('rp-name').value = job.name || '';
+  document.getElementById('rp-all-packages').checked = !(job.packages && job.packages.length);
+  const stype = job.schedule_type || 'weekly';
+  const stypeEl = document.querySelector(`input[name="rp-schedule-type"][value="${stype}"]`);
+  if (stypeEl) stypeEl.checked = true;
+  document.getElementById('rp-time').value = job.time || '02:00';
+  document.getElementById('rp-format').value = job.format || 'html';
+  document.getElementById('rp-batch-size').value = job.batch_size || 10;
+  document.getElementById('rp-include-global').checked = !!job.include_global_policies;
+  document.getElementById('rp-live-hits').checked = !!job.live_hit_counts;
+  document.getElementById('rp-email').value = job.email || '';
+  document.getElementById('rp-enabled').checked = !!job.enabled;
+  // Monthly position
+  const pos = job.monthly_position || 'beginning';
+  const posEl = document.querySelector(`input[name="rp-monthly-pos"][value="${pos}"]`);
+  if (posEl) posEl.checked = true;
+  rpUpdateScheduleUI();
+  // Days
+  _RP_DAYS.forEach(d => {
+    const el = document.getElementById(`rp-day-${d}`);
+    if (el) el.checked = (job.days_of_week || []).includes(d);
+  });
+  document.getElementById('rp-modal-error').style.display = 'none';
+  document.getElementById('rp-modal').classList.remove('hidden');
+  // Load ADOM dropdown and packages
+  await _rpPopulateAdomDropdown(job.adom);
+  await rpLoadPackages();
+  rpTogglePackageList();
+  // Re-check selected packages
+  if (job.packages && job.packages.length) {
+    document.querySelectorAll('.rp-pkg-check').forEach(cb => {
+      cb.checked = job.packages.includes(cb.value);
+    });
+  }
+}
+
+function rpCloseModal() {
+  document.getElementById('rp-modal').classList.add('hidden');
+}
+
+function _rpCollectFormData() {
+  const stype = document.querySelector('input[name="rp-schedule-type"]:checked')?.value || 'weekly';
+  const days = stype === 'weekly'
+    ? _RP_DAYS.filter(d => { const el = document.getElementById(`rp-day-${d}`); return el && el.checked; })
+    : [];
+  const allPkgs = document.getElementById('rp-all-packages').checked;
+  const packages = allPkgs
+    ? []
+    : [...document.querySelectorAll('.rp-pkg-check:checked')].map(cb => cb.value);
+  return {
+    name: document.getElementById('rp-name').value.trim(),
+    adom: document.getElementById('rp-adom').value,
+    packages,
+    schedule_type: stype,
+    days_of_week: days,
+    monthly_position: document.querySelector('input[name="rp-monthly-pos"]:checked')?.value || 'beginning',
+    time: document.getElementById('rp-time').value,
+    format: document.getElementById('rp-format').value,
+    batch_size: parseInt(document.getElementById('rp-batch-size').value, 10) || 10,
+    include_global_policies: document.getElementById('rp-include-global').checked,
+    live_hit_counts: document.getElementById('rp-live-hits').checked,
+    email: document.getElementById('rp-email').value.trim(),
+    enabled: document.getElementById('rp-enabled').checked,
+  };
+}
+
+async function rpSaveJob() {
+  const jobId = document.getElementById('rp-job-id').value;
+  const data = _rpCollectFormData();
+  const errEl = document.getElementById('rp-modal-error');
+  errEl.style.display = 'none';
+  try {
+    const url = jobId ? `/admin/api/rule-policy/jobs/${jobId}` : '/admin/api/rule-policy/jobs';
+    const method = jobId ? 'PUT' : 'POST';
+    const resp = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+      body: JSON.stringify(data),
+    });
+    const body = await resp.json();
+    if (!resp.ok) { errEl.textContent = body.error || 'Save failed'; errEl.style.display = ''; return; }
+    rpCloseModal();
+    loadRPJobs();
+  } catch (e) {
+    errEl.textContent = String(e); errEl.style.display = '';
+  }
+}
+
+async function rpDeleteJob(jobId) {
+  if (!confirm('Delete this rule policy job?')) return;
+  const resp = await fetch(`/admin/api/rule-policy/jobs/${jobId}`, {
+    method: 'DELETE', headers: { 'X-CSRF-Token': getCSRF() },
+  });
+  if (!resp.ok) { alert('Delete failed'); return; }
+  loadRPJobs();
+}
+
+async function rpRunNow(jobId) {
+  const btn = document.getElementById(`rpRunBtn-${jobId}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+  const resp = await fetch(`/admin/api/rule-policy/jobs/${jobId}/run`, {
+    method: 'POST', headers: { 'X-CSRF-Token': getCSRF() },
+  });
+  if (!resp.ok) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+    alert('Failed to start job.');
+    return;
+  }
+  _rpPollStatus(jobId, btn);
+}
+
+async function _rpPollStatus(jobId, btn) {
+  const resp = await fetch(`/admin/api/rule-policy/jobs/${jobId}/status`);
+  const data = await resp.json();
+  if (data.running) {
+    setTimeout(() => _rpPollStatus(jobId, btn), 3000);
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+    loadRPJobs();
+  }
+}
+
+async function _rpPopulateAdomDropdown(selected) {
+  const sel = document.getElementById('rp-adom');
+  if (!sel) return;
+  try {
+    const resp = await fetch('/admin/api/adoms');
+    const data = await resp.json();
+    const current = selected || sel.value;
+    sel.innerHTML = '<option value="">— select ADOM —</option>'
+      + (data.adoms || []).map(a =>
+          `<option value="${escH(a)}" ${a === current ? 'selected' : ''}>${escH(a)}</option>`
+        ).join('');
+    if (current) sel.value = current;
+  } catch (e) {
+    // silent — ADOM list may not be available if FMG is down
+  }
+}

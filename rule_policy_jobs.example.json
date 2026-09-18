@@ -1,0 +1,19 @@
+[
+  {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "name": "Weekly Policy Export",
+    "adom": "Enterprise Services",
+    "packages": [],
+    "schedule_type": "weekly",
+    "days_of_week": ["MON"],
+    "monthly_position": "beginning",
+    "time": "02:00",
+    "include_global_policies": false,
+    "live_hit_counts": false,
+    "format": "html",
+    "batch_size": 10,
+    "email": "admin@example.com",
+    "enabled": false,
+    "runs": []
+  }
+]
