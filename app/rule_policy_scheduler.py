@@ -507,7 +507,9 @@ def _policy_for_pkg(
         if scope_members and isinstance(scope_members[0], dict)
         else ""
     )
-    pulled_at = datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z"
+    pulled_at = (
+        datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z"
+    )
 
     _empty: dict = {
         "package": pkg_path,
@@ -699,7 +701,10 @@ def bulk_policy_adom(
         "adom": adom,
         "results": results,
         "skipped": skipped,
-        "generated_at": datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z",
+        "generated_at": datetime.datetime.now(datetime.UTC)
+        .replace(tzinfo=None)
+        .isoformat()
+        + "Z",
     }
 
 
@@ -761,7 +766,8 @@ def _group_members_html(members: list, indent: int = 0) -> str:
 def _build_attachment_rp(pkg_result: dict, job: dict, fmt: str) -> list:
     """Return list of (filename, bytes) for one package. CSV returns two files."""
     generated_at = pkg_result.get(
-        "pulled_at", datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z"
+        "pulled_at",
+        datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z",
     )
     date_str = generated_at[:10]
     result = pkg_result
