@@ -46,6 +46,7 @@ services:
       - ./config_diff_jobs.json:/app/config_diff_jobs.json:rw
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
       - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
+      - ./rule_policy_jobs.json:/app/rule_policy_jobs.json:rw
       - ./summary_history.json:/app/summary_history.json:rw
       - ./license_status.json:/app/license_status.json:rw
       - ./device_backup.json:/app/device_backup.json:rw
@@ -98,6 +99,7 @@ services:
       - ./config_diff_jobs.json:/app/config_diff_jobs.json:rw
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
       - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
+      - ./rule_policy_jobs.json:/app/rule_policy_jobs.json:rw
       - ./summary_history.json:/app/summary_history.json:rw
       - ./license_status.json:/app/license_status.json:rw
       - ./device_backup.json:/app/device_backup.json:rw
