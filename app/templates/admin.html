@@ -632,6 +632,26 @@
   </div>
   <div class="pagination" id="rhJobsPager" style="display:none"></div>
 
+  <!-- Rule Policy Scheduled Jobs -->
+  <div class="rr-section-label" style="margin-top:2rem">Rule Policy Jobs</div>
+  <p class="admin-panel-desc" style="margin-bottom:1rem">Each job exports policy rules for selected packages in an ADOM and emails per-package reports as zip attachments.</p>
+  <button class="btn-primary" onclick="rpOpenNewModal()" style="margin-bottom:12px">+ Add Job</button>
+
+  <!-- Rule Policy Jobs table -->
+  <div style="overflow-x:auto;margin-top:4px">
+    <table class="admin-table" id="rp-jobs-table">
+      <thead>
+        <tr>
+          <th>Name</th><th>ADOM</th><th>Schedule</th><th>Format</th>
+          <th>Last Run</th><th>Status</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="rp-jobs-tbody">
+        <tr><td colspan="7" style="color:#6b7280;text-align:center">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
 </div>
 
 <!-- ═══════════════════════  BACKUP PANEL  ═══════════════════════ -->
@@ -1107,10 +1127,144 @@
     </div>
   </div>
 </div>
+
+<!-- ═══════════════════  RULE POLICY MODAL  ═══════════════════ -->
+<div class="modal-overlay hidden" id="rp-modal">
+  <div class="modal-dialog" style="max-width:680px;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <h3 id="rp-modal-title">New Rule Policy Job</h3>
+      <button class="modal-close" onclick="rpCloseModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="rp-job-id">
+
+      <div class="form-row">
+        <label>Job Name</label>
+        <input type="text" id="rp-name" placeholder="e.g. Weekly Policy Export — Enterprise" style="min-width:280px">
+      </div>
+
+      <div class="form-row">
+        <label>ADOM</label>
+        <select id="rp-adom" style="min-width:200px" onchange="rpLoadPackages()">
+          <option value="">— select ADOM —</option>
+        </select>
+      </div>
+
+      <div class="form-row" style="align-items:flex-start">
+        <label style="padding-top:4px">Packages</label>
+        <div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+            <input type="checkbox" id="rp-all-packages" checked onchange="rpTogglePackageList()">
+            <span>All packages</span>
+          </label>
+          <div id="rp-package-list" style="display:none;max-height:180px;overflow-y:auto;
+               border:1px solid var(--border);border-radius:4px;padding:8px;margin-top:6px">
+            <em style="color:var(--text-muted)">Select an ADOM first</em>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row" style="align-items:flex-start">
+        <label style="padding-top:4px">Schedule</label>
+        <div>
+          <div style="display:flex;gap:1rem;margin-bottom:.5rem">
+            <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+              <input type="radio" name="rp-schedule-type" id="rp-stype-daily" value="daily" onchange="rpUpdateScheduleUI()">
+              <span>Daily</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+              <input type="radio" name="rp-schedule-type" id="rp-stype-weekly" value="weekly" onchange="rpUpdateScheduleUI()" checked>
+              <span>Weekly</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+              <input type="radio" name="rp-schedule-type" id="rp-stype-monthly" value="monthly" onchange="rpUpdateScheduleUI()">
+              <span>Monthly</span>
+            </label>
+          </div>
+          <!-- Weekly days -->
+          <div id="rp-days-row">
+            <div class="day-picker">
+              <label class="day-picker-item"><input type="checkbox" id="rp-day-SUN" value="SUN"> Sun</label>
+              <label class="day-picker-item"><input type="checkbox" id="rp-day-MON" value="MON"> Mon</label>
+              <label class="day-picker-item"><input type="checkbox" id="rp-day-TUE" value="TUE"> Tue</label>
+              <label class="day-picker-item"><input type="checkbox" id="rp-day-WED" value="WED"> Wed</label>
+              <label class="day-picker-item"><input type="checkbox" id="rp-day-THU" value="THU"> Thu</label>
+              <label class="day-picker-item"><input type="checkbox" id="rp-day-FRI" value="FRI"> Fri</label>
+              <label class="day-picker-item"><input type="checkbox" id="rp-day-SAT" value="SAT"> Sat</label>
+            </div>
+          </div>
+          <!-- Monthly position -->
+          <div id="rp-monthly-row" style="display:none">
+            <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+              <input type="radio" name="rp-monthly-pos" id="rp-mpos-begin" value="beginning" checked>
+              <span>Beginning of month (day 1)</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer;margin-top:4px">
+              <input type="radio" name="rp-monthly-pos" id="rp-mpos-end" value="end">
+              <span>End of month (last day)</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Time (24h)</label>
+        <input type="time" id="rp-time" value="02:00">
+      </div>
+
+      <div class="form-row">
+        <label>Format</label>
+        <select id="rp-format">
+          <option value="html" selected>HTML (styled report)</option>
+          <option value="csv">CSV</option>
+          <option value="json">JSON</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>Batch Size</label>
+        <input type="number" id="rp-batch-size" value="10" min="1" max="50" style="width:80px">
+        <span style="font-size:.82rem;color:var(--text-muted);margin-left:8px">packages per email (1–50)</span>
+      </div>
+
+      <div class="form-row">
+        <label>Options</label>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+            <input type="checkbox" id="rp-include-global">
+            <span>Include global policies</span>
+            <span style="color:var(--text-muted);font-size:.8rem">(requires FMG global policy package — verify before enabling)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+            <input type="checkbox" id="rp-live-hits">
+            <span>Live hit counts</span>
+            <span style="color:var(--warning-color);font-size:.8rem">&#9888; Adds per-device FMG proxy calls — increases runtime and FMG load</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Email To</label>
+        <textarea id="rp-email" rows="2" placeholder="alice@corp.com, bob@corp.com" style="min-width:280px;resize:vertical"></textarea>
+      </div>
+
+      <div class="form-row">
+        <label>Enabled</label>
+        <input type="checkbox" id="rp-enabled" checked>
+      </div>
+
+      <div id="rp-modal-error" style="display:none;color:var(--danger);font-size:.88rem;margin-top:.5rem"></div>
+    </div>
+    <div style="padding:1rem;display:flex;justify-content:flex-end;gap:.5rem;border-top:1px solid var(--border)">
+      <button class="btn-secondary" onclick="rpCloseModal()">Cancel</button>
+      <button class="btn-primary" onclick="rpSaveJob()">Save Job</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=11"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=12"></script>
 <script>
   const DR_CHECK_DEFS = {{ checks_meta | tojson }};
 </script>

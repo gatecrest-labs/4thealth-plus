@@ -857,6 +857,42 @@ class FMGClient:
             offset += page_size
         return all_policies
 
+    def get_global_header_footer_policies(self, adom: str) -> dict:
+        """Return ADOM-level global header and footer policies.
+
+        NOTE: The FMG JSON-RPC path for global header/footer policies varies by
+        FMG version and global policy package name. This implementation uses the
+        standard 'default' package path and returns empty lists on any error.
+        Verify the path against your FMG instance before enabling
+        include_global_policies in production.
+        """
+        result: dict = {"header": [], "footer": []}
+        for kind, segment in [
+            ("header", "global header policy"),
+            ("footer", "global footer policy"),
+        ]:
+            try:
+                url = f"/pm/config/adom/{adom}/pkg/default/{segment}"
+                body = {
+                    "id": self._next_id(),
+                    "method": "get",
+                    "params": [{"url": url, "range": [0, 1000]}],
+                }
+                if self.session:
+                    body["session"] = self.session
+                data = self._post(body)
+                r = data.get("result", [{}])[0]
+                if r.get("status", {}).get("code", -1) == 0:
+                    page = r.get("data") or []
+                    if isinstance(page, list):
+                        result[kind] = page
+            except Exception as exc:
+                warnings.warn(
+                    f"get_global_header_footer_policies {kind} for {adom}: {exc}",
+                    stacklevel=2,
+                )
+        return result
+
     def get_pblock_policies(self, adom: str, block_name: str) -> list:
         """Return firewall policies from a policy block (pblock) in an ADOM.
 
