@@ -62,6 +62,7 @@
   <button class="admin-tab" data-panel="scheduled">Scheduled</button>
   <button class="admin-tab" data-panel="backup">Backup</button>
   <button class="admin-tab" data-panel="zone-policy">Zone Policy</button>
+  <button class="admin-tab" data-panel="naming-standards">Naming Standards</button>
   <button class="admin-tab" data-panel="logs">Application Logs</button>
 </div>
 
@@ -936,6 +937,94 @@
     </div>
 
   </div><!-- /zp-edit-grid -->
+</div>
+
+<!-- ═══════════════════════  NAMING STANDARDS PANEL  ═══════════════════════ -->
+<div class="admin-panel" id="panel-naming-standards">
+
+  <div class="admin-panel-header">
+    <h3>
+      Naming Standards
+      <span class="hm-info-icon" id="nsHelpIcon" title="Object/policy names are built from these patterns using &lt;TOKEN&gt; placeholders (e.g. H_&lt;IP_ADDRESS&gt;). Edit a pattern, check the live preview, then Save. See docs/naming-conventions.md for the full token reference and an AI prompt that turns your company's naming policy document into these patterns.">&#9432;</span>
+    </h3>
+    <p class="admin-panel-desc">
+      Controls the FortiGate object/policy names Rule Validation's AI Assist and Hygiene Fix generate.
+      Changes take effect immediately — no restart required.
+    </p>
+  </div>
+
+  <div id="nsFlash" class="alert" style="display:none;margin-bottom:1rem"></div>
+
+  <div class="zp-edit-grid">
+    <div class="zp-edit-section" style="grid-column:1/-1">
+      <div class="zp-edit-section-title">Import from YAML</div>
+      <p class="admin-panel-desc" style="margin-top:-.3rem">
+        Paste a full naming.yaml (or the output of an AI prompt built from your naming policy document — see docs/naming-conventions.md) to populate the fields below. Nothing is saved until you click Save.
+      </p>
+      <div class="zp-edit-row">
+        <textarea id="nsImportYaml" class="form-control" rows="4" style="flex:1;font-family:monospace;font-size:.82rem" placeholder="platforms:&#10;  fortigate:&#10;    conventions:&#10;      host:&#10;        pattern: &quot;H_&lt;IP_ADDRESS&gt;&quot;&#10;      ..."></textarea>
+        <button class="btn btn-sm btn-secondary" id="nsImportBtn">Apply to Fields</button>
+      </div>
+    </div>
+
+    <div class="zp-edit-section" id="nsCardHost">
+      <div class="zp-edit-section-title">Host</div>
+      <div class="zp-edit-group">
+        <div class="zp-edit-label">Pattern (tokens: &lt;IP_ADDRESS&gt;)</div>
+        <input type="text" class="form-control ns-pattern" data-type="host" />
+      </div>
+      <div class="zp-edit-group">
+        <div class="zp-edit-label">Notes</div>
+        <textarea class="form-control ns-notes" data-type="host" rows="2"></textarea>
+      </div>
+      <div class="ns-preview" data-type="host"></div>
+    </div>
+
+    <div class="zp-edit-section" id="nsCardNetwork">
+      <div class="zp-edit-section-title">Network</div>
+      <div class="zp-edit-group">
+        <div class="zp-edit-label">Pattern (tokens: &lt;NETWORK_ADDRESS&gt;, &lt;PREFIX_LEN&gt;)</div>
+        <input type="text" class="form-control ns-pattern" data-type="network" />
+      </div>
+      <div class="zp-edit-group">
+        <div class="zp-edit-label">Notes</div>
+        <textarea class="form-control ns-notes" data-type="network" rows="2"></textarea>
+      </div>
+      <div class="ns-preview" data-type="network"></div>
+    </div>
+
+    <div class="zp-edit-section" id="nsCardService">
+      <div class="zp-edit-section-title">Service</div>
+      <div class="zp-edit-group">
+        <div class="zp-edit-label">Pattern (tokens: &lt;PROTO&gt;, &lt;PORT&gt;)</div>
+        <input type="text" class="form-control ns-pattern" data-type="service" />
+      </div>
+      <div class="zp-edit-group">
+        <div class="zp-edit-label">Notes</div>
+        <textarea class="form-control ns-notes" data-type="service" rows="2"></textarea>
+      </div>
+      <div class="ns-preview" data-type="service"></div>
+    </div>
+
+    <div class="zp-edit-section" id="nsCardPolicy">
+      <div class="zp-edit-section-title">Policy</div>
+      <div class="zp-edit-group">
+        <div class="zp-edit-label">Pattern (tokens: &lt;TICKET_ID&gt;, &lt;SRC_INTF&gt;, &lt;DST_INTF&gt;, &lt;SEQ&gt;)</div>
+        <input type="text" class="form-control ns-pattern" data-type="policy" />
+      </div>
+      <div class="zp-edit-group">
+        <div class="zp-edit-label">Notes</div>
+        <textarea class="form-control ns-notes" data-type="policy" rows="2"></textarea>
+      </div>
+      <div class="ns-preview" data-type="policy"></div>
+    </div>
+  </div>
+
+  <div style="margin-top:1.25rem;display:flex;gap:.75rem;align-items:center">
+    <button class="btn btn-primary" id="nsSaveBtn">Save</button>
+    <button class="btn btn-secondary" id="nsResetBtn">Reset to Defaults</button>
+  </div>
+
 </div>
 
 <!-- ═══════════════════════  LOGS PANEL  ═══════════════════════ -->
