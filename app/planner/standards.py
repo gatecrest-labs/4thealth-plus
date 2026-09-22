@@ -4,18 +4,23 @@ Deterministic standards lookups for the change planner.
 Loads naming.yaml/review_requirements.yaml (team-maintained, gitignored —
 copy from naming.example.yaml/review_requirements.example.yaml) and encodes
 the risk/logging decision rules the planner applies to every flow.
+
+naming.yaml's host/network/service/policy patterns are rendered through
+app.planner.naming_template — editing a pattern (by hand or via
+Admin → Naming Standards) changes the names object_name()/policy_name()
+actually generate, not just what's displayed to the AI narrator.
 """
 
 from __future__ import annotations
 
 import ipaddress
-from functools import lru_cache
 from pathlib import Path
 
 import yaml
 
 from app.planner.matching import PortRange
 from app.planner.models import PlannerDataError
+from app.planner.naming_template import NamingTemplateError, render
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _NAMING_FILE = _REPO_ROOT / "naming.yaml"
@@ -27,8 +32,11 @@ _REVIEW_FILE = _REPO_ROOT / "review_requirements.yaml"
 _MANAGEMENT_PORTS = {("tcp", 22), ("tcp", 3389), ("tcp", 23)}
 
 
-@lru_cache(maxsize=4)
 def _load_yaml(path: str) -> dict:
+    # Deliberately no @lru_cache: naming.yaml can now be edited live via
+    # Admin → Naming Standards, and this file is small enough (a few KB)
+    # that re-reading it on every call is negligible next to the FMG API
+    # calls AI Assist/Hygiene Fix already make per request.
     try:
         with open(path, encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
@@ -49,6 +57,18 @@ def load_naming(path: Path | None = None) -> dict:
     return _load_yaml(str(path or _NAMING_FILE))
 
 
+def _pattern_for(obj_type: str, naming: dict) -> str:
+    conventions = (
+        naming.get("platforms", {}).get("fortigate", {}).get("conventions", {})
+    )
+    entry = conventions.get(obj_type)
+    if not entry or not entry.get("pattern"):
+        raise NamingTemplateError(
+            f"naming.yaml has no pattern configured for object type {obj_type!r}"
+        )
+    return entry["pattern"]
+
+
 def object_name(
     obj_type: str,
     *,
@@ -58,19 +78,38 @@ def object_name(
     naming: dict | None = None,
 ) -> str:
     """Generate an object name per the FortiGate conventions in naming.yaml."""
+    naming = naming if naming is not None else load_naming()
     if obj_type == "host":
-        return f"H_{ip.split('/')[0]}"
+        pattern = _pattern_for("host", naming)
+        return render(pattern, IP_ADDRESS=ip.split("/")[0])
     if obj_type == "network":
+        pattern = _pattern_for("network", naming)
         addr, _, prefix = ip.partition("/")
-        return f"N_{addr}_{prefix or '32'}"
+        return render(pattern, NETWORK_ADDRESS=addr, PREFIX_LEN=prefix or "32")
     if obj_type == "service":
-        return f"SVC_{proto.upper()}_{port}"
-    raise ValueError(f"No naming convention for object type {obj_type!r}")
+        pattern = _pattern_for("service", naming)
+        return render(pattern, PROTO=proto.upper(), PORT=port)
+    raise NamingTemplateError(f"No naming convention for object type {obj_type!r}")
 
 
-def policy_name(ticket_id: str, srcintf: str, dstintf: str, seq: int = 1) -> str:
+def policy_name(
+    ticket_id: str,
+    srcintf: str,
+    dstintf: str,
+    seq: int = 1,
+    *,
+    naming: dict | None = None,
+) -> str:
+    naming = naming if naming is not None else load_naming()
+    pattern = _pattern_for("policy", naming)
     ticket = ticket_id or "<TICKET_ID>"
-    return f"{ticket}_{srcintf.upper()}_TO_{dstintf.upper()}_{seq:03d}"
+    return render(
+        pattern,
+        TICKET_ID=ticket,
+        SRC_INTF=srcintf.upper(),
+        DST_INTF=dstintf.upper(),
+        SEQ=f"{seq:03d}",
+    )
 
 
 def _domains_for(zones: list[str], zone_domains: dict[str, str]) -> set[str] | None:
