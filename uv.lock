@@ -63,7 +63,7 @@ provides-extras = ["prod"]
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=9.1.1" },
-    { name = "ruff", specifier = ">=0.16.6" },
+    { name = "ruff", specifier = ">=0.16.7" },
 ]
 
 [[package]]
