@@ -93,3 +93,14 @@ def test_test_connection_not_configured(monkeypatch):
     result = log_usage_client.test_connection()
     assert result["ok"] is False
     assert "required" in result["error"]
+
+
+def test_get_rule_log_usage_bad_status_non_dict_json_raises(monkeypatch):
+    from app import log_usage_client
+    monkeypatch.setattr(log_usage_client, "load_log_source_config", lambda: _cfg())
+    mock_resp = MagicMock(status_code=422)
+    mock_resp.json.return_value = "error message as string"
+    mock_resp.text = "error message as string"
+    with patch("app.log_usage_client.requests.post", return_value=mock_resp):
+        with pytest.raises(log_usage_client.LogUsageError, match="error"):
+            log_usage_client.get_rule_log_usage("ADOM", ["FW01"], 1, 30)

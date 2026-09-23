@@ -53,7 +53,7 @@ def get_rule_log_usage(adom: str, devices: list[str], policy_id: int, days: int)
     if resp.status_code >= 400:
         try:
             msg = resp.json().get("error", resp.text)
-        except ValueError:
+        except (ValueError, AttributeError, TypeError):
             msg = resp.text
         raise LogUsageError(f"4tlog returned an error: {msg}")
 
