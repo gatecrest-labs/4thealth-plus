@@ -20,6 +20,95 @@ AI-assisted change analysis to the Rule Validation tab (see Roadmap below).
 
 ---
 
+## Screenshots
+
+<sup>Captured against a lab FortiManager/FortiGate deployment; management IPs and lab subnet details have been redacted or blurred.</sup>
+
+<table>
+<tr>
+<td width="50%">
+
+<img src="docs/screenshots/login.png" width="100%">
+
+**Login** — bcrypt-backed local auth, with optional RADIUS/AD.
+
+</td>
+<td width="50%">
+
+<img src="docs/screenshots/dashboard.png" width="100%">
+
+**Dashboard** — fleet-wide managed firewall/policy counts and live infrastructure health.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<img src="docs/screenshots/firewall-detail.png" width="100%">
+
+**Firewall Detail** — per-device health, license status, and FortiGuard subscription table.
+
+</td>
+<td width="50%">
+
+<img src="docs/screenshots/device-versions.png" width="100%">
+
+**Device Versions** — firmware distribution and license-expiry donut charts.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<img src="docs/screenshots/rule-review.png" width="100%">
+
+**Rule Review** — full policy table with regex search, group expansion, and CSV/JSON/PDF export.
+
+</td>
+<td width="50%">
+
+<img src="docs/screenshots/audit-review.png" width="100%">
+
+**Audit Review** — configurable CIS hardening and interface-protocol checks across a fleet.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<img src="docs/screenshots/rule-validation.png" width="100%">
+
+**Rule Validation** — pre-change flow analysis with an optional AI Assist mode.
+
+</td>
+<td width="50%">
+
+<img src="docs/screenshots/zone-policy.png" width="100%">
+
+**Zone Policy** — self-contained network segmentation policy query tool.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<img src="docs/screenshots/config-delta.png" width="100%">
+
+**Config-Delta** — install-pending CLI diff viewer, sourced from FortiManager's install-preview API.
+
+</td>
+<td width="50%">
+
+<img src="docs/screenshots/admin.png" width="100%">
+
+**Admin** — host resource graphs, group/permission management, and feature toggles.
+
+</td>
+</tr>
+</table>
+
+---
+
 ## Requirements & Compatibility
 
 | Requirement | Version |
