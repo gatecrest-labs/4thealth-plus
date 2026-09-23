@@ -315,6 +315,59 @@ the same `ai_assist_enabled` app-settings flag as Rule Validation's AI
 Assist and Audit Review's own AI Summary (Admin → AI Assist) — there is no
 separate toggle for it.
 
+#### Log-Based Rule Review
+
+New section on `/audit-review` (below Hygiene Analysis, above PSIRT
+Advisory Assessment), single-rule scope: select ADOM + Policy Package +
+one rule + a day range (1-60), and see which of that rule's configured
+single-host address members and single-port service objects (including
+members reached through address/service group expansion) actually
+appeared in FortiAnalyzer traffic logs over that window. Subnets, IP
+ranges, FQDN objects, `all`/`any`, and multi-port services are shown as
+informational "not evaluated" entries — never flagged, since log IPs
+can't meaningfully prove a subnet or range is unused.
+
+Depends on a separate app, **4tlog** (`~/code/github/web/4tlog`), which
+owns the FortiAnalyzer connection this feature needs. 4tlog exposes a
+bearer-token-authenticated `POST /external/api/log-usage` endpoint
+(same auth pattern as this app's own `/external/api/`) that runs a
+`policyid`-scoped FAZ log search across the rule's package's device
+scope and returns only the aggregated distinct source IPs, destination
+IPs, and destination ports observed — never raw log rows. See
+`docs/superpowers/specs/2026-09-23-log-usage-endpoint-design.md` for
+that endpoint's contract (implemented in 4tlog's own repo, not here).
+
+**Feature gate:** Admin → Log Hygiene — 4tlog base URL, bearer token,
+and an `enabled` toggle, stored in `log_source_config.json` (gitignored;
+copy `log_source_config.example.json`). Unlike `api_tokens.json` (which
+hashes *inbound* tokens this app verifies), this token is stored
+reversibly since this app sends it on every outbound call — same
+convention as `infra_targets.json`'s per-device `"token"` field. A "Test
+Connection" button probes 4tlog's existing `/external/api/executive/summary`
+endpoint as a lightweight reachability/auth check.
+
+**Check engine:** `app/log_hygiene.py::check_rule_log_usage(adom, pkg,
+policy_id, days)` — fetches the rule from FMG, expands its
+srcaddr/dstaddr/service fields via `app.hygiene._expand_group_members`
+(BFS group expansion, same helper the Hygiene Analysis shadow/redundant/
+unused-objects checks already use), classifies each resolved leaf as an
+evaluable single host (`/32` address object) or single discrete TCP/UDP
+port vs. an informational "not evaluated" object, resolves the
+package's device scope via the existing `FMGClient.get_pkg_scope_members()`,
+calls `app.log_usage_client.get_rule_log_usage()`, and diffs configured
+members against the observed sets. `days` is always clamped server-side
+to [1, 60]. Raises `LogHygieneError` for a stale/renamed rule id or a
+package with no device scope; `app.log_usage_client.LogUsageError` for
+any 4tlog-side failure (not configured, unreachable, unauthorized) — both
+degrade to a clear JSON error, never a 500.
+
+**API endpoints:**
+- `GET  /api/audit-review/log-usage-status` — `{ available: bool }`,
+  same contract shape as `ai-summary-status`
+- `POST /api/audit-review/log-usage-check` — body
+  `{ adom, pkg, policy_id, days }`, returns the diff result or a
+  400/502/503 error object
+
 #### PSIRT Advisory Assessment
 
 New section on the same `/audit-review` page (below the Hygiene Analysis
