@@ -23,6 +23,13 @@ API (JSON, all read-only):
                       "syslog_config": { "expected_servers": ["10.2.2.1"] } }
        returns: { adom, run_at, devices_reviewed, device_count,
                   checks_run, total, rows: [Row, ...] }
+
+  GET  /api/audit-review/log-usage-status
+       returns: { available: bool }
+
+  POST /api/audit-review/log-usage-check
+       body: { adom, pkg, policy_id, days }
+       returns: check_rule_log_usage()'s result dict
 """
 
 from __future__ import annotations
@@ -452,3 +459,75 @@ def dr_ai_summary():
         narrative_error = str(exc)
 
     return jsonify({"narrative": narrative, "narrative_error": narrative_error})
+
+
+# ── Log-Based Rule Review ────────────────────────────────────────────────
+
+
+@bp.route("/api/audit-review/log-usage-status")
+@tab_required("audit_review")
+def log_usage_status():
+    from app.log_source import load_log_source_config
+
+    cfg = load_log_source_config()
+    available = bool(cfg.get("enabled") and cfg.get("base_url") and cfg.get("token"))
+    return jsonify({"available": available})
+
+
+@bp.route("/api/audit-review/log-usage-check", methods=["POST"])
+@tab_required("audit_review")
+def log_usage_check():
+    from app.log_hygiene import LogHygieneError, check_rule_log_usage
+    from app.log_source import load_log_source_config
+    from app.log_usage_client import LogUsageError
+
+    cfg = load_log_source_config()
+    if not (cfg.get("enabled") and cfg.get("base_url") and cfg.get("token")):
+        return jsonify(
+            {
+                "error": "Log Hygiene is not enabled — configure it in Admin → Log Hygiene"
+            }
+        ), 503
+
+    data = request.get_json(silent=True) or {}
+    adom = (data.get("adom") or "").strip()
+    pkg = (data.get("pkg") or data.get("package") or "").strip()
+    policy_id_raw = data.get("policy_id")
+    days_raw = data.get("days")
+
+    if not adom or not pkg or policy_id_raw is None:
+        return jsonify({"error": "adom, pkg, and policy_id are required"}), 400
+    if err := check_adom_access(adom):
+        return err
+    try:
+        policy_id = int(policy_id_raw)
+    except (TypeError, ValueError):
+        return jsonify({"error": "policy_id must be an integer"}), 400
+    try:
+        days = int(days_raw)
+    except (TypeError, ValueError):
+        days = 30
+    days = max(1, min(60, days))
+
+    try:
+        result = check_rule_log_usage(adom, pkg, policy_id, days)
+    except LogHygieneError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LogUsageError as exc:
+        return jsonify({"error": str(exc)}), 502
+    except FMGError as exc:
+        return upstream_api_error("audit_review", exc)
+    except Exception as exc:
+        return internal_api_error("audit_review", exc)
+
+    app_log(
+        "INFO",
+        "audit_review",
+        "Log usage check completed",
+        by=session["user"],
+        adom=adom,
+        pkg=pkg,
+        policy_id=policy_id,
+        days=days,
+    )
+    return jsonify(result)
