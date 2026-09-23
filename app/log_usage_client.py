@@ -33,12 +33,19 @@ def _require_config() -> dict:
     return cfg
 
 
-def get_rule_log_usage(adom: str, devices: list[str], policy_id: int, days: int) -> dict:
+def get_rule_log_usage(
+    adom: str, devices: list[str], policy_id: int, days: int
+) -> dict:
     cfg = _require_config()
     try:
         resp = requests.post(
             f"{cfg['base_url']}/external/api/log-usage",
-            json={"adom": adom, "devices": devices, "policyid": policy_id, "days": days},
+            json={
+                "adom": adom,
+                "devices": devices,
+                "policyid": policy_id,
+                "days": days,
+            },
             headers={"Authorization": f"Bearer {cfg['token']}"},
             verify=cfg.get("verify_ssl", True),
             timeout=90,
