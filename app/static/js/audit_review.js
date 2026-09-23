@@ -1445,3 +1445,248 @@ document.addEventListener('DOMContentLoaded', function () {
     renderUnusedTable();
   });
 });
+
+/* ── Log-Based Rule Review ─────────────────────────────────────────────────── */
+let logUsagePkgPaths = {};
+let logUsageRules = [];
+let _lastLogUsageResult = null;
+let _logUsageAvailable = true;
+
+async function checkLogUsageAvailability() {
+  try {
+    const resp = await fetch('/api/audit-review/log-usage-status');
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const data = await resp.json();
+    const notice = document.getElementById('logUsageDisabledNotice');
+    const runBtn = document.getElementById('logUsageRunBtn');
+    _logUsageAvailable = !!data.available;
+    if (!_logUsageAvailable) {
+      notice.style.display = '';
+      runBtn.disabled = true;
+      runBtn.title = 'Log Hygiene is not enabled';
+    } else {
+      notice.style.display = 'none';
+      runBtn.title = '';
+    }
+  } catch (_) {}
+}
+
+async function loadLogUsageAdoms() {
+  const sel = document.getElementById('logUsageAdom');
+  try {
+    const resp = await fetch('/api/adoms');
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const adoms = await resp.json();
+    if (!Array.isArray(adoms) || !sel) return;
+    adoms.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.name; opt.textContent = a.name;
+      sel.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
+function resetLogUsagePackagePicker() {
+  const sel = document.getElementById('logUsagePackage');
+  sel.innerHTML = '<option value="">— select package —</option>';
+  sel.disabled = true;
+  logUsagePkgPaths = {};
+  resetLogUsageRulePicker();
+}
+
+function resetLogUsageRulePicker() {
+  const sel = document.getElementById('logUsageRule');
+  sel.innerHTML = '<option value="">— select rule —</option>';
+  sel.disabled = true;
+  document.getElementById('logUsageRunBtn').disabled = true;
+  logUsageRules = [];
+}
+
+async function loadLogUsagePackages(adom) {
+  const sel = document.getElementById('logUsagePackage');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  sel.disabled = true;
+  logUsagePkgPaths = {};
+  resetLogUsageRulePicker();
+  try {
+    const resp = await fetch(`/api/hygiene/adoms/${encodeURIComponent(adom)}/packages`);
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const pkgs = await resp.json();
+    sel.innerHTML = '<option value="">— select package —</option>';
+    if (Array.isArray(pkgs)) {
+      pkgs.forEach(p => {
+        logUsagePkgPaths[p.name] = p.path || p.name;
+        const opt = document.createElement('option');
+        opt.value = p.name; opt.textContent = p.name;
+        sel.appendChild(opt);
+      });
+    }
+    sel.disabled = false;
+  } catch (_) {
+    sel.innerHTML = '<option value="">Failed to load packages</option>';
+  }
+}
+
+async function loadLogUsageRules(adom, pkg) {
+  const sel = document.getElementById('logUsageRule');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  sel.disabled = true;
+  const path = logUsagePkgPaths[pkg] || pkg;
+  try {
+    const resp = await fetch('/api/hygiene/policies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adom, package: path }),
+    });
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const data = await resp.json();
+    logUsageRules = (data.policies || []).filter(p => p.id && p.id !== 'implicit' && !p.policy_block);
+    sel.innerHTML = '<option value="">— select rule —</option>';
+    logUsageRules.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = `${r.name || '(unnamed)'} (id: ${r.id})`;
+      sel.appendChild(opt);
+    });
+    sel.disabled = false;
+  } catch (_) {
+    sel.innerHTML = '<option value="">Failed to load rules</option>';
+  }
+}
+
+function _logUsageStatusBadge(status) {
+  const color = status === 'used' ? '#16a34a' : '#dc2626';
+  return `<span class="hygiene-badge" style="background:${color}20;color:${color};border-color:${color}40">${esc(status)}</span>`;
+}
+
+function renderLogUsageResults(result) {
+  _lastLogUsageResult = result;
+  document.getElementById('logUsageResults').style.display = '';
+  document.getElementById('logUsageHeader').innerHTML =
+    `<strong>${esc(result.rule.name)}</strong> (id: ${esc(String(result.rule.policy_id))}) &mdash; ` +
+    `${esc(String(result.days))} days, ${esc(String(result.log_count))} log entries` +
+    (result.time_range && result.time_range.start
+      ? ` (${esc(result.time_range.start)} &ndash; ${esc(result.time_range.end)})`
+      : '');
+
+  const warnings = [];
+  if (result.truncated) {
+    warnings.push('<div class="text-danger">Log search hit its row limit &mdash; results may be incomplete.</div>');
+  }
+  if (result.devices_not_found && result.devices_not_found.length) {
+    warnings.push(`<div class="text-danger">Devices not found in 4tlog: ${esc(result.devices_not_found.join(', '))}</div>`);
+  }
+  document.getElementById('logUsageWarnings').innerHTML = warnings.join('');
+
+  const renderTable = (evaluated, bodyId, valueKey) => {
+    document.getElementById(bodyId).innerHTML = (evaluated || []).map(m =>
+      `<tr><td>${esc(m.name)}</td><td>${esc(String(m[valueKey]))}</td><td>${_logUsageStatusBadge(m.status)}</td></tr>`
+    ).join('') || '<tr><td colspan="3" class="text-muted">None</td></tr>';
+  };
+  renderTable(result.source.evaluated, 'logUsageSrcBody', 'value');
+  renderTable(result.destination.evaluated, 'logUsageDstBody', 'value');
+  renderTable(result.service.evaluated, 'logUsageSvcBody', 'port');
+
+  const renderNotEval = (notEvaluated, elId) => {
+    const list = notEvaluated || [];
+    document.getElementById(elId).textContent = list.length
+      ? `${list.length} object(s) not evaluated: ${list.map(o => `${o.name} (${o.type})`).join(', ')}`
+      : '';
+  };
+  renderNotEval(result.source.not_evaluated, 'logUsageSrcNotEval');
+  renderNotEval(result.destination.not_evaluated, 'logUsageDstNotEval');
+  renderNotEval(result.service.not_evaluated, 'logUsageSvcNotEval');
+}
+
+async function runLogUsageCheck() {
+  const adom = document.getElementById('logUsageAdom').value;
+  const pkg = document.getElementById('logUsagePackage').value;
+  const path = logUsagePkgPaths[pkg] || pkg;
+  const policyId = document.getElementById('logUsageRule').value;
+  const days = parseInt(document.getElementById('logUsageDays').value, 10) || 30;
+  if (!adom || !pkg || !policyId) return;
+
+  const errEl = document.getElementById('logUsageError');
+  errEl.style.display = 'none';
+  document.getElementById('logUsageResults').style.display = 'none';
+  document.getElementById('logUsageRunBtn').disabled = true;
+  document.getElementById('logUsageRunning').style.display = '';
+
+  try {
+    const resp = await fetch('/api/audit-review/log-usage-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adom, pkg: path, policy_id: parseInt(policyId, 10), days }),
+    });
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent = data.error || 'Log usage check failed.';
+      errEl.style.display = '';
+    } else {
+      renderLogUsageResults(data);
+    }
+  } catch (_) {
+    errEl.textContent = 'Log usage check failed.';
+    errEl.style.display = '';
+  } finally {
+    document.getElementById('logUsageRunning').style.display = 'none';
+    document.getElementById('logUsageRunBtn').disabled = !_logUsageAvailable;
+  }
+}
+
+// Quotes a CSV field and neutralizes leading =/+/-/@ (formula-injection
+// vector in Excel/Sheets) by prefixing a single quote.
+function _csvField(v) {
+  let s = String(v ?? '');
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+function exportLogUsageCsv() {
+  if (!_lastLogUsageResult) return;
+  const r = _lastLogUsageResult;
+  const lines = [
+    `Rule,${_csvField(r.rule.name)},id:${r.rule.policy_id}`,
+    `Days,${r.days}`,
+    `Exported,${new Date().toISOString()}`,
+    '',
+    'Section,Name,Value,Status',
+  ];
+  const addRows = (section, evaluated, valueKey) => {
+    (evaluated || []).forEach(m => lines.push(
+      `${_csvField(section)},${_csvField(m.name)},${_csvField(m[valueKey])},${_csvField(m.status)}`
+    ));
+  };
+  addRows('Source', r.source.evaluated, 'value');
+  addRows('Destination', r.destination.evaluated, 'value');
+  addRows('Service', r.service.evaluated, 'port');
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `log-usage-${r.rule.policy_id}-${Date.now()}.csv`;
+  a.click();
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  checkLogUsageAvailability();
+  loadLogUsageAdoms();
+
+  document.getElementById('logUsageAdom').addEventListener('change', function () {
+    if (this.value) loadLogUsagePackages(this.value);
+    else resetLogUsagePackagePicker();
+  });
+
+  document.getElementById('logUsagePackage').addEventListener('change', function () {
+    const adom = document.getElementById('logUsageAdom').value;
+    if (this.value && adom) loadLogUsageRules(adom, this.value);
+    else resetLogUsageRulePicker();
+  });
+
+  document.getElementById('logUsageRule').addEventListener('change', function () {
+    document.getElementById('logUsageRunBtn').disabled = !this.value || !_logUsageAvailable;
+  });
+
+  document.getElementById('logUsageRunBtn').addEventListener('click', runLogUsageCheck);
+  document.getElementById('logUsageExportCsvBtn').addEventListener('click', exportLogUsageCsv);
+});

@@ -20,6 +20,7 @@ rule_hygiene_jobs.json
 hygiene_rollup.json
 rule_policy_jobs.json
 backup_config.json
+log_source_config.json
 protocol_severity.json
 naming.yaml
 review_requirements.yaml

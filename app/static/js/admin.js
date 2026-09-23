@@ -13,6 +13,7 @@
       if (btn.dataset.panel === 'map-regions' && !_mapRegionsLoaded) loadMapRegions();
       if (btn.dataset.panel === 'external-api' && !_extApiLoaded) loadExtApi();
       if (btn.dataset.panel === 'ai-assist' && !_aiAssistLoaded) loadAiAssist();
+      if (btn.dataset.panel === 'log-hygiene' && !_logHygieneLoaded) loadLogHygiene();
       if (btn.dataset.panel === 'scheduled') {
         loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); loadRPJobs();
         _wireJobPageSizes();
@@ -596,6 +597,50 @@
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('newTokenSave').click(); }
   });
 
+  // ══════════════════════  LOG HYGIENE  ══════════════════════════════════════
+
+  let _logHygieneLoaded = false;
+
+  async function loadLogHygiene() {
+    _logHygieneLoaded = true;
+    const res = await fetch('/admin/api/log-source');
+    if (res.status === 401) { location.href = '/login'; return; }
+    const cfg = await res.json();
+    document.getElementById('logSourceBaseUrl').value     = cfg.base_url || '';
+    document.getElementById('logSourceToken').value       = cfg.token || '';
+    document.getElementById('logSourceVerifySsl').checked = !!cfg.verify_ssl;
+    document.getElementById('logSourceEnabled').checked   = !!cfg.enabled;
+  }
+
+  async function saveLogSource() {
+    const msg = document.getElementById('logSourceMsg');
+    const payload = {
+      base_url:   document.getElementById('logSourceBaseUrl').value.trim(),
+      token:      document.getElementById('logSourceToken').value,
+      verify_ssl: document.getElementById('logSourceVerifySsl').checked,
+      enabled:    document.getElementById('logSourceEnabled').checked,
+    };
+    const res = await fetch('/admin/api/log-source', { method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+      body: JSON.stringify(payload) });
+    msg.style.color = res.ok ? '#166534' : '#b91c1c';
+    msg.textContent = res.ok ? 'Saved.' : 'Save failed.';
+    setTimeout(() => msg.textContent = '', 3000);
+  }
+
+  async function testLogSource() {
+    const msg = document.getElementById('logSourceMsg');
+    msg.style.color = '#6b7280';
+    msg.textContent = 'Testing…';
+    const res = await fetch('/admin/api/log-source/test', { method: 'POST',
+      headers: { 'X-CSRF-Token': getCSRF() } });
+    const result = await res.json();
+    msg.style.color = result.ok ? '#166534' : '#b91c1c';
+    msg.textContent = result.ok ? 'Connection OK.' : `Failed: ${result.error}`;
+  }
+
+  document.getElementById('btnSaveLogSource').addEventListener('click', saveLogSource);
+  document.getElementById('btnTestLogSource').addEventListener('click', testLogSource);
 
   // ══════════════════════  MAP REGIONS  ═════════════════════════════════════
 
