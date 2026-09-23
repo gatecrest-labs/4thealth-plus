@@ -95,6 +95,18 @@ def test_test_connection_not_configured(monkeypatch):
     assert "required" in result["error"]
 
 
+def test_get_rule_log_usage_non_dict_200_body_raises(monkeypatch):
+    """A 200 response whose JSON body is not a dict (e.g. a bare list) must
+    raise LogUsageError, not be returned as-is for callers to crash on."""
+    from app import log_usage_client
+    monkeypatch.setattr(log_usage_client, "load_log_source_config", lambda: _cfg())
+    mock_resp = MagicMock(status_code=200)
+    mock_resp.json.return_value = ["not", "a", "dict"]
+    with patch("app.log_usage_client.requests.post", return_value=mock_resp):
+        with pytest.raises(log_usage_client.LogUsageError, match="invalid response"):
+            log_usage_client.get_rule_log_usage("ADOM", ["FW01"], 1, 30)
+
+
 def test_get_rule_log_usage_bad_status_non_dict_json_raises(monkeypatch):
     from app import log_usage_client
     monkeypatch.setattr(log_usage_client, "load_log_source_config", lambda: _cfg())

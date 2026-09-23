@@ -58,9 +58,12 @@ def get_rule_log_usage(adom: str, devices: list[str], policy_id: int, days: int)
         raise LogUsageError(f"4tlog returned an error: {msg}")
 
     try:
-        return resp.json()
+        payload = resp.json()
     except ValueError as exc:
         raise LogUsageError("4tlog returned an invalid response") from exc
+    if not isinstance(payload, dict):
+        raise LogUsageError("4tlog returned an invalid response")
+    return payload
 
 
 def test_connection() -> dict:

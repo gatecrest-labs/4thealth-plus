@@ -501,11 +501,11 @@ def log_usage_check():
         return err
     try:
         policy_id = int(policy_id_raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return jsonify({"error": "policy_id must be an integer"}), 400
     try:
         days = int(days_raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         days = 30
     days = max(1, min(60, days))
 

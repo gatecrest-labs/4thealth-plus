@@ -74,6 +74,22 @@ def test_log_usage_check_clamps_days_out_of_range(client, tmp_path, monkeypatch)
     assert mock_check.call_args.args == ("ADOM", "pkg", 1, 60)
 
 
+def test_log_usage_check_infinity_policy_id_returns_400(client, tmp_path, monkeypatch):
+    """json.loads (used by Flask's request.get_json()) accepts the literal
+    Infinity; int(Infinity) raises OverflowError, which must be caught and
+    turned into a 400, never a raw 500."""
+    monkeypatch.setattr("app.log_source._CONFIG_PATH", tmp_path / "log_source_config.json")
+    from app import log_source
+    log_source.save_log_source_config({"enabled": True, "base_url": "https://x", "token": "t", "verify_ssl": True})
+    resp = client.post(
+        "/api/audit-review/log-usage-check",
+        data='{"adom": "ADOM", "pkg": "pkg", "policy_id": Infinity, "days": 30}',
+        content_type="application/json",
+        headers={"X-CSRF-Token": "test-csrf"},
+    )
+    assert resp.status_code == 400
+
+
 def test_log_usage_check_success(client, tmp_path, monkeypatch):
     monkeypatch.setattr("app.log_source._CONFIG_PATH", tmp_path / "log_source_config.json")
     from app import log_source
