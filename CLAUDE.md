@@ -185,7 +185,7 @@ Four sections, each with its own ADOM selector, working independently (tab displ
 3. **Interface Lookup** — find which firewall interface(s) in an ADOM are assigned a given IP.
 4. **NAT Lookup** — search VIP and IP Pool objects by IP.
 
-Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
+Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`. Gated to both `rule_hygiene` and `audit_review` tabs — the latter because Audit Review's own Log-Based Rule Review section (see below) also resolves package rules through this endpoint.
 
 The **Hygiene Analysis** section that used to live at the bottom of this page (rule checks, Find Unused Objects, AI Explain) now lives on the **Audit Review** tab — see below. The `/api/hygiene/*` endpoints it uses are unchanged; only the tab gating and UI location moved.
 
@@ -205,11 +205,12 @@ features.
 
 `GET /audit-review` → `audit_review.html` + `audit_review.js`
 
-Three-section layout with unified tab access (internal key: `audit_review`; the page merges what used to be the separate Device Review tab with the Rule Review tab's Hygiene Analysis section):
+Multi-section layout with unified tab access (internal key: `audit_review`; the page merges what used to be the separate Device Review tab with the Rule Review tab's Hygiene Analysis section):
 
 1. **Device Review** (top) — runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
 2. **Hygiene Analysis** (middle) — select ADOM + package, run 10 checks, filter/export findings (CSV/JSON/PDF).
-3. **PSIRT Advisory Assessment** (bottom) — see below.
+3. **Log-Based Rule Review** — see below.
+4. **PSIRT Advisory Assessment** (bottom) — see below.
 
 **Device Review workflow:**
 1. Select ADOM → device list loads automatically.
@@ -940,7 +941,7 @@ Config-Delta's AI Summary (Admin → AI Assist) — there is no separate
 host-metrics toggle.
 
 Sub-tabs: Groups & Permissions, Map Region Colors, External API, AI Assist,
-Scheduled, Backup, **Zone Policy**, Application Logs.
+Scheduled, Backup, **Zone Policy**, **Log Hygiene**, Application Logs.
 
 **Zone Policy sub-tab** — Validate and Edit Database (zone/subnet/policy
 rule CRUD against `policy_db.json`) moved here from the Zone Policy nav tab
