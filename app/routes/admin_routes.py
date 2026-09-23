@@ -38,11 +38,18 @@ External API tokens (JSON):
   GET    /admin/api/tokens           list tokens (hashes never returned)
   POST   /admin/api/tokens           {"name": str} — create token; plaintext returned once
   DELETE /admin/api/tokens/<id>      revoke token
+
+Naming Standards (JSON):
+  GET    /admin/api/naming-standards         current naming.yaml content: {"naming": {...}}
+  PUT    /admin/api/naming-standards         {"naming": {...}} — validate + save; 400 + {"errors": [...]} on failure
+  POST   /admin/api/naming-standards/reset   reset naming.yaml to naming.example.yaml
+  POST   /admin/api/naming-standards/parse   {"yaml_text": str} — parse only (no save), for the Import YAML box
 """
 
 import os
 import re
 
+import yaml
 from flask import Blueprint, jsonify, render_template, request, session
 
 from app import config_diff_scheduler as _sched
@@ -66,6 +73,12 @@ from app.auth import list_users
 from app.decorators import admin_required as _admin_required
 from app.device_review import CHECKS_META as _DR_CHECKS_META
 from app.groups import create_group, delete_group, get_group, list_groups, update_group
+from app.naming_standards import (
+    NamingValidationError,
+    get_naming,
+    reset_to_default,
+    save_naming,
+)
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -312,6 +325,70 @@ def api_settings_put():
             count=len(versions),
         )
     return jsonify(get_all_settings())
+
+
+# ── Naming Standards API ───────────────────────────────────────────────────
+
+
+@bp.route("/api/naming-standards")
+@_admin_required
+def api_naming_standards_get():
+    from app.planner.models import PlannerDataError
+
+    try:
+        return jsonify({"naming": get_naming()})
+    except PlannerDataError as exc:
+        return jsonify({"error": str(exc), "source": exc.source}), 502
+
+
+@bp.route("/api/naming-standards", methods=["PUT"])
+@_admin_required
+def api_naming_standards_put():
+    data = request.get_json(silent=True) or {}
+    naming = data.get("naming")
+    if not isinstance(naming, dict):
+        return jsonify({"ok": False, "errors": ["'naming' object is required"]}), 400
+    try:
+        save_naming(naming)
+    except NamingValidationError as exc:
+        return jsonify({"ok": False, "errors": exc.errors}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/naming-standards/reset", methods=["POST"])
+@_admin_required
+def api_naming_standards_reset():
+    reset_to_default()
+    return jsonify({"ok": True, "naming": get_naming()})
+
+
+_NAMING_PARSE_MAX_BYTES = 256 * 1024  # 256 KB
+
+
+@bp.route("/api/naming-standards/parse", methods=["POST"])
+@_admin_required
+def api_naming_standards_parse():
+    data = request.get_json(silent=True) or {}
+    yaml_text = data.get("yaml_text")
+    if not yaml_text or not isinstance(yaml_text, str):
+        return jsonify({"ok": False, "error": "'yaml_text' is required"}), 400
+    if len(yaml_text.encode("utf-8")) > _NAMING_PARSE_MAX_BYTES:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "yaml_text is too large (max 256 KB)",
+                }
+            ),
+            400,
+        )
+    try:
+        parsed = yaml.safe_load(yaml_text)
+    except (yaml.YAMLError, RecursionError) as exc:
+        return jsonify({"ok": False, "error": f"Invalid YAML: {exc}"}), 400
+    if not isinstance(parsed, dict):
+        return jsonify({"ok": False, "error": "YAML must parse to a mapping"}), 400
+    return jsonify({"ok": True, "naming": parsed})
 
 
 # ── AI Assist usage/cost ────────────────────────────────────────────────────

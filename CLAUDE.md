@@ -481,6 +481,20 @@ together). `catalogs.py` and `zone_adapter.py` (`ZoneDBAdapter`) are 4THealth+-n
 adapters that let the ported engine call `app.fmg_client.FMGClient` and
 `app.zone_db` in-process instead of over HTTP with separate credentials.
 
+**Naming Standards admin UI:** `naming.yaml`'s `host`/`network`/`service`/`policy`
+patterns are editable live from **Admin → Naming Standards** (no restart
+required) — `app/naming_standards.py` validates and atomically persists
+edits, `app/planner/naming_template.py` renders `<TOKEN>`-style patterns
+into real names, and `standards.py::object_name()`/`policy_name()` call it
+instead of hardcoded f-strings. Scope is deliberately limited to these 4
+types — FQDN/wildcard-FQDN/FQDN-group naming
+(`app/planner/engine.py::_fqdn_object_name`/`_fqdn_group_name`) keeps its
+own hardcoded, security-hardened sanitization and is not
+admin-configurable; `address_group`/`service_group`/`nat_rule`/`vip`
+entries in `naming.yaml` remain documentation-only since nothing generates
+names for them. See `docs/naming-conventions.md` for the token reference
+and example patterns.
+
 **`app/llm/`** — a thin, provider-agnostic narration layer (`get_provider()` in
 `app/llm/__init__.py`) that turns the planner's already-computed structured result
 into prose. The LLM only explains the plan — it never computes or edits any value

@@ -19,6 +19,7 @@
       }
       if (btn.dataset.panel === 'backup') { window.loadBackupConfig(); window.loadBackupJobs(); }
       if (btn.dataset.panel === 'zone-policy' && !_zonePolicyLoaded) loadZonePolicyEdit();
+      if (btn.dataset.panel === 'naming-standards' && !_namingStandardsLoaded) loadNamingStandards();
     });
   });
 
@@ -1253,6 +1254,175 @@
     zpFlash(r.ok ? r.message : r.error, r.ok);
     if (r.ok) { document.getElementById('epModIdx').value = ''; zpReloadAfterEdit(); }
   });
+
+  // ══════════════════════  NAMING STANDARDS  ═════════════════════════════════
+
+  let _namingStandardsLoaded = false;
+  const NS_TYPES = ['host', 'network', 'service', 'policy'];
+  const NS_TOKEN_FIELDS = {
+    host:    { IP_ADDRESS: '10.0.0.1' },
+    network: { NETWORK_ADDRESS: '10.0.0.0', PREFIX_LEN: '24' },
+    service: { PROTO: 'tcp', PORT: '443' },
+    policy:  { TICKET_ID: 'CHG000000', SRC_INTF: 'WAN1', DST_INTF: 'DMZ', SEQ: '001' },
+  };
+  let _nsNaming = null;
+
+  function nsFlash(msg, ok) {
+    const el = document.getElementById('nsFlash');
+    if (!el) return;
+    el.textContent   = msg;
+    el.className     = `alert ${ok ? 'alert-success' : 'alert-danger'}`;
+    el.style.display = '';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.display = 'none'; }, 6000);
+  }
+
+  function nsRenderPreview(type) {
+    const card    = document.getElementById(`nsCard${type[0].toUpperCase()}${type.slice(1)}`);
+    const pattern = card.querySelector('.ns-pattern').value;
+    const previewEl = card.querySelector('.ns-preview');
+    const tokens = NS_TOKEN_FIELDS[type];
+
+    try {
+      const rendered = pattern.replace(/<([A-Z_]+)>/g, (m, name) => {
+        if (!(name in tokens)) throw new Error(`unknown token <${name}>`);
+        return tokens[name];
+      });
+      previewEl.textContent = `Example: ${rendered}`;
+      previewEl.classList.remove('ns-preview-error');
+    } catch (e) {
+      previewEl.textContent = `Invalid pattern: ${e.message}`;
+      previewEl.classList.add('ns-preview-error');
+    }
+  }
+
+  function nsPopulateFields(naming) {
+    const conventions = ((naming || {}).platforms || {}).fortigate?.conventions || {};
+    NS_TYPES.forEach(type => {
+      const card = document.getElementById(`nsCard${type[0].toUpperCase()}${type.slice(1)}`);
+      const entry = conventions[type] || {};
+      card.querySelector('.ns-pattern').value = entry.pattern || '';
+      card.querySelector('.ns-notes').value   = entry.notes || '';
+      nsRenderPreview(type);
+    });
+  }
+
+  function nsCollectFields() {
+    const naming = JSON.parse(JSON.stringify(_nsNaming || {}));
+    naming.platforms = naming.platforms || {};
+    naming.platforms.fortigate = naming.platforms.fortigate || {};
+    naming.platforms.fortigate.conventions = naming.platforms.fortigate.conventions || {};
+    NS_TYPES.forEach(type => {
+      const card = document.getElementById(`nsCard${type[0].toUpperCase()}${type.slice(1)}`);
+      const existing = naming.platforms.fortigate.conventions[type] || {};
+      naming.platforms.fortigate.conventions[type] = {
+        ...existing,
+        pattern: card.querySelector('.ns-pattern').value,
+        notes:   card.querySelector('.ns-notes').value,
+      };
+    });
+    return naming;
+  }
+
+  async function loadNamingStandards() {
+    _namingStandardsLoaded = true;
+    try {
+      const resp = await fetch('/admin/api/naming-standards');
+      let data = null;
+      try {
+        data = await resp.json();
+      } catch (parseErr) {
+        data = null;
+      }
+      if (!resp.ok) {
+        const msg = (data && data.error) || `HTTP ${resp.status}`;
+        nsFlash(`Failed to load naming standards: ${msg}`, false);
+      } else {
+        _nsNaming = (data && data.naming) || {};
+        nsPopulateFields(_nsNaming);
+      }
+    } catch (e) {
+      nsFlash(`Failed to load naming standards: ${e.message}`, false);
+    }
+
+    document.querySelectorAll('.ns-pattern').forEach(input => {
+      input.addEventListener('input', () => nsRenderPreview(input.dataset.type));
+    });
+
+    document.getElementById('nsImportBtn').addEventListener('click', async () => {
+      const raw = document.getElementById('nsImportYaml').value.trim();
+      if (!raw) return;
+      const btn = document.getElementById('nsImportBtn');
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/admin/api/naming-standards/parse', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+          body:    JSON.stringify({ yaml_text: raw }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          _nsNaming = data.naming;
+          nsPopulateFields(_nsNaming);
+          nsFlash('Imported — review the fields, then Save.', true);
+        } else {
+          nsFlash(`Import failed: ${data.error}`, false);
+        }
+      } catch (e) {
+        nsFlash(`Import failed: ${e.message}`, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('nsSaveBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('nsSaveBtn');
+      btn.disabled = true;
+      try {
+        const naming = nsCollectFields();
+        const resp = await fetch('/admin/api/naming-standards', {
+          method:  'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+          body:    JSON.stringify({ naming }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          _nsNaming = naming;
+          nsFlash('Naming standards saved.', true);
+        } else {
+          nsFlash(`Save failed: ${(data.errors || []).join('; ')}`, false);
+        }
+      } catch (e) {
+        nsFlash(`Save failed: ${e.message}`, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('nsResetBtn').addEventListener('click', async () => {
+      if (!confirm('Reset naming standards to the shipped defaults? This discards all custom patterns.')) return;
+      const btn = document.getElementById('nsResetBtn');
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/admin/api/naming-standards/reset', {
+          method:  'POST',
+          headers: { 'X-CSRF-Token': getCSRF() },
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          _nsNaming = data.naming;
+          nsPopulateFields(_nsNaming);
+          nsFlash('Naming standards reset to defaults.', true);
+        } else {
+          nsFlash('Reset failed.', false);
+        }
+      } catch (e) {
+        nsFlash(`Reset failed: ${e.message}`, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
 
   // ── Boot ───────────────────────────────────────────────────────────────────
   loadGroups();

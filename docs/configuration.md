@@ -133,7 +133,7 @@ These files are gitignored and must be created from the bundled `*.example.*` te
 | `smtp_config.json` | `smtp_config.example.json` | SMTP configuration for scheduled exports |
 | `config_diff_jobs.json` | `config_diff_jobs.example.json` | Scheduled Config-Delta export jobs |
 | `device_review_jobs.json` | `device_review_jobs.example.json` | Scheduled Audit Review (CIS audit) export jobs |
-| `naming.yaml` | `naming.example.yaml` | Rule-naming standards used by Rule Validation's AI Assist |
+| `naming.yaml` | `naming.example.yaml` | Rule-naming standards used by Rule Validation's AI Assist — editable via **Admin → Naming Standards**, see `docs/naming-conventions.md` |
 | `review_requirements.yaml` | `review_requirements.example.yaml` | Approval/risk-review standards used by Rule Validation's AI Assist |
 | `protocol_severity.json` | `protocol_severity.example.json` | Optional overrides for Audit Review's protocol security classification |
 | `backup_config.json` | `backup_config.example.json` | Backup schedule and remote-transfer settings |
