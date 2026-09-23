@@ -59,6 +59,7 @@
   <button class="admin-tab" data-panel="map-regions">Map Region Colors</button>
   <button class="admin-tab" data-panel="external-api">External API</button>
   <button class="admin-tab" data-panel="ai-assist">AI Assist</button>
+  <button class="admin-tab" data-panel="log-hygiene">Log Hygiene</button>
   <button class="admin-tab" data-panel="scheduled">Scheduled</button>
   <button class="admin-tab" data-panel="backup">Backup</button>
   <button class="admin-tab" data-panel="zone-policy">Zone Policy</button>
@@ -251,6 +252,47 @@
 
   <div id="aiUsageSummary" class="ai-usage-summary"></div>
   <div id="aiUsageChart" class="ai-usage-chart"></div>
+</div>
+
+<!-- ══════════════════════  LOG HYGIENE PANEL  ══════════════════════ -->
+<div class="admin-panel" id="panel-log-hygiene">
+
+  <div class="admin-panel-header">
+    <div>
+      <h3>Log Hygiene</h3>
+      <p class="text-muted" style="font-size:.85rem;margin-top:.2rem">
+        Connect to a 4tlog instance to power Audit Review's Log-Based Rule
+        Review, which checks whether a rule's configured host members and
+        service ports actually appeared in FortiAnalyzer traffic logs.
+        Requires a bearer token created in 4tlog with its own External API
+        enabled.
+      </p>
+    </div>
+  </div>
+
+  <div style="max-width:520px">
+    <div class="form-row">
+      <label>4tlog Base URL</label>
+      <input type="text" id="logSourceBaseUrl" placeholder="https://4tlog.internal:5443">
+    </div>
+    <div class="form-row">
+      <label>API Token</label>
+      <input type="password" id="logSourceToken" placeholder="Bearer token from 4tlog">
+    </div>
+    <div class="form-row">
+      <label>Verify SSL</label>
+      <input type="checkbox" id="logSourceVerifySsl">
+    </div>
+    <div class="form-row">
+      <label>Enabled</label>
+      <input type="checkbox" id="logSourceEnabled">
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      <button class="btn-primary" id="btnSaveLogSource">Save</button>
+      <button class="btn-secondary" id="btnTestLogSource">Test Connection</button>
+      <span id="logSourceMsg" style="font-size:12px"></span>
+    </div>
+  </div>
 </div>
 
 <!-- ══════════════════════  CONFIG-DIFF PANEL  ══════════════════════ -->
