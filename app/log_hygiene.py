@@ -6,9 +6,14 @@ from __future__ import annotations
 
 import ipaddress
 
-from app.fmg_helpers import make_client
+from app.fmg_helpers import (
+    make_client,  # noqa: F401 -- staged for Task 4 (check_rule_log_usage)
+)
 from app.hygiene import _expand_group_members
-from app.log_usage_client import LogUsageError, get_rule_log_usage
+from app.log_usage_client import (  # noqa: F401 -- staged for Task 4 (check_rule_log_usage)
+    LogUsageError,
+    get_rule_log_usage,
+)
 
 
 class LogHygieneError(Exception):
@@ -70,8 +75,12 @@ def _expand_members(
     """Shared BFS-expansion + classification for both address and service
     fields. `classify(obj)` returns the evaluated dict's extra fields (minus
     "name") on success, or None to route the object to not_evaluated."""
-    by_name = {o.get("name"): o for o in objects if isinstance(o, dict) and o.get("name")}
-    group_names = {g.get("name") for g in groups if isinstance(g, dict) and g.get("name")}
+    by_name = {
+        o.get("name"): o for o in objects if isinstance(o, dict) and o.get("name")
+    }
+    group_names = {
+        g.get("name") for g in groups if isinstance(g, dict) and g.get("name")
+    }
     direct = {n for n in names if n}
     reachable = _expand_group_members(groups, direct)
     leaf_names = (direct | reachable) - group_names
@@ -87,7 +96,12 @@ def _expand_members(
         if extra is not None:
             evaluated.append({"name": name, **extra})
         else:
-            not_evaluated.append({"name": name, "type": str(obj.get("type") or obj.get("protocol") or "ipmask")})
+            not_evaluated.append(
+                {
+                    "name": name,
+                    "type": str(obj.get("type") or obj.get("protocol") or "ipmask"),
+                }
+            )
     return evaluated, not_evaluated
 
 
