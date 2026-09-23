@@ -262,6 +262,81 @@
   </div>
 </div>
 
+<!-- ── Log-Based Rule Review ──────────────────────────────────────────────── -->
+<div class="rr-section-label" style="margin-top:2rem">Log-Based Rule Review</div>
+<p class="text-muted" style="margin-bottom:1rem">
+  Check whether a single rule's configured host members and service ports
+  actually appeared in FortiAnalyzer traffic logs over a chosen day range.
+</p>
+
+<div id="logUsageDisabledNotice" class="text-muted" style="display:none;padding:.75rem 1rem;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;margin-bottom:1rem">
+  Log Hygiene is not enabled. An admin can configure it under
+  <strong>Admin &rarr; Log Hygiene</strong>.
+</div>
+
+<div class="hygiene-selectors">
+  <div class="hygiene-selector-row">
+    <label for="logUsageAdom">ADOM</label>
+    <select id="logUsageAdom" class="form-select">
+      <option value="">— select ADOM —</option>
+    </select>
+
+    <label for="logUsagePackage">Policy Package</label>
+    <select id="logUsagePackage" class="form-select" disabled>
+      <option value="">— select package —</option>
+    </select>
+
+    <label for="logUsageRule">Rule</label>
+    <select id="logUsageRule" class="form-select" disabled>
+      <option value="">— select rule —</option>
+    </select>
+
+    <label for="logUsageDays">Days (1&ndash;60)</label>
+    <input type="number" id="logUsageDays" min="1" max="60" value="30" class="form-select" style="width:80px" />
+  </div>
+
+  <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+    <button class="btn btn-primary" id="logUsageRunBtn" disabled>&#9654; Run</button>
+    <span id="logUsageRunning" class="text-muted" style="display:none;font-style:italic">Running log search&hellip; this can take up to a minute.</span>
+  </div>
+</div>
+
+<div id="logUsageError" class="alert alert-danger" style="display:none"></div>
+
+<div id="logUsageResults" style="display:none;margin-top:1.5rem">
+  <div id="logUsageHeader" style="margin-bottom:1rem"></div>
+  <div id="logUsageWarnings" style="margin-bottom:1rem"></div>
+
+  <h4>Source Members</h4>
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>IP</th><th>Status</th></tr></thead>
+      <tbody id="logUsageSrcBody"></tbody>
+    </table>
+  </div>
+  <div id="logUsageSrcNotEval" class="text-muted" style="font-size:.82rem;margin:.5rem 0 1.5rem"></div>
+
+  <h4>Destination Members</h4>
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>IP</th><th>Status</th></tr></thead>
+      <tbody id="logUsageDstBody"></tbody>
+    </table>
+  </div>
+  <div id="logUsageDstNotEval" class="text-muted" style="font-size:.82rem;margin:.5rem 0 1.5rem"></div>
+
+  <h4>Service Ports</h4>
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Port</th><th>Status</th></tr></thead>
+      <tbody id="logUsageSvcBody"></tbody>
+    </table>
+  </div>
+  <div id="logUsageSvcNotEval" class="text-muted" style="font-size:.82rem;margin:.5rem 0 1.5rem"></div>
+
+  <button class="btn btn-sm" id="logUsageExportCsvBtn">&#8659; CSV</button>
+</div>
+
 <!-- ── PSIRT Advisory Assessment ──────────────────────────────────────────── -->
 <div class="rr-section-label" style="margin-top:2rem">PSIRT Advisory Assessment</div>
 
