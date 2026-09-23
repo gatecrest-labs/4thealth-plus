@@ -44,6 +44,12 @@ Naming Standards (JSON):
   PUT    /admin/api/naming-standards         {"naming": {...}} — validate + save; 400 + {"errors": [...]} on failure
   POST   /admin/api/naming-standards/reset   reset naming.yaml to naming.example.yaml
   POST   /admin/api/naming-standards/parse   {"yaml_text": str} — parse only (no save), for the Import YAML box
+
+Log Hygiene: 4tlog connection (JSON):
+  GET    /admin/api/log-source        current config; token masked as "••••••" when set
+  PUT    /admin/api/log-source        {"enabled": bool, "base_url": str, "token": str, "verify_ssl": bool}
+                                       — the masked placeholder preserves the existing stored token
+  POST   /admin/api/log-source/test   reachability/auth probe against 4tlog
 """
 
 import os
@@ -54,6 +60,8 @@ from flask import Blueprint, jsonify, render_template, request, session
 
 from app import config_diff_scheduler as _sched
 from app import device_review_scheduler as _dr_sched
+from app import log_source as _log_source
+from app import log_usage_client as _log_usage_client
 from app import registry
 from app import rule_hygiene_scheduler as _rh_sched
 from app import rule_policy_scheduler as _rp_sched
@@ -528,6 +536,36 @@ def api_tokens_revoke(token_id: str):
         return jsonify({"error": "Token not found"}), 404
     app_log("INFO", "admin", "API token revoked", by=session["user"], token_id=token_id)
     return jsonify({"revoked": token_id})
+
+
+# ── Log Hygiene: 4tlog connection ──────────────────────────────────────────
+
+
+@bp.route("/api/log-source")
+@_admin_required
+def admin_log_source_get():
+    cfg = _log_source.load_log_source_config()
+    cfg["token"] = "••••••" if cfg.get("token") else ""
+    return jsonify(cfg)
+
+
+@bp.route("/api/log-source", methods=["PUT"])
+@_admin_required
+def admin_log_source_put():
+    data = request.get_json(force=True) or {}
+    existing = _log_source.load_log_source_config()
+    if data.get("token") == "••••••":
+        data["token"] = existing.get("token", "")
+    _log_source.save_log_source_config(data)
+    app_log("INFO", "admin", "Log source config updated", by=session["user"])
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/log-source/test", methods=["POST"])
+@_admin_required
+def admin_log_source_test():
+    result = _log_usage_client.test_connection()
+    return jsonify(result)
 
 
 # ── Config-Diff: SMTP ─────────────────────────────────────────────────────────
