@@ -6,12 +6,10 @@ from __future__ import annotations
 
 import ipaddress
 
-from app.fmg_helpers import (
-    make_client,  # noqa: F401 -- staged for Task 4 (check_rule_log_usage)
-)
+from app.fmg_helpers import make_client
 from app.hygiene import _expand_group_members
-from app.log_usage_client import (  # noqa: F401 -- staged for Task 4 (check_rule_log_usage)
-    LogUsageError,
+from app.log_usage_client import (
+    LogUsageError,  # noqa: F401 -- staged for Task 5 (route error handling)
     get_rule_log_usage,
 )
 
@@ -123,3 +121,89 @@ def _expand_service_members(
         return {"proto": single[0], "port": single[1]} if single is not None else None
 
     return _expand_members(names, svc_objects, svc_groups, classify)
+
+
+def _names(val) -> list[str]:
+    if not val:
+        return []
+    if isinstance(val, str):
+        return [val]
+    return [(i.get("name", str(i)) if isinstance(i, dict) else str(i)) for i in val]
+
+
+def check_rule_log_usage(adom: str, pkg: str, policy_id: int, days: int) -> dict:
+    days = max(1, min(60, int(days)))
+
+    with make_client() as client:
+        policies = client.get_policies(adom, pkg)
+        rule = next(
+            (
+                p
+                for p in policies
+                if isinstance(p, dict) and int(p.get("policyid", -1)) == policy_id
+            ),
+            None,
+        )
+        if rule is None:
+            raise LogHygieneError(
+                f"Rule {policy_id} not found in package '{pkg}' -- it may have "
+                "been renamed or removed since the package was last loaded"
+            )
+
+        addr_objects = client.get_address_objects(adom)
+        addr_groups = client.get_address_groups(adom)
+        svc_objects = client.get_service_objects(adom)
+        svc_groups = client.get_service_groups(adom)
+        scope = client.get_pkg_scope_members(adom, pkg)
+
+    devices = sorted(
+        {m.get("name") for m in scope if isinstance(m, dict) and m.get("name")}
+    )
+    if not devices:
+        raise LogHygieneError(
+            "Policy package is not installed on any device -- no logs to check"
+        )
+
+    src_eval, src_not_eval = _expand_addr_members(
+        _names(rule.get("srcaddr") or rule.get("src_addr")), addr_objects, addr_groups
+    )
+    dst_eval, dst_not_eval = _expand_addr_members(
+        _names(rule.get("dstaddr") or rule.get("dst_addr")), addr_objects, addr_groups
+    )
+    svc_eval, svc_not_eval = _expand_service_members(
+        _names(rule.get("service") or rule.get("services")), svc_objects, svc_groups
+    )
+
+    usage = get_rule_log_usage(adom, devices, policy_id, days)
+
+    observed_srcips = set(usage.get("srcips") or [])
+    observed_dstips = set(usage.get("dstips") or [])
+    observed_ports = set(usage.get("dstports") or [])
+
+    def _mark(evaluated: list[dict], key: str, observed: set) -> list[dict]:
+        return [
+            {**m, "status": "used" if m[key] in observed else "unused"}
+            for m in evaluated
+        ]
+
+    return {
+        "rule": {"policy_id": policy_id, "name": rule.get("name") or ""},
+        "days": days,
+        "time_range": usage.get("time_range") or {},
+        "log_count": usage.get("log_count", 0),
+        "truncated": bool(usage.get("truncated")),
+        "devices_queried": usage.get("devices_queried") or [],
+        "devices_not_found": usage.get("devices_not_found") or [],
+        "source": {
+            "evaluated": _mark(src_eval, "value", observed_srcips),
+            "not_evaluated": src_not_eval,
+        },
+        "destination": {
+            "evaluated": _mark(dst_eval, "value", observed_dstips),
+            "not_evaluated": dst_not_eval,
+        },
+        "service": {
+            "evaluated": _mark(svc_eval, "port", observed_ports),
+            "not_evaluated": svc_not_eval,
+        },
+    }
