@@ -1631,22 +1631,32 @@ async function runLogUsageCheck() {
     errEl.style.display = '';
   } finally {
     document.getElementById('logUsageRunning').style.display = 'none';
-    document.getElementById('logUsageRunBtn').disabled = false;
+    document.getElementById('logUsageRunBtn').disabled = !_logUsageAvailable;
   }
+}
+
+// Quotes a CSV field and neutralizes leading =/+/-/@ (formula-injection
+// vector in Excel/Sheets) by prefixing a single quote.
+function _csvField(v) {
+  let s = String(v ?? '');
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  return `"${s.replace(/"/g, '""')}"`;
 }
 
 function exportLogUsageCsv() {
   if (!_lastLogUsageResult) return;
   const r = _lastLogUsageResult;
   const lines = [
-    `Rule,${r.rule.name},id:${r.rule.policy_id}`,
+    `Rule,${_csvField(r.rule.name)},id:${r.rule.policy_id}`,
     `Days,${r.days}`,
     `Exported,${new Date().toISOString()}`,
     '',
     'Section,Name,Value,Status',
   ];
   const addRows = (section, evaluated, valueKey) => {
-    (evaluated || []).forEach(m => lines.push(`${section},${m.name},${m[valueKey]},${m.status}`));
+    (evaluated || []).forEach(m => lines.push(
+      `${_csvField(section)},${_csvField(m.name)},${_csvField(m[valueKey])},${_csvField(m.status)}`
+    ));
   };
   addRows('Source', r.source.evaluated, 'value');
   addRows('Destination', r.destination.evaluated, 'value');
