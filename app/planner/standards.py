@@ -182,7 +182,16 @@ def rule_type_for(
 
 
 def log_settings(rule_type: str, naming: dict | None = None) -> dict:
-    settings = (naming or load_naming())["log_settings"]
+    naming = naming if naming is not None else load_naming()
+    if "log_settings" not in naming:
+        raise PlannerDataError(
+            "standards",
+            "naming.yaml is missing its log_settings section — copy the "
+            "log_settings block from naming.example.yaml (or restore it via "
+            "Admin → Naming Standards → Reset to Defaults) before "
+            "using AI Assist/Hygiene Fix.",
+        )
+    settings = naming["log_settings"]
     if rule_type not in settings:
         raise KeyError(
             f"rule_type {rule_type!r} not present in naming.yaml log_settings"

@@ -1328,9 +1328,19 @@
     _namingStandardsLoaded = true;
     try {
       const resp = await fetch('/admin/api/naming-standards');
-      const data = await resp.json();
-      _nsNaming = data.naming || {};
-      nsPopulateFields(_nsNaming);
+      let data = null;
+      try {
+        data = await resp.json();
+      } catch (parseErr) {
+        data = null;
+      }
+      if (!resp.ok) {
+        const msg = (data && data.error) || `HTTP ${resp.status}`;
+        nsFlash(`Failed to load naming standards: ${msg}`, false);
+      } else {
+        _nsNaming = (data && data.naming) || {};
+        nsPopulateFields(_nsNaming);
+      }
     } catch (e) {
       nsFlash(`Failed to load naming standards: ${e.message}`, false);
     }

@@ -51,6 +51,33 @@ def test_validate_naming_rejects_missing_convention_entirely():
     assert any("policy" in e for e in errors)
 
 
+def test_validate_naming_rejects_cross_type_token():
+    """A host pattern using <PORT> (a service-only token) must be rejected
+    even though PORT exists somewhere in the app's overall token universe —
+    validate_naming() must check each type against only its own real
+    vocabulary, not a pooled dict of every type's tokens."""
+    data = _valid_naming_dict()
+    data["platforms"]["fortigate"]["conventions"]["host"]["pattern"] = (
+        "H_<PORT>_<TICKET_ID>"
+    )
+    errors = validate_naming(data)
+    assert any("host" in e and "PORT" in e for e in errors)
+
+
+def test_validate_naming_rejects_missing_log_settings():
+    data = _valid_naming_dict()
+    del data["log_settings"]
+    errors = validate_naming(data)
+    assert any("log_settings" in e for e in errors)
+
+
+def test_validate_naming_rejects_empty_log_settings():
+    data = _valid_naming_dict()
+    data["log_settings"] = {}
+    errors = validate_naming(data)
+    assert any("log_settings" in e for e in errors)
+
+
 def test_validate_naming_reports_all_errors_not_just_first():
     data = _valid_naming_dict()
     data["platforms"]["fortigate"]["conventions"]["host"]["pattern"] = ""

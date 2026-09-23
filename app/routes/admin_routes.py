@@ -333,7 +333,12 @@ def api_settings_put():
 @bp.route("/api/naming-standards")
 @_admin_required
 def api_naming_standards_get():
-    return jsonify({"naming": get_naming()})
+    from app.planner.models import PlannerDataError
+
+    try:
+        return jsonify({"naming": get_naming()})
+    except PlannerDataError as exc:
+        return jsonify({"error": str(exc), "source": exc.source}), 502
 
 
 @bp.route("/api/naming-standards", methods=["PUT"])
@@ -357,6 +362,9 @@ def api_naming_standards_reset():
     return jsonify({"ok": True, "naming": get_naming()})
 
 
+_NAMING_PARSE_MAX_BYTES = 256 * 1024  # 256 KB
+
+
 @bp.route("/api/naming-standards/parse", methods=["POST"])
 @_admin_required
 def api_naming_standards_parse():
@@ -364,9 +372,19 @@ def api_naming_standards_parse():
     yaml_text = data.get("yaml_text")
     if not yaml_text or not isinstance(yaml_text, str):
         return jsonify({"ok": False, "error": "'yaml_text' is required"}), 400
+    if len(yaml_text.encode("utf-8")) > _NAMING_PARSE_MAX_BYTES:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "yaml_text is too large (max 256 KB)",
+                }
+            ),
+            400,
+        )
     try:
         parsed = yaml.safe_load(yaml_text)
-    except yaml.YAMLError as exc:
+    except (yaml.YAMLError, RecursionError) as exc:
         return jsonify({"ok": False, "error": f"Invalid YAML: {exc}"}), 400
     if not isinstance(parsed, dict):
         return jsonify({"ok": False, "error": "YAML must parse to a mapping"}), 400

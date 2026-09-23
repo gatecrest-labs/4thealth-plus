@@ -277,6 +277,18 @@ def test_log_settings_unknown_type_raises(naming_path):
         log_settings("no_such_rule_type", naming=naming)
 
 
+def test_log_settings_missing_section_raises_planner_data_error(naming_path):
+    """A naming.yaml missing log_settings entirely (e.g. imported from a
+    partial YAML that only had the 4 object-type patterns) must raise the
+    app's normal actionable-error type, not a bare KeyError."""
+    naming = load_naming(path=naming_path)
+    del naming["log_settings"]
+    with pytest.raises(PlannerDataError) as exc_info:
+        log_settings("allow_internal", naming=naming)
+    assert exc_info.value.source == "standards"
+    assert "log_settings" in exc_info.value.detail
+
+
 def test_review_requirements_critical(review_requirements_path):
     r = review_requirements("critical", path=review_requirements_path)
     assert r["peer_review"] is True

@@ -16,6 +16,13 @@ whole app — no restart required.
 the Admin → Naming Standards tab to see the change reflected (or just use
 the app — the next AI Assist/Hygiene Fix request picks it up immediately).
 
+**Note on comments:** clicking Save in the Admin UI rewrites the entire
+`naming.yaml` file from its in-memory form. This does not preserve
+comments (or exact formatting) — any hand-added `#` comments in the file
+will be lost on the next Admin UI save. If your team relies on inline
+documentation, keep it in this doc or another team reference instead of
+in `naming.yaml` itself.
+
 ## Token syntax
 
 A pattern is a string containing `<UPPER_SNAKE_CASE>` placeholders, which
