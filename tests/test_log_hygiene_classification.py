@@ -35,9 +35,20 @@ def test_service_single_port_plain_port():
 
 
 def test_service_single_port_colon_form():
-    """FortiManager 'src:dst' portrange syntax: only the dst side matters."""
+    """FortiManager tcp-portrange format is '<dst>:<src>' -- destination comes
+    first, before the colon. Verified against app/planner/matching.py's own
+    test_catalog_resolves_range_with_source_port_suffix ("443:1024-65535" ->
+    dst 443)."""
     from app.log_hygiene import _service_single_port
-    so = {"name": "svc1", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "0:443"}
+    so = {"name": "svc1", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "443:1024-65535"}
+    assert _service_single_port(so) == ("tcp", 443)
+
+
+def test_service_single_port_list_form():
+    """FMG JSON-RPC can return tcp-portrange as a single-element list --
+    must normalize like _addr_object_host_ip does for 'subnet'."""
+    from app.log_hygiene import _service_single_port
+    so = {"name": "svc1", "protocol": "TCP/UDP/SCTP", "tcp-portrange": ["443"]}
     assert _service_single_port(so) == ("tcp", 443)
 
 

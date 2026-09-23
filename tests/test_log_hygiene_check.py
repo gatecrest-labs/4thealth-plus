@@ -14,6 +14,8 @@ def _mock_client(policies, addr_objects=None, addr_groups=None,
     client.get_pkg_scope_members.return_value = (
         scope if scope is not None else [{"name": "FW01", "vdom": "root"}]
     )
+    client.get_device_group_names.return_value = set()
+    client.get_device_group_members.return_value = []
     client.__enter__.return_value = client
     client.__exit__.return_value = False
     return client
@@ -102,6 +104,57 @@ def test_check_rule_log_usage_propagates_truncated_flag():
         result = check_rule_log_usage("ADOM", "pkg", 1, 30)
     assert result["truncated"] is True
     assert result["devices_not_found"] == ["FW02"]
+
+
+def test_check_rule_log_usage_empty_devices_queried_raises():
+    """If 4tlog couldn't match any device from the package's scope, raise
+    rather than silently marking every evaluated member 'unused'."""
+    from app.log_hygiene import LogHygieneError, check_rule_log_usage
+    policies = [{"policyid": 1, "name": "R", "srcaddr": [], "dstaddr": [], "service": []}]
+    client = _mock_client(policies=policies)
+    usage = {"srcips": [], "dstips": [], "dstports": [], "time_range": {}, "log_count": 0,
+              "truncated": False, "devices_queried": [], "devices_not_found": ["FW01"]}
+    with patch("app.log_hygiene.make_client", return_value=client), \
+         patch("app.log_hygiene.get_rule_log_usage", return_value=usage):
+        with pytest.raises(LogHygieneError, match="No devices could be queried"):
+            check_rule_log_usage("ADOM", "pkg", 1, 30)
+
+
+def test_check_rule_log_usage_string_dstports_normalized():
+    """4tlog returning port numbers as strings must still match an int-typed
+    evaluated port instead of silently showing every service as unused."""
+    from app.log_hygiene import check_rule_log_usage
+    policies = [{
+        "policyid": 1, "name": "R",
+        "srcaddr": [], "dstaddr": [],
+        "service": [{"name": "svc-https"}],
+    }]
+    svc_objects = [{"name": "svc-https", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "443"}]
+    client = _mock_client(policies=policies, svc_objects=svc_objects)
+    usage = {"srcips": [], "dstips": [], "dstports": ["443"], "time_range": {}, "log_count": 1,
+              "truncated": False, "devices_queried": ["FW01"], "devices_not_found": []}
+    with patch("app.log_hygiene.make_client", return_value=client), \
+         patch("app.log_hygiene.get_rule_log_usage", return_value=usage):
+        result = check_rule_log_usage("ADOM", "pkg", 1, 30)
+    assert result["service"]["evaluated"][0]["status"] == "used"
+
+
+def test_check_rule_log_usage_expands_device_group_scope():
+    """A device-group name in the package scope must be expanded to its
+    member devices before being sent to 4tlog."""
+    from app.log_hygiene import check_rule_log_usage
+    policies = [{"policyid": 1, "name": "R", "srcaddr": [], "dstaddr": [], "service": []}]
+    client = _mock_client(
+        policies=policies, scope=[{"name": "BranchGroup", "vdom": "root"}]
+    )
+    client.get_device_group_names.return_value = {"BranchGroup"}
+    client.get_device_group_members.return_value = ["FW01", "FW02"]
+    usage = {"srcips": [], "dstips": [], "dstports": [], "time_range": {}, "log_count": 0,
+              "truncated": False, "devices_queried": ["FW01", "FW02"], "devices_not_found": []}
+    with patch("app.log_hygiene.make_client", return_value=client), \
+         patch("app.log_hygiene.get_rule_log_usage", return_value=usage) as mock_get:
+        check_rule_log_usage("ADOM", "pkg", 1, 30)
+    assert mock_get.call_args.args[1] == ["FW01", "FW02"]
 
 
 def test_check_rule_log_usage_log_usage_error_propagates():

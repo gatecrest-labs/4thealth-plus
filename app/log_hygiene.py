@@ -47,15 +47,23 @@ def _service_single_port(so: dict) -> tuple[str, int] | None:
     """Return (proto, port) if this service object resolves to exactly one
     discrete TCP or UDP port, else None (range, multi-entry, or a protocol
     other than TCP/UDP)."""
-    tcp_r = str(so.get("tcp-portrange") or "").strip()
-    udp_r = str(so.get("udp-portrange") or "").strip()
+    tcp_raw = so.get("tcp-portrange")
+    udp_raw = so.get("udp-portrange")
+    if isinstance(tcp_raw, list):
+        tcp_raw = " ".join(str(x) for x in tcp_raw)
+    if isinstance(udp_raw, list):
+        udp_raw = " ".join(str(x) for x in udp_raw)
+    tcp_r = str(tcp_raw or "").strip()
+    udp_r = str(udp_raw or "").strip()
     if tcp_r and udp_r:
         return None  # both set -- ambiguous which single port was meant
     raw, proto = (tcp_r, "tcp") if tcp_r else (udp_r, "udp")
     if not raw or " " in raw:
         return None  # empty, or multiple space-separated entries
     if ":" in raw:
-        raw = raw.split(":", 1)[1]  # "src:dst" -- only dst matters
+        # FortiOS tcp-portrange/udp-portrange format is "<dst>[-<dst>]:<src>[-<src>]"
+        # -- destination comes first, before the colon; only dst matters here.
+        raw = raw.split(":", 1)[0]
     if "-" in raw:
         return None  # port range
     try:
@@ -156,13 +164,28 @@ def check_rule_log_usage(adom: str, pkg: str, policy_id: int, days: int) -> dict
         svc_groups = client.get_service_groups(adom)
         scope = client.get_pkg_scope_members(adom, pkg)
 
-    devices = sorted(
-        {m.get("name") for m in scope if isinstance(m, dict) and m.get("name")}
-    )
-    if not devices:
-        raise LogHygieneError(
-            "Policy package is not installed on any device -- no logs to check"
+        member_names = sorted(
+            {m.get("name") for m in scope if isinstance(m, dict) and m.get("name")}
         )
+        if not member_names:
+            raise LogHygieneError(
+                "Policy package is not installed on any device -- no logs to check"
+            )
+
+        # get_pkg_scope_members() can return device-GROUP names alongside (or
+        # instead of) individual devices -- expand any group name into its
+        # member devices before sending names to 4tlog, otherwise a group
+        # name is sent as if it were a device hostname and silently loses
+        # that group's devices from the query (it just comes back in 4tlog's
+        # devices_not_found list).
+        known_groups = client.get_device_group_names(adom)
+        devices: list[str] = []
+        for name in member_names:
+            if name in known_groups:
+                devices.extend(client.get_device_group_members(adom, name))
+            else:
+                devices.append(name)
+        devices = sorted(set(devices))
 
     src_eval, src_not_eval = _expand_addr_members(
         _names(rule.get("srcaddr") or rule.get("src_addr")), addr_objects, addr_groups
@@ -176,9 +199,24 @@ def check_rule_log_usage(adom: str, pkg: str, policy_id: int, days: int) -> dict
 
     usage = get_rule_log_usage(adom, devices, policy_id, days)
 
-    observed_srcips = set(usage.get("srcips") or [])
-    observed_dstips = set(usage.get("dstips") or [])
-    observed_ports = set(usage.get("dstports") or [])
+    devices_queried = usage.get("devices_queried") or []
+    if not devices_queried:
+        raise LogHygieneError(
+            "No devices could be queried in 4tlog for this package's device "
+            "scope -- check device names match between FortiManager and 4tlog."
+        )
+
+    # Normalize 4tlog's observed values to the same types the evaluated side
+    # uses (int ports, string IPs) so a well-formed-but-differently-typed
+    # value (e.g. a string port) still matches instead of silently showing
+    # every evaluated member as "unused".
+    observed_srcips = {str(ip) for ip in (usage.get("srcips") or [])}
+    observed_dstips = {str(ip) for ip in (usage.get("dstips") or [])}
+    observed_ports = {
+        int(p)
+        for p in (usage.get("dstports") or [])
+        if str(p).strip().lstrip("-").isdigit()
+    }
 
     def _mark(evaluated: list[dict], key: str, observed: set) -> list[dict]:
         return [
@@ -192,7 +230,7 @@ def check_rule_log_usage(adom: str, pkg: str, policy_id: int, days: int) -> dict
         "time_range": usage.get("time_range") or {},
         "log_count": usage.get("log_count", 0),
         "truncated": bool(usage.get("truncated")),
-        "devices_queried": usage.get("devices_queried") or [],
+        "devices_queried": devices_queried,
         "devices_not_found": usage.get("devices_not_found") or [],
         "source": {
             "evaluated": _mark(src_eval, "value", observed_srcips),
