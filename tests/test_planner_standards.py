@@ -11,6 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.planner import standards
 from app.planner.matching import parse_service_request
 from app.planner.models import PlannerDataError
 from app.planner.standards import (
@@ -26,6 +27,17 @@ from app.planner.standards import (
 _REPO_ROOT = Path(__file__).parent.parent
 _NAMING_EXAMPLE = _REPO_ROOT / "naming.example.yaml"
 _REVIEW_EXAMPLE = _REPO_ROOT / "review_requirements.example.yaml"
+
+
+@pytest.fixture(autouse=True)
+def _use_example_standards_files(monkeypatch):
+    """object_name()/policy_name()/load_naming() read naming.yaml via
+    standards._NAMING_FILE with no path override, so they always hit the
+    real (gitignored, team-maintained) file. Point default lookups at the
+    committed naming.example.yaml instead, same pattern as
+    test_planner_engine.py, so these tests are self-contained and don't
+    depend on runtime config existing on disk."""
+    monkeypatch.setattr(standards, "_NAMING_FILE", _NAMING_EXAMPLE)
 
 
 @pytest.fixture
@@ -73,6 +85,84 @@ def test_load_naming_reads_repo_yaml(naming_path):
     naming = load_naming(path=naming_path)
     assert "fortigate" in naming["platforms"]
     assert "log_settings" in naming
+
+
+from app.planner.naming_template import NamingTemplateError
+
+
+def test_object_name_host_uses_pattern_from_naming_dict():
+    naming = {"platforms": {"fortigate": {"conventions": {
+        "host": {"pattern": "CUSTOM_<IP_ADDRESS>"},
+    }}}}
+    assert object_name("host", ip="10.1.2.3", naming=naming) == "CUSTOM_10.1.2.3"
+
+
+def test_object_name_network_uses_pattern_from_naming_dict():
+    naming = {"platforms": {"fortigate": {"conventions": {
+        "network": {"pattern": "NET-<NETWORK_ADDRESS>-<PREFIX_LEN>"},
+    }}}}
+    assert (
+        object_name("network", ip="10.8.0.0/16", naming=naming)
+        == "NET-10.8.0.0-16"
+    )
+
+
+def test_object_name_network_defaults_prefix_to_32_when_absent():
+    naming = {"platforms": {"fortigate": {"conventions": {
+        "network": {"pattern": "N_<NETWORK_ADDRESS>_<PREFIX_LEN>"},
+    }}}}
+    assert object_name("network", ip="10.8.0.0", naming=naming) == "N_10.8.0.0_32"
+
+
+def test_object_name_service_uses_pattern_from_naming_dict():
+    naming = {"platforms": {"fortigate": {"conventions": {
+        "service": {"pattern": "SVC-<PROTO>-<PORT>"},
+    }}}}
+    assert (
+        object_name("service", proto="tcp", port="8443", naming=naming)
+        == "SVC-TCP-8443"
+    )
+
+
+def test_object_name_unknown_type_raises_naming_template_error():
+    with pytest.raises(NamingTemplateError):
+        object_name("nat_rule", ip="10.1.2.3")
+
+
+def test_object_name_missing_pattern_raises_naming_template_error():
+    naming = {"platforms": {"fortigate": {"conventions": {
+        "host": {},  # no "pattern" key at all
+    }}}}
+    with pytest.raises(NamingTemplateError):
+        object_name("host", ip="10.1.2.3", naming=naming)
+
+
+def test_policy_name_uses_pattern_from_naming_dict():
+    naming = {"platforms": {"fortigate": {"conventions": {
+        "policy": {"pattern": "<TICKET_ID>-<SRC_INTF>-<DST_INTF>-<SEQ>"},
+    }}}}
+    assert (
+        policy_name("CHG1", "wan1", "dmz", seq=2, naming=naming)
+        == "CHG1-WAN1-DMZ-002"
+    )
+
+
+def test_load_naming_not_cached_across_calls(naming_path):
+    # Regression guard: earlier versions used @lru_cache on the loader,
+    # which meant an on-disk edit was invisible until process restart.
+    naming = load_naming(path=naming_path)
+    assert naming["platforms"]["fortigate"]["conventions"]["host"]["pattern"] == "H_<IP_ADDRESS>"
+    naming_path.write_text(
+        naming_path.read_text(encoding="utf-8").replace(
+            'pattern: "H_<IP_ADDRESS>"', 'pattern: "CHANGED_<IP_ADDRESS>"'
+        ),
+        encoding="utf-8",
+    )
+    reloaded = load_naming(path=naming_path)
+    assert (
+        reloaded["platforms"]["fortigate"]["conventions"]["host"]["pattern"]
+        == "CHANGED_<IP_ADDRESS>"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +275,18 @@ def test_log_settings_unknown_type_raises(naming_path):
     naming = load_naming(path=naming_path)
     with pytest.raises(KeyError):
         log_settings("no_such_rule_type", naming=naming)
+
+
+def test_log_settings_missing_section_raises_planner_data_error(naming_path):
+    """A naming.yaml missing log_settings entirely (e.g. imported from a
+    partial YAML that only had the 4 object-type patterns) must raise the
+    app's normal actionable-error type, not a bare KeyError."""
+    naming = load_naming(path=naming_path)
+    del naming["log_settings"]
+    with pytest.raises(PlannerDataError) as exc_info:
+        log_settings("allow_internal", naming=naming)
+    assert exc_info.value.source == "standards"
+    assert "log_settings" in exc_info.value.detail
 
 
 def test_review_requirements_critical(review_requirements_path):

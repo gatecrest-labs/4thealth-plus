@@ -38,15 +38,30 @@ External API tokens (JSON):
   GET    /admin/api/tokens           list tokens (hashes never returned)
   POST   /admin/api/tokens           {"name": str} — create token; plaintext returned once
   DELETE /admin/api/tokens/<id>      revoke token
+
+Naming Standards (JSON):
+  GET    /admin/api/naming-standards         current naming.yaml content: {"naming": {...}}
+  PUT    /admin/api/naming-standards         {"naming": {...}} — validate + save; 400 + {"errors": [...]} on failure
+  POST   /admin/api/naming-standards/reset   reset naming.yaml to naming.example.yaml
+  POST   /admin/api/naming-standards/parse   {"yaml_text": str} — parse only (no save), for the Import YAML box
+
+Log Hygiene: 4tlog connection (JSON):
+  GET    /admin/api/log-source        current config; token masked as "••••••" when set
+  PUT    /admin/api/log-source        {"enabled": bool, "base_url": str, "token": str, "verify_ssl": bool}
+                                       — the masked placeholder preserves the existing stored token
+  POST   /admin/api/log-source/test   reachability/auth probe against 4tlog
 """
 
 import os
 import re
 
+import yaml
 from flask import Blueprint, jsonify, render_template, request, session
 
 from app import config_diff_scheduler as _sched
 from app import device_review_scheduler as _dr_sched
+from app import log_source as _log_source
+from app import log_usage_client as _log_usage_client
 from app import registry
 from app import rule_hygiene_scheduler as _rh_sched
 from app import rule_policy_scheduler as _rp_sched
@@ -66,6 +81,12 @@ from app.auth import list_users
 from app.decorators import admin_required as _admin_required
 from app.device_review import CHECKS_META as _DR_CHECKS_META
 from app.groups import create_group, delete_group, get_group, list_groups, update_group
+from app.naming_standards import (
+    NamingValidationError,
+    get_naming,
+    reset_to_default,
+    save_naming,
+)
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -314,6 +335,70 @@ def api_settings_put():
     return jsonify(get_all_settings())
 
 
+# ── Naming Standards API ───────────────────────────────────────────────────
+
+
+@bp.route("/api/naming-standards")
+@_admin_required
+def api_naming_standards_get():
+    from app.planner.models import PlannerDataError
+
+    try:
+        return jsonify({"naming": get_naming()})
+    except PlannerDataError as exc:
+        return jsonify({"error": str(exc), "source": exc.source}), 502
+
+
+@bp.route("/api/naming-standards", methods=["PUT"])
+@_admin_required
+def api_naming_standards_put():
+    data = request.get_json(silent=True) or {}
+    naming = data.get("naming")
+    if not isinstance(naming, dict):
+        return jsonify({"ok": False, "errors": ["'naming' object is required"]}), 400
+    try:
+        save_naming(naming)
+    except NamingValidationError as exc:
+        return jsonify({"ok": False, "errors": exc.errors}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/naming-standards/reset", methods=["POST"])
+@_admin_required
+def api_naming_standards_reset():
+    reset_to_default()
+    return jsonify({"ok": True, "naming": get_naming()})
+
+
+_NAMING_PARSE_MAX_BYTES = 256 * 1024  # 256 KB
+
+
+@bp.route("/api/naming-standards/parse", methods=["POST"])
+@_admin_required
+def api_naming_standards_parse():
+    data = request.get_json(silent=True) or {}
+    yaml_text = data.get("yaml_text")
+    if not yaml_text or not isinstance(yaml_text, str):
+        return jsonify({"ok": False, "error": "'yaml_text' is required"}), 400
+    if len(yaml_text.encode("utf-8")) > _NAMING_PARSE_MAX_BYTES:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "yaml_text is too large (max 256 KB)",
+                }
+            ),
+            400,
+        )
+    try:
+        parsed = yaml.safe_load(yaml_text)
+    except (yaml.YAMLError, RecursionError) as exc:
+        return jsonify({"ok": False, "error": f"Invalid YAML: {exc}"}), 400
+    if not isinstance(parsed, dict):
+        return jsonify({"ok": False, "error": "YAML must parse to a mapping"}), 400
+    return jsonify({"ok": True, "naming": parsed})
+
+
 # ── AI Assist usage/cost ────────────────────────────────────────────────────
 
 _AI_USAGE_RANGE_HOURS = {"1h": 1, "4h": 4, "12h": 12, "1d": 24, "7d": 24 * 7}
@@ -451,6 +536,36 @@ def api_tokens_revoke(token_id: str):
         return jsonify({"error": "Token not found"}), 404
     app_log("INFO", "admin", "API token revoked", by=session["user"], token_id=token_id)
     return jsonify({"revoked": token_id})
+
+
+# ── Log Hygiene: 4tlog connection ──────────────────────────────────────────
+
+
+@bp.route("/api/log-source")
+@_admin_required
+def admin_log_source_get():
+    cfg = _log_source.load_log_source_config()
+    cfg["token"] = "••••••" if cfg.get("token") else ""
+    return jsonify(cfg)
+
+
+@bp.route("/api/log-source", methods=["PUT"])
+@_admin_required
+def admin_log_source_put():
+    data = request.get_json(force=True) or {}
+    existing = _log_source.load_log_source_config()
+    if data.get("token") == "••••••":
+        data["token"] = existing.get("token", "")
+    _log_source.save_log_source_config(data)
+    app_log("INFO", "admin", "Log source config updated", by=session["user"])
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/log-source/test", methods=["POST"])
+@_admin_required
+def admin_log_source_test():
+    result = _log_usage_client.test_connection()
+    return jsonify(result)
 
 
 # ── Config-Diff: SMTP ─────────────────────────────────────────────────────────

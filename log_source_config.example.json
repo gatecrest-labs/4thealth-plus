@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "base_url": "https://4tlog.example.internal:5443",
+  "token": "paste-a-4tlog-external-api-token-here",
+  "verify_ssl": true
+}
