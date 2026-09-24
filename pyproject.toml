@@ -14,8 +14,8 @@ dependencies = [
     "pyzipper>=0.4.0",
     "paramiko>=5.0.0",
     "pyyaml>=6.0.3",
-    "anthropic>=1.4.0",
-    "openai>=3.11.0",
+    "anthropic>=1.6.0",
+    "openai>=3.14.1",
     "scp>=0.16.1",
     "psutil>=7.2.2",
 ]
@@ -50,5 +50,5 @@ ignore = ["BLE001", "S110", "S112"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "ruff>=0.16.6",
+    "ruff>=0.16.7",
 ]
