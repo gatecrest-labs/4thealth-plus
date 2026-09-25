@@ -151,7 +151,7 @@ def _split_vdom_blocks(raw: str) -> list[tuple[str, str]]:
     FMG uses two formats depending on version/mode:
       Format A (standalone marker):  a bare line "vdom <name>" separates sections.
       Format B (nested config block): "config vdom\\n    edit <name>\\n...\\n    next\\nend"
-        wraps each vdom's diff inside a config vdom block.
+        wraps ALL vdoms inside a single config vdom block with multiple edit/next pairs.
 
     Returns list of (name, content) tuples, or [("root", raw)] if no markers found.
     """
@@ -165,28 +165,54 @@ def _split_vdom_blocks(raw: str) -> list[tuple[str, str]]:
             blocks.append((vname, content))
         return blocks
 
-    # Format B: "config vdom\n    edit <name>\n    ...\n    next\nend" sections.
-    # Split on "config vdom" markers, then take only the FIRST "edit" line in
-    # each block as the vdom name. All subsequent "edit" lines are diff content
-    # (address objects, policy IDs, etc.) and must not be used as vdom names.
+    # Format B: "config vdom\n    edit <name>\n    ...\n    next\nend".
+    # FMG 7.4/7.6 puts ALL vdoms inside a single config vdom...end block with
+    # multiple edit <vdom> / next pairs at the same indentation level.  The old
+    # code only captured the FIRST edit line, discarding every vdom after root.
+    # Fix: detect the indentation of the first edit (the vdom-level indent), then
+    # collect ALL edit lines at exactly that indent depth, each spanning from its
+    # own "edit" to the next same-level "edit" (or end of block).
     config_vdom_blocks = re.split(
         r"^config\s+vdom\s*$", raw, flags=re.MULTILINE | re.IGNORECASE
     )
     if len(config_vdom_blocks) > 1:
         blocks = []
         for block in config_vdom_blocks[1:]:
-            # The first "edit" line at any leading whitespace is the vdom name.
-            m = re.search(r"^\s+edit\s+(\S+)\s*$", block, flags=re.MULTILINE)
-            if not m:
+            # Determine vdom-level indent from the first "edit" line found.
+            # Use [ \t]+ (not \s+) to avoid capturing the preceding newline
+            # as part of the indent when re.search scans the block string.
+            first_edit = re.search(
+                r"^([ \t]+)edit\s+(\S+)\s*$", block, flags=re.MULTILINE
+            )
+            if not first_edit:
                 continue
-            vname = m.group(1).strip('"')
-            # Everything after "edit <vdom>" is the diff content for this vdom.
-            content = block[m.end() :]
-            # Strip the outer wrapper lines (next / end) that belong to
-            # "config vdom", not to the diff content itself.
-            content = re.sub(r"^\s*next\s*$", "", content, flags=re.MULTILINE)
-            content = re.sub(r"^\s*end\s*$", "", content, count=1, flags=re.MULTILINE)
-            blocks.append((vname, content))
+            indent = first_edit.group(1)
+            # Find ALL edit lines at exactly this indent level — these are vdom
+            # names.  Deeper indents belong to per-vdom diff content (policies,
+            # address objects, etc.) and must not be treated as vdom boundaries.
+            edit_pat = re.compile(
+                rf"^{re.escape(indent)}edit\s+(\S+)\s*$", flags=re.MULTILINE
+            )
+            edit_matches = list(edit_pat.finditer(block))
+            for i, m in enumerate(edit_matches):
+                vname = m.group(1).strip('"')
+                start = m.end()
+                end = (
+                    edit_matches[i + 1].start()
+                    if i + 1 < len(edit_matches)
+                    else len(block)
+                )
+                content = block[start:end]
+                # Strip vdom-level "next" wrapper and the closing "end" of the
+                # config vdom block — these belong to the outer structure, not
+                # to each vdom's diff content.
+                content = re.sub(
+                    rf"^{re.escape(indent)}next\s*$", "", content, flags=re.MULTILINE
+                )
+                content = re.sub(
+                    r"^\s*end\s*$", "", content, count=1, flags=re.MULTILINE
+                )
+                blocks.append((vname, content))
         if blocks:
             return blocks
 
@@ -492,111 +518,127 @@ class FMGClient:
                 f"{label} task {taskid} for {device} timed out after {PREVIEW_TIMEOUT_SECS}s"
             )
 
-        # Step 1: stage each assigned policy package so policy changes appear in
-        # the diff. Multi-vdom devices can have a different package per vdom, so
-        # we stage each unique pkg_name. Skip entirely if none are assigned.
-        # Failure modes:
-        #   - RPC rejected (no task): fall through silently, try next pkg.
-        #   - Task accepted but fails mid-run (num_err > 0): propagate.
-        #
-        # FMG's own web GUI links preview/result back to the STAGE task's ID via
-        # a "preview_taskid" field passed into both the install/preview call and
-        # the final preview/result call — not the install/preview call's own task
-        # ID. Confirmed by capturing the GUI's own JSON-RPC traffic on FMG 7.6.7;
-        # without this, install/preview reports status=OK but preview/result
-        # always returns "No preview result" even though a real diff exists.
-        stage_ok = False
-        last_stage_taskid = None
-        for pkg_name in pkg_names:
-            try:
-                stage_data = _exec(
-                    "/securityconsole/install/package",
-                    {
-                        "adom": adom,
-                        "flags": ["preview"],
-                        "scope": scope,
-                        "pkg": pkg_name,
-                    },
-                )
-                stage_taskid = stage_data.get("task")
-                if stage_taskid:
-                    _poll(stage_taskid, "Stage")
-                    stage_ok = True
-                    last_stage_taskid = stage_taskid
-            except FMGError as exc:
-                if "Stage task" in str(exc):
-                    raise
-                # RPC rejection for this pkg — try the next one
-
-        # Step 2: generate preview diff report, linked to the stage task above
-        preview_request: dict = {"adom": adom, "flags": ["none"], "scope": scope}
-        if last_stage_taskid:
-            preview_request["preview_taskid"] = last_stage_taskid
-        try:
-            preview_data = _exec("/securityconsole/install/preview", preview_request)
-        except FMGError:
-            # Both stage and preview calls rejected — device has no pending changes
-            if not stage_ok:
-                return ""
-            raise
-        preview_taskid = preview_data.get("task")
-        if not preview_taskid:
-            if not stage_ok:
-                return ""
-            raise FMGError(f"No task ID returned for install/preview of {device}")
-        _poll(preview_taskid, "Preview")
-
-        def _fetch_result(taskid: int) -> str:
-            """Call preview/result with the given key and return this device's
-            CLI diff text, or "" if absent / no diff / lookup failed."""
-            try:
-                result_data = _exec(
-                    "/securityconsole/preview/result",
-                    {"adom": adom, "scope": scope, "preview_taskid": taskid},
-                )
-            except FMGError:
-                return ""
-            message = result_data.get("message", "")
-            if not message:
-                return ""
-            try:
-                entries = json.loads(message)
-            except (ValueError, TypeError):
-                return message
-            if not isinstance(entries, list):
-                return ""
-            for entry in entries:
-                if (
-                    isinstance(entry, dict)
-                    and entry.get("name", "").lower() == device.lower()
-                ):
-                    result = entry.get("result", "")
-                    if result.strip() == "=== No preview result ===":
-                        return ""
-                    return result
+        # If no packages need staging the device has nothing pending.
+        if not pkg_names:
             return ""
 
-        # Step 3: fetch result. Try the install/preview task's own ID first —
-        # this is the exact key confirmed working against FMG 7.4.10 in
-        # production. On FMG 7.6.7 this call succeeds (status=OK) but returns
-        # "=== No preview result ===" for this device; in that case retry
-        # keyed by the STAGE task's ID instead, which FMG 7.6.7's own GUI uses
-        # for this same lookup (confirmed by capturing its JSON-RPC traffic).
-        # Trying the proven key first means 7.4.x behavior is unchanged.
-        result = _fetch_result(preview_taskid)
-        if not result and last_stage_taskid and last_stage_taskid != preview_taskid:
-            result = _fetch_result(last_stage_taskid)
+        def _fetch_result(stage_taskid: int, preview_taskid: int) -> str:
+            """Fetch preview/result for this device.
 
-        # Step 4: cleanup — FMG holds a pending-install lock until cancelled
-        try:
-            _exec(
-                "/securityconsole/package/cancel/install",
-                {"adom": adom, "scope": scope},
-            )
-        except Exception:
-            pass
+            Try the install/preview task's own ID first (confirmed working on
+            FMG 7.4.10). On FMG 7.6.7 that returns "No preview result" — fall
+            back to the STAGE task's ID, which is what FMG 7.6.7's GUI uses
+            (confirmed by capturing its JSON-RPC traffic).
+            """
+            for taskid in dict.fromkeys([preview_taskid, stage_taskid]):
+                try:
+                    result_data = _exec(
+                        "/securityconsole/preview/result",
+                        {"adom": adom, "scope": scope, "preview_taskid": taskid},
+                    )
+                except FMGError:
+                    continue
+                message = result_data.get("message", "")
+                if not message:
+                    continue
+                try:
+                    entries = json.loads(message)
+                except (ValueError, TypeError):
+                    # Raw text diff (non-JSON response from some FMG builds)
+                    return message
+                if not isinstance(entries, list):
+                    continue
+                # Collect ALL entries matching this device — some FMG builds
+                # return one entry per package rather than one per device.
+                parts = []
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    if entry.get("name", "").lower() != device.lower():
+                        continue
+                    r = entry.get("result", "")
+                    if r.strip() and r.strip() != "=== No preview result ===":
+                        parts.append(r)
+                if parts:
+                    return "\n".join(parts)
+            return ""
 
-        return result
+        # One complete staging cycle per modified package.
+        #
+        # FMG's install-preview staging lock is ADOM-scoped: each new
+        # install/package call REPLACES the previous package's staged context.
+        # The old approach staged all packages in a loop then ran one
+        # install/preview — only the LAST staged package's diff survived.
+        # Fix: run stage → preview → result → cancel for each package so
+        # every VDOM's diff is captured independently.
+        raw_parts: list[str] = []
+        for pkg_name in pkg_names:
+            stage_taskid = None
+            preview_taskid = None
+            try:
+                # Step 1: stage this package for preview
+                try:
+                    stage_data = _exec(
+                        "/securityconsole/install/package",
+                        {
+                            "adom": adom,
+                            "flags": ["preview"],
+                            "scope": scope,
+                            "pkg": pkg_name,
+                        },
+                    )
+                except FMGError:
+                    # RPC rejection — package may have no diff; skip it.
+                    continue
+                stage_taskid = stage_data.get("task")
+                if not stage_taskid:
+                    continue
+                _poll(stage_taskid, f"Stage:{pkg_name}")
+
+                # Step 2: generate preview diff linked to this staging context.
+                # FMG 7.6.7's GUI passes preview_taskid = stage_taskid into
+                # install/preview; without it preview/result returns empty.
+                try:
+                    preview_data = _exec(
+                        "/securityconsole/install/preview",
+                        {
+                            "adom": adom,
+                            "flags": ["none"],
+                            "scope": scope,
+                            "preview_taskid": stage_taskid,
+                        },
+                    )
+                except FMGError:
+                    continue
+                preview_taskid = preview_data.get("task")
+                if not preview_taskid:
+                    continue
+                _poll(preview_taskid, f"Preview:{pkg_name}")
+
+                # Step 3: fetch CLI diff text
+                raw = _fetch_result(stage_taskid, preview_taskid)
+                if raw:
+                    raw_parts.append(raw)
+            except FMGError as exc:
+                if any(
+                    tag in str(exc)
+                    for tag in (f"Stage:{pkg_name}", f"Preview:{pkg_name}")
+                ):
+                    raise
+                # Unexpected mid-cycle error — skip this package
+            finally:
+                # Step 4: cancel ADOM staging lock before next package's cycle.
+                # Must happen even on error so the next staging call gets a
+                # clean context.
+                try:
+                    _exec(
+                        "/securityconsole/package/cancel/install",
+                        {"adom": adom, "scope": scope},
+                    )
+                except Exception:
+                    pass
+
+        return "\n".join(raw_parts)
 
     def _proxy(self, adom: str, device: str, resource: str) -> dict:
         body = {

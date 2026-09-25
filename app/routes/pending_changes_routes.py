@@ -155,7 +155,14 @@ def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
                 )
                 pkg_status = client.get_device_pkg_status(adom, dev["name"], vdom_names)
             parsed = parse_preview_diff(raw)
-            has_changes = any(v.get("changes") for v in parsed.get("vdoms", []))
+            # Merge parsed vdoms with the full vdom list so every VDOM is
+            # represented in the result — even those with no pending changes.
+            parsed_vdom_names = {v["name"] for v in parsed.get("vdoms", [])}
+            all_vdoms = list(parsed.get("vdoms", []))
+            for vname in vdom_names:
+                if vname not in parsed_vdom_names:
+                    all_vdoms.append({"name": vname, "changes": []})
+            has_changes = any(v.get("changes") for v in all_vdoms)
             if has_changes:
                 status = "ok"
             elif pkg_status == "modified":
@@ -170,7 +177,7 @@ def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
                 "status": status,
                 "pkg_status": pkg_status,
                 "summary": parsed["summary"] if has_changes else {},
-                "vdoms": parsed["vdoms"] if has_changes else [],
+                "vdoms": all_vdoms,
                 "raw": parsed["raw"] if has_changes else "",
                 "error": None,
             }
@@ -369,9 +376,27 @@ def pending_changes_preview(adom: str, device: str):
                 pkg_status = client.get_package_status(adom, device)
                 _set_step("Staging policy package…")
                 raw = client.get_install_preview(adom, device)
+                # Fetch full vdom list so we can show all VDOMs in the panel.
+                vdoms_raw = client.get_device_vdoms(adom, device)
+                vdom_names = (
+                    [
+                        v.get("name", "root")
+                        for v in vdoms_raw
+                        if isinstance(v, dict) and v.get("name")
+                    ]
+                    if vdoms_raw
+                    else ["root"]
+                )
 
             _set_step("Parsing diff…")
             parsed = parse_preview_diff(raw)
+            # Add empty entries for VDOMs not present in the diff so the panel
+            # can show "no pending changes" for each one explicitly.
+            parsed_vdom_names = {v["name"] for v in parsed.get("vdoms", [])}
+            all_vdoms = list(parsed.get("vdoms", []))
+            for vname in vdom_names:
+                if vname not in parsed_vdom_names:
+                    all_vdoms.append({"name": vname, "changes": []})
             result = {
                 "device": device,
                 "ip": device_meta.get("ip", device_meta.get("mgmt_ip", "")),
@@ -379,7 +404,7 @@ def pending_changes_preview(adom: str, device: str):
                 "db_status": device_meta.get("db_status", "unknown"),
                 "pkg_status": pkg_status,
                 "summary": parsed["summary"],
-                "vdoms": parsed["vdoms"],
+                "vdoms": all_vdoms,
                 "raw": parsed["raw"],
             }
             data = _read_task(task_id)
