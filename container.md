@@ -769,3 +769,12 @@ docker compose exec app python manage_users.py secret
 # Health check
 curl -sk https://localhost/api/health
 ```
+
+## Installing the 4tSuite SSO public key
+
+Log into 4tSuite as an admin, open **Admin → Signing Key**, and use the
+"Download public key" link (`/admin/signing-key/public-key.pem`) to
+save the file. Place it at `sso_public_key.pem` in this app's repo
+root (same directory as `groups.json`/`users.json`). Re-do this
+whenever 4tSuite rotates its signing key -- `app/sso_verify.py` fails
+closed (rejects all tokens) if this file is missing or stale.

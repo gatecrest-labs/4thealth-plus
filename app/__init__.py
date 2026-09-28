@@ -20,6 +20,7 @@ _BLUEPRINT_MODULES = [
     "app.routes.map_routes",
     "app.routes.external_api_routes",
     "app.routes.backup_routes",
+    "app.routes.sync_routes",
     # "app.routes.my_new_module",  ← add future modules here
 ]
 
@@ -240,7 +241,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             if request.endpoint == "static":
                 return None
             # External API uses bearer-token auth — no CSRF cookie available
-            if request.path.startswith("/external/api/"):
+            if request.path.startswith("/external/api/") or request.path.startswith(
+                "/4tsuite/"
+            ):
                 return None
             if not validate_csrf_request():
                 return csrf_error_response()
