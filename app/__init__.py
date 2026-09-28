@@ -241,7 +241,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             if request.endpoint == "static":
                 return None
             # External API uses bearer-token auth — no CSRF cookie available
-            if request.path.startswith("/external/api/") or request.path.startswith("/4tsuite/"):
+            if request.path.startswith("/external/api/") or request.path.startswith(
+                "/4tsuite/"
+            ):
                 return None
             if not validate_csrf_request():
                 return csrf_error_response()
