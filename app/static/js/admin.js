@@ -13,12 +13,14 @@
       if (btn.dataset.panel === 'map-regions' && !_mapRegionsLoaded) loadMapRegions();
       if (btn.dataset.panel === 'external-api' && !_extApiLoaded) loadExtApi();
       if (btn.dataset.panel === 'ai-assist' && !_aiAssistLoaded) loadAiAssist();
+      if (btn.dataset.panel === 'log-hygiene' && !_logHygieneLoaded) loadLogHygiene();
       if (btn.dataset.panel === 'scheduled') {
         loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); loadRPJobs();
         _wireJobPageSizes();
       }
       if (btn.dataset.panel === 'backup') { window.loadBackupConfig(); window.loadBackupJobs(); }
       if (btn.dataset.panel === 'zone-policy' && !_zonePolicyLoaded) loadZonePolicyEdit();
+      if (btn.dataset.panel === 'naming-standards' && !_namingStandardsLoaded) loadNamingStandards();
     });
   });
 
@@ -595,6 +597,50 @@
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('newTokenSave').click(); }
   });
 
+  // ══════════════════════  LOG HYGIENE  ══════════════════════════════════════
+
+  let _logHygieneLoaded = false;
+
+  async function loadLogHygiene() {
+    _logHygieneLoaded = true;
+    const res = await fetch('/admin/api/log-source');
+    if (res.status === 401) { location.href = '/login'; return; }
+    const cfg = await res.json();
+    document.getElementById('logSourceBaseUrl').value     = cfg.base_url || '';
+    document.getElementById('logSourceToken').value       = cfg.token || '';
+    document.getElementById('logSourceVerifySsl').checked = !!cfg.verify_ssl;
+    document.getElementById('logSourceEnabled').checked   = !!cfg.enabled;
+  }
+
+  async function saveLogSource() {
+    const msg = document.getElementById('logSourceMsg');
+    const payload = {
+      base_url:   document.getElementById('logSourceBaseUrl').value.trim(),
+      token:      document.getElementById('logSourceToken').value,
+      verify_ssl: document.getElementById('logSourceVerifySsl').checked,
+      enabled:    document.getElementById('logSourceEnabled').checked,
+    };
+    const res = await fetch('/admin/api/log-source', { method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+      body: JSON.stringify(payload) });
+    msg.style.color = res.ok ? '#166534' : '#b91c1c';
+    msg.textContent = res.ok ? 'Saved.' : 'Save failed.';
+    setTimeout(() => msg.textContent = '', 3000);
+  }
+
+  async function testLogSource() {
+    const msg = document.getElementById('logSourceMsg');
+    msg.style.color = '#6b7280';
+    msg.textContent = 'Testing…';
+    const res = await fetch('/admin/api/log-source/test', { method: 'POST',
+      headers: { 'X-CSRF-Token': getCSRF() } });
+    const result = await res.json();
+    msg.style.color = result.ok ? '#166534' : '#b91c1c';
+    msg.textContent = result.ok ? 'Connection OK.' : `Failed: ${result.error}`;
+  }
+
+  document.getElementById('btnSaveLogSource').addEventListener('click', saveLogSource);
+  document.getElementById('btnTestLogSource').addEventListener('click', testLogSource);
 
   // ══════════════════════  MAP REGIONS  ═════════════════════════════════════
 
@@ -1253,6 +1299,175 @@
     zpFlash(r.ok ? r.message : r.error, r.ok);
     if (r.ok) { document.getElementById('epModIdx').value = ''; zpReloadAfterEdit(); }
   });
+
+  // ══════════════════════  NAMING STANDARDS  ═════════════════════════════════
+
+  let _namingStandardsLoaded = false;
+  const NS_TYPES = ['host', 'network', 'service', 'policy'];
+  const NS_TOKEN_FIELDS = {
+    host:    { IP_ADDRESS: '10.0.0.1' },
+    network: { NETWORK_ADDRESS: '10.0.0.0', PREFIX_LEN: '24' },
+    service: { PROTO: 'tcp', PORT: '443' },
+    policy:  { TICKET_ID: 'CHG000000', SRC_INTF: 'WAN1', DST_INTF: 'DMZ', SEQ: '001' },
+  };
+  let _nsNaming = null;
+
+  function nsFlash(msg, ok) {
+    const el = document.getElementById('nsFlash');
+    if (!el) return;
+    el.textContent   = msg;
+    el.className     = `alert ${ok ? 'alert-success' : 'alert-danger'}`;
+    el.style.display = '';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.display = 'none'; }, 6000);
+  }
+
+  function nsRenderPreview(type) {
+    const card    = document.getElementById(`nsCard${type[0].toUpperCase()}${type.slice(1)}`);
+    const pattern = card.querySelector('.ns-pattern').value;
+    const previewEl = card.querySelector('.ns-preview');
+    const tokens = NS_TOKEN_FIELDS[type];
+
+    try {
+      const rendered = pattern.replace(/<([A-Z_]+)>/g, (m, name) => {
+        if (!(name in tokens)) throw new Error(`unknown token <${name}>`);
+        return tokens[name];
+      });
+      previewEl.textContent = `Example: ${rendered}`;
+      previewEl.classList.remove('ns-preview-error');
+    } catch (e) {
+      previewEl.textContent = `Invalid pattern: ${e.message}`;
+      previewEl.classList.add('ns-preview-error');
+    }
+  }
+
+  function nsPopulateFields(naming) {
+    const conventions = ((naming || {}).platforms || {}).fortigate?.conventions || {};
+    NS_TYPES.forEach(type => {
+      const card = document.getElementById(`nsCard${type[0].toUpperCase()}${type.slice(1)}`);
+      const entry = conventions[type] || {};
+      card.querySelector('.ns-pattern').value = entry.pattern || '';
+      card.querySelector('.ns-notes').value   = entry.notes || '';
+      nsRenderPreview(type);
+    });
+  }
+
+  function nsCollectFields() {
+    const naming = JSON.parse(JSON.stringify(_nsNaming || {}));
+    naming.platforms = naming.platforms || {};
+    naming.platforms.fortigate = naming.platforms.fortigate || {};
+    naming.platforms.fortigate.conventions = naming.platforms.fortigate.conventions || {};
+    NS_TYPES.forEach(type => {
+      const card = document.getElementById(`nsCard${type[0].toUpperCase()}${type.slice(1)}`);
+      const existing = naming.platforms.fortigate.conventions[type] || {};
+      naming.platforms.fortigate.conventions[type] = {
+        ...existing,
+        pattern: card.querySelector('.ns-pattern').value,
+        notes:   card.querySelector('.ns-notes').value,
+      };
+    });
+    return naming;
+  }
+
+  async function loadNamingStandards() {
+    _namingStandardsLoaded = true;
+    try {
+      const resp = await fetch('/admin/api/naming-standards');
+      let data = null;
+      try {
+        data = await resp.json();
+      } catch (parseErr) {
+        data = null;
+      }
+      if (!resp.ok) {
+        const msg = (data && data.error) || `HTTP ${resp.status}`;
+        nsFlash(`Failed to load naming standards: ${msg}`, false);
+      } else {
+        _nsNaming = (data && data.naming) || {};
+        nsPopulateFields(_nsNaming);
+      }
+    } catch (e) {
+      nsFlash(`Failed to load naming standards: ${e.message}`, false);
+    }
+
+    document.querySelectorAll('.ns-pattern').forEach(input => {
+      input.addEventListener('input', () => nsRenderPreview(input.dataset.type));
+    });
+
+    document.getElementById('nsImportBtn').addEventListener('click', async () => {
+      const raw = document.getElementById('nsImportYaml').value.trim();
+      if (!raw) return;
+      const btn = document.getElementById('nsImportBtn');
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/admin/api/naming-standards/parse', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+          body:    JSON.stringify({ yaml_text: raw }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          _nsNaming = data.naming;
+          nsPopulateFields(_nsNaming);
+          nsFlash('Imported — review the fields, then Save.', true);
+        } else {
+          nsFlash(`Import failed: ${data.error}`, false);
+        }
+      } catch (e) {
+        nsFlash(`Import failed: ${e.message}`, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('nsSaveBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('nsSaveBtn');
+      btn.disabled = true;
+      try {
+        const naming = nsCollectFields();
+        const resp = await fetch('/admin/api/naming-standards', {
+          method:  'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+          body:    JSON.stringify({ naming }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          _nsNaming = naming;
+          nsFlash('Naming standards saved.', true);
+        } else {
+          nsFlash(`Save failed: ${(data.errors || []).join('; ')}`, false);
+        }
+      } catch (e) {
+        nsFlash(`Save failed: ${e.message}`, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('nsResetBtn').addEventListener('click', async () => {
+      if (!confirm('Reset naming standards to the shipped defaults? This discards all custom patterns.')) return;
+      const btn = document.getElementById('nsResetBtn');
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/admin/api/naming-standards/reset', {
+          method:  'POST',
+          headers: { 'X-CSRF-Token': getCSRF() },
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          _nsNaming = data.naming;
+          nsPopulateFields(_nsNaming);
+          nsFlash('Naming standards reset to defaults.', true);
+        } else {
+          nsFlash('Reset failed.', false);
+        }
+      } catch (e) {
+        nsFlash(`Reset failed: ${e.message}`, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
 
   // ── Boot ───────────────────────────────────────────────────────────────────
   loadGroups();

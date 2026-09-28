@@ -2074,6 +2074,17 @@ a:hover { text-decoration: underline; }
   white-space: nowrap;
 }
 
+.ns-preview {
+  margin-top: .5rem;
+  font-size: .82rem;
+  font-family: monospace;
+  color: var(--text-muted);
+}
+
+.ns-preview.ns-preview-error {
+  color: var(--danger);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    Device Review tab
    ══════════════════════════════════════════════════════════════════════════════ */

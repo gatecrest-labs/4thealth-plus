@@ -429,7 +429,7 @@ def hygiene_policies_raw():
 
 
 @bp.route("/api/hygiene/policies", methods=["POST"])
-@tab_required("rule_hygiene")
+@tab_required("rule_hygiene", "audit_review")
 def hygiene_policies():
     data = request.get_json(silent=True) or {}
     adom = (data.get("adom") or "").strip()

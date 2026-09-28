@@ -185,7 +185,7 @@ Four sections, each with its own ADOM selector, working independently (tab displ
 3. **Interface Lookup** — find which firewall interface(s) in an ADOM are assigned a given IP.
 4. **NAT Lookup** — search VIP and IP Pool objects by IP.
 
-Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
+Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`. Gated to both `rule_hygiene` and `audit_review` tabs — the latter because Audit Review's own Log-Based Rule Review section (see below) also resolves package rules through this endpoint.
 
 The **Hygiene Analysis** section that used to live at the bottom of this page (rule checks, Find Unused Objects, AI Explain) now lives on the **Audit Review** tab — see below. The `/api/hygiene/*` endpoints it uses are unchanged; only the tab gating and UI location moved.
 
@@ -205,11 +205,12 @@ features.
 
 `GET /audit-review` → `audit_review.html` + `audit_review.js`
 
-Three-section layout with unified tab access (internal key: `audit_review`; the page merges what used to be the separate Device Review tab with the Rule Review tab's Hygiene Analysis section):
+Multi-section layout with unified tab access (internal key: `audit_review`; the page merges what used to be the separate Device Review tab with the Rule Review tab's Hygiene Analysis section):
 
 1. **Device Review** (top) — runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
 2. **Hygiene Analysis** (middle) — select ADOM + package, run 10 checks, filter/export findings (CSV/JSON/PDF).
-3. **PSIRT Advisory Assessment** (bottom) — see below.
+3. **Log-Based Rule Review** — see below.
+4. **PSIRT Advisory Assessment** (bottom) — see below.
 
 **Device Review workflow:**
 1. Select ADOM → device list loads automatically.
@@ -314,6 +315,59 @@ AI Explain ("Explain" button on individual Hygiene Analysis findings) reuses
 the same `ai_assist_enabled` app-settings flag as Rule Validation's AI
 Assist and Audit Review's own AI Summary (Admin → AI Assist) — there is no
 separate toggle for it.
+
+#### Log-Based Rule Review
+
+New section on `/audit-review` (below Hygiene Analysis, above PSIRT
+Advisory Assessment), single-rule scope: select ADOM + Policy Package +
+one rule + a day range (1-60), and see which of that rule's configured
+single-host address members and single-port service objects (including
+members reached through address/service group expansion) actually
+appeared in FortiAnalyzer traffic logs over that window. Subnets, IP
+ranges, FQDN objects, `all`/`any`, and multi-port services are shown as
+informational "not evaluated" entries — never flagged, since log IPs
+can't meaningfully prove a subnet or range is unused.
+
+Depends on a separate app, **4tlog** (`~/code/github/web/4tlog`), which
+owns the FortiAnalyzer connection this feature needs. 4tlog exposes a
+bearer-token-authenticated `POST /external/api/log-usage` endpoint
+(same auth pattern as this app's own `/external/api/`) that runs a
+`policyid`-scoped FAZ log search across the rule's package's device
+scope and returns only the aggregated distinct source IPs, destination
+IPs, and destination ports observed — never raw log rows. See
+`docs/superpowers/specs/2026-09-23-log-usage-endpoint-design.md` for
+that endpoint's contract (implemented in 4tlog's own repo, not here).
+
+**Feature gate:** Admin → Log Hygiene — 4tlog base URL, bearer token,
+and an `enabled` toggle, stored in `log_source_config.json` (gitignored;
+copy `log_source_config.example.json`). Unlike `api_tokens.json` (which
+hashes *inbound* tokens this app verifies), this token is stored
+reversibly since this app sends it on every outbound call — same
+convention as `infra_targets.json`'s per-device `"token"` field. A "Test
+Connection" button probes 4tlog's existing `/external/api/executive/summary`
+endpoint as a lightweight reachability/auth check.
+
+**Check engine:** `app/log_hygiene.py::check_rule_log_usage(adom, pkg,
+policy_id, days)` — fetches the rule from FMG, expands its
+srcaddr/dstaddr/service fields via `app.hygiene._expand_group_members`
+(BFS group expansion, same helper the Hygiene Analysis shadow/redundant/
+unused-objects checks already use), classifies each resolved leaf as an
+evaluable single host (`/32` address object) or single discrete TCP/UDP
+port vs. an informational "not evaluated" object, resolves the
+package's device scope via the existing `FMGClient.get_pkg_scope_members()`,
+calls `app.log_usage_client.get_rule_log_usage()`, and diffs configured
+members against the observed sets. `days` is always clamped server-side
+to [1, 60]. Raises `LogHygieneError` for a stale/renamed rule id or a
+package with no device scope; `app.log_usage_client.LogUsageError` for
+any 4tlog-side failure (not configured, unreachable, unauthorized) — both
+degrade to a clear JSON error, never a 500.
+
+**API endpoints:**
+- `GET  /api/audit-review/log-usage-status` — `{ available: bool }`,
+  same contract shape as `ai-summary-status`
+- `POST /api/audit-review/log-usage-check` — body
+  `{ adom, pkg, policy_id, days }`, returns the diff result or a
+  400/502/503 error object
 
 #### PSIRT Advisory Assessment
 
@@ -480,6 +534,20 @@ data), `engine.py` (`plan_change()` — the single entry point that ties it all
 together). `catalogs.py` and `zone_adapter.py` (`ZoneDBAdapter`) are 4THealth+-native
 adapters that let the ported engine call `app.fmg_client.FMGClient` and
 `app.zone_db` in-process instead of over HTTP with separate credentials.
+
+**Naming Standards admin UI:** `naming.yaml`'s `host`/`network`/`service`/`policy`
+patterns are editable live from **Admin → Naming Standards** (no restart
+required) — `app/naming_standards.py` validates and atomically persists
+edits, `app/planner/naming_template.py` renders `<TOKEN>`-style patterns
+into real names, and `standards.py::object_name()`/`policy_name()` call it
+instead of hardcoded f-strings. Scope is deliberately limited to these 4
+types — FQDN/wildcard-FQDN/FQDN-group naming
+(`app/planner/engine.py::_fqdn_object_name`/`_fqdn_group_name`) keeps its
+own hardcoded, security-hardened sanitization and is not
+admin-configurable; `address_group`/`service_group`/`nat_rule`/`vip`
+entries in `naming.yaml` remain documentation-only since nothing generates
+names for them. See `docs/naming-conventions.md` for the token reference
+and example patterns.
 
 **`app/llm/`** — a thin, provider-agnostic narration layer (`get_provider()` in
 `app/llm/__init__.py`) that turns the planner's already-computed structured result
@@ -873,7 +941,7 @@ Config-Delta's AI Summary (Admin → AI Assist) — there is no separate
 host-metrics toggle.
 
 Sub-tabs: Groups & Permissions, Map Region Colors, External API, AI Assist,
-Scheduled, Backup, **Zone Policy**, Application Logs.
+Scheduled, Backup, **Zone Policy**, **Log Hygiene**, Application Logs.
 
 **Zone Policy sub-tab** — Validate and Edit Database (zone/subnet/policy
 rule CRUD against `policy_db.json`) moved here from the Zone Policy nav tab

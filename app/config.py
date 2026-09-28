@@ -31,6 +31,14 @@ def _require_secret_key() -> str:
 
 class Config:
     SECRET_KEY = _require_secret_key()
+    # Browser cookies are scoped by domain+path, not by port (RFC 6265).
+    # Without a unique name here, this collides with any other Flask app's
+    # default "session" cookie served from localhost at a different port
+    # (e.g. 4tlog, 4tExecutive) -- whichever app's response the browser
+    # processes last silently overwrites the others' session cookie,
+    # causing intermittent 401s and CSRF failures that have nothing to do
+    # with this app's own auth logic.
+    SESSION_COOKIE_NAME = "4thealth_plus_session"
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     # Auto-enable when SSL cert/key are present; can also be forced via .env
