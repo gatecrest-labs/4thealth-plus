@@ -20,7 +20,14 @@ APP_ID = "4thealth-plus"
 
 
 def _decode(token: str) -> dict | None:
-    if not PUBLIC_KEY_PATH.exists():
+    # is_file(), not exists(): this app can run entirely standalone, with
+    # no 4tSuite integration configured at all. When that's true, the
+    # docker-compose bind mount for this path has no host file to mount --
+    # Docker silently substitutes an empty directory instead of leaving the
+    # path absent. exists() would see that directory and proceed to
+    # read_bytes(), raising an unhandled IsADirectoryError. is_file() treats
+    # that the same as "missing" and fails closed cleanly.
+    if not PUBLIC_KEY_PATH.is_file():
         return None
     try:
         return jwt.decode(

@@ -68,6 +68,20 @@ def test_verify_token_returns_none_when_public_key_file_is_missing(tmp_path, mon
     assert verify_token(token) is None
 
 
+def test_verify_token_returns_none_when_public_key_path_is_a_directory(tmp_path, monkeypatch):
+    """Regression test: when this app runs standalone (no 4tSuite
+    integration configured), docker-compose's bind mount for this path has
+    no host file to mount and Docker substitutes an empty directory instead
+    of leaving the path absent. This must fail closed the same as a
+    genuinely missing file, not raise IsADirectoryError."""
+    key_path = tmp_path / "sso_public_key.pem"
+    key_path.mkdir()
+    monkeypatch.setattr("app.sso_verify.PUBLIC_KEY_PATH", key_path)
+    priv_pem, _ = _keypair()
+    token = _mint(priv_pem)
+    assert verify_token(token) is None
+
+
 def test_verify_service_token_accepts_matching_scope(keys):
     token = _mint(keys, scope="groups_push", sub="_service:4tsuite")
     claims = verify_service_token(token, expected_scope="groups_push")
