@@ -102,6 +102,6 @@ def test_sso_session_survives_a_second_authenticated_request(app, client):
 
     response = client.get("/api/summary")
 
-    assert response.status_code != 401
+    assert response.status_code == 200
     with client.session_transaction() as sess:
         assert sess.get("user") == "alice"

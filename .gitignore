@@ -6,6 +6,9 @@
 # TLS certs
 certs/*.pem
 
+# SSO public key (deploy-specific, not a secret, but avoid stale copies in git history)
+sso_public_key.pem
+
 # Runtime data (do not track sensitive config)
 users.json
 groups.json

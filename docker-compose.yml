@@ -51,6 +51,7 @@ services:
       - ./license_status.json:/app/license_status.json:rw
       - ./device_backup.json:/app/device_backup.json:rw
       - ./certs:/app/certs:ro
+      - ./sso_public_key.pem:/app/sso_public_key.pem:ro
     healthcheck:
       # Unverified TLS context is intentional here: this probes the app's own
       # self-signed localhost cert from inside the container, not a remote
