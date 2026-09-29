@@ -231,9 +231,6 @@ a:hover { text-decoration: underline; }
   font-size: .9rem;
 }
 
-.login-theme-row { text-align: center; margin-top: 1rem; }
-.login-theme-row .btn-ghost { color: var(--text-muted); border-color: var(--border); }
-
 /* ── Infrastructure card stack ───────────────────────────────────────── */
 .card-grid {
   display: flex;

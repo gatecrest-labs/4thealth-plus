@@ -145,3 +145,14 @@ def test_sso_login_with_zero_allowed_tabs_shows_the_authenticated_topbar(app, cl
     assert response.status_code == 200
     assert b'<span class="nav-user">alice</span>' in response.data
     assert b'action="/logout"' in response.data
+
+
+def test_anonymous_login_page_shows_no_authenticated_topbar(client):
+    """Pins the base.html gating (`{% if session.get('user') %}`) this
+    change now depends on: a visitor with no session at all must never
+    see the topbar, regardless of how login.html itself is structured."""
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    assert b'class="topbar"' not in response.data
+    assert b'action="/logout"' not in response.data
