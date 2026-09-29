@@ -132,3 +132,16 @@ def test_login_with_at_least_one_tab_does_not_flash_the_no_tabs_warning(app, cli
 
     assert response.status_code == 200
     assert b"Your account has no tabs assigned. Contact an administrator." not in response.data
+
+
+def test_sso_login_with_zero_allowed_tabs_shows_the_authenticated_topbar(app, client):
+    import app.groups as groups_mod
+
+    groups_mod.create_group("no-tabs-group", members=["alice"], allowed_tabs=[])
+
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="alice")
+    response = client.get(f"/sso/login?token={token}", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b'<span class="nav-user">alice</span>' in response.data
+    assert b'action="/logout"' in response.data
