@@ -207,24 +207,16 @@ def test_get_install_preview_returns_empty_when_both_stage_and_preview_fail():
     assert result == ""
 
 
-def test_get_install_preview_returns_diff_when_no_pkg_name():
-    """No pkg assigned: install/package skipped entirely, install/preview runs directly."""
+def test_get_install_preview_returns_empty_when_no_pkg_name():
+    """No pkg assigned: nothing to stage, so no FMG calls are made at all."""
     client = _make_client()
-    diff = "config system global\nend\n"
     vdoms = [{"name": "root"}]
-    # No install/package call — skipped when pkg_name is empty
-    responses = [
-        _trigger_response(taskid=20),   # install/preview
-        _task_response(100),
-        _preview_result_response("FW1", diff),
-        _cancel_response(),
-    ]
     with patch.object(client, "get_device_vdoms", return_value=vdoms), \
          patch.object(client, "get_package_info", return_value=_PKG_INFO_NONE), \
-         patch.object(client, "_post", side_effect=responses), \
+         patch.object(client, "_post", side_effect=AssertionError("should not be called")), \
          patch("time.sleep"):
         result = client.get_install_preview("MyADOM", "FW1")
-    assert result == diff
+    assert result == ""
 
 
 def test_get_install_preview_raises_on_task_error_state():
@@ -234,11 +226,12 @@ def test_get_install_preview_raises_on_task_error_state():
     responses = [
         _trigger_response(taskid=10),    # install/package accepted
         _task_response(100, num_err=1),  # stage task fails with num_err
+        _cancel_response(),              # finally: cancel staging lock
     ]
     with patch.object(client, "get_device_vdoms", return_value=vdoms), \
          patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK), \
          patch.object(client, "_post", side_effect=responses), \
-         patch("time.sleep"), pytest.raises(FMGError, match="Stage task"):
+         patch("time.sleep"), pytest.raises(FMGError, match="Stage:.*task 10 for FW1 failed"):
         client.get_install_preview("MyADOM", "FW1")
 
 

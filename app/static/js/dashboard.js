@@ -14,6 +14,7 @@ function renderSummary(d) {
   const fwTotal     = document.getElementById('statFwTotal');
   const rulesTotal  = document.getElementById('statRulesTotal');
   const meta        = document.getElementById('summaryMeta');
+  const fwBreakdown = document.getElementById('statFwBreakdown');
 
   if (d.status === 'pending' || d.status === 'running') {
     // Keep spinners — already in HTML
@@ -24,12 +25,24 @@ function renderSummary(d) {
     fwTotal.textContent    = '—';
     rulesTotal.textContent = '—';
     meta.textContent       = 'Summary unavailable';
+    if (fwBreakdown) fwBreakdown.textContent = '';
     return;
   }
 
   // Totals
   fwTotal.textContent    = fmtNumber(d.firewalls_total);
   rulesTotal.textContent = fmtNumber(d.rules_total);
+
+  // HA / standalone breakdown (absent on snapshots from before this field existed)
+  if (fwBreakdown) {
+    if (d.ha_clusters != null && d.standalones != null) {
+      const clusterWord = d.ha_clusters === 1 ? 'cluster' : 'clusters';
+      const haMembers = d.ha_clusters * 2;
+      fwBreakdown.textContent = `${d.ha_clusters} HA ${clusterWord} (${haMembers} members) · ${d.standalones} standalone`;
+    } else {
+      fwBreakdown.textContent = '';
+    }
+  }
 
   // Footer meta
   if (d.last_updated) {
