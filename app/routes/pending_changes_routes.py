@@ -139,10 +139,20 @@ def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
         seen.add(name)
         devices.append({"name": name, "ip": d.get("ip", d.get("mgmt_ip", ""))})
 
+    # FMG's install-preview staging context is ADOM-scoped: a new
+    # install/package call from any concurrent worker replaces the previous
+    # device's staged context, causing preview/result to return an empty diff.
+    # Serialise only the staging cycle; fast read-only calls run in parallel.
+    _staging_lock = threading.Lock()
+
     def _preview_one(dev: dict) -> dict:
         try:
-            with make_client() as client:
+            # Staging must be serialised within the ADOM to avoid context conflicts.
+            with _staging_lock, make_client() as client:
                 raw = client.get_install_preview(adom, dev["name"])
+
+            # Read-only calls (vdoms, pkg_status) run in parallel across workers.
+            with make_client() as client:
                 vdoms = client.get_device_vdoms(adom, dev["name"])
                 vdom_names = (
                     [
