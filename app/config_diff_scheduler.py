@@ -418,20 +418,7 @@ def _build_attachment(
         w.writerow([])
         w.writerow(["device", "ip", "status", "vdom", "type", "line"])
         for r in results:
-            if r["status"] == "ok":
-                for v in r.get("vdoms", []):
-                    for c in v.get("changes", []):
-                        w.writerow(
-                            [
-                                r["device"],
-                                r.get("ip", ""),
-                                r["status"],
-                                v["name"],
-                                c["type"],
-                                c["line"],
-                            ]
-                        )
-            else:
+            if r["status"] == "error":
                 w.writerow(
                     [
                         r["device"],
@@ -442,6 +429,35 @@ def _build_attachment(
                         r.get("error", ""),
                     ]
                 )
+            elif r.get("vdoms"):
+                # Emit one row per vdom+change line, or a single summary row for
+                # vdoms that have no pending changes.
+                for v in r["vdoms"]:
+                    if v.get("changes"):
+                        for c in v["changes"]:
+                            w.writerow(
+                                [
+                                    r["device"],
+                                    r.get("ip", ""),
+                                    r["status"],
+                                    v["name"],
+                                    c["type"],
+                                    c["line"],
+                                ]
+                            )
+                    else:
+                        w.writerow(
+                            [
+                                r["device"],
+                                r.get("ip", ""),
+                                r["status"],
+                                v["name"],
+                                "no_changes",
+                                "",
+                            ]
+                        )
+            else:
+                w.writerow([r["device"], r.get("ip", ""), r["status"], "", "", ""])
         return {
             "filename": f"config-delta-{adom}-{date}.csv",
             "data": buf.getvalue().encode(),
@@ -503,25 +519,39 @@ def _build_pdf_html(
     sections = []
     for i, r in enumerate(results):
         pb = "page-break-before:always;" if i > 0 else ""
-        if r["status"] == "no_changes":
-            body = '<p style="color:#6b7280;font-style:italic">No pending changes.</p>'
-        elif r["status"] == "pkg_pending_no_diff":
-            body = '<p style="color:#92400e;font-style:italic">Package marked as pending in FMG but install-preview produced no CLI diff (changes may be metadata-only).</p>'
-        elif r["status"] == "error":
+        if r["status"] == "error":
             body = f'<p style="color:#b91c1c">Error: {_esc(r.get("error", ""))}</p>'
         else:
+            # Build per-vdom sections for all statuses.  For ok devices each vdom
+            # shows its diff; for no_changes / pkg_pending_no_diff we show a
+            # per-vdom "no pending changes" note so multi-vdom devices are clear.
             vdom_blocks = ""
             for v in r.get("vdoms", []):
-                lines = "".join(
-                    f'<span style="color:{"#166534" if c["type"] == "add" else "#b91c1c" if c["type"] == "remove" else "#92400e"};display:block">'
-                    f"{_esc(('+' if c['type'] == 'add' else '-' if c['type'] == 'remove' else '~') + ' ' + c['line'])}</span>"
-                    for c in v.get("changes", [])
+                if v.get("changes"):
+                    lines = "".join(
+                        f'<span style="color:{"#166534" if c["type"] == "add" else "#b91c1c" if c["type"] == "remove" else "#92400e"};display:block">'
+                        f"{_esc(('+' if c['type'] == 'add' else '-' if c['type'] == 'remove' else '~') + ' ' + c['line'])}</span>"
+                        for c in v["changes"]
+                    )
+                    vdom_blocks += (
+                        f"<strong>vdom: {_esc(v['name'])}</strong>"
+                        f'<pre style="background:#f8f9fa;padding:8px;font-size:9px;white-space:pre-wrap">{lines}</pre>'
+                    )
+                else:
+                    note = (
+                        "Package marked as pending in FMG but install-preview produced no CLI diff."
+                        if r["status"] == "pkg_pending_no_diff"
+                        else "No pending changes."
+                    )
+                    vdom_blocks += (
+                        f"<strong>vdom: {_esc(v['name'])}</strong>"
+                        f'<p style="color:#6b7280;font-style:italic;font-size:9px;margin:2px 0 8px 0">{note}</p>'
+                    )
+            if not vdom_blocks:
+                vdom_blocks = (
+                    '<p style="color:#6b7280;font-style:italic">No pending changes.</p>'
                 )
-                vdom_blocks += f'<strong>vdom: {_esc(v["name"])}</strong><pre style="background:#f8f9fa;padding:8px;font-size:9px;white-space:pre-wrap">{lines}</pre>'
-            body = (
-                vdom_blocks
-                or '<p style="color:#6b7280;font-style:italic">No changes.</p>'
-            )
+            body = vdom_blocks
         sections.append(
             f'<div style="{pb}padding-top:1cm"><h2>{_esc(r["device"])}</h2>'
             f'<div style="color:#6b7280;font-size:10px">{_esc(r.get("ip", ""))}</div>{body}</div>'

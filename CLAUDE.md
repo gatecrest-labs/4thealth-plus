@@ -164,7 +164,7 @@ Sessions expire after 1 hour. `COOKIE_SECURE` is automatically set when SSL is a
 
 ### Background summary job
 
-`app/summary_job.py` runs a background thread at startup and on a nightly schedule (APScheduler). It enumerates all ADOMs, counts managed devices and policy rules (only in ADOMs that have devices — empty system ADOMs are skipped). Results live in an in-memory dict; `/api/summary` reads from it instantly.
+`app/summary_job.py` runs a background thread at startup and on a nightly schedule (APScheduler). It enumerates all ADOMs, counts managed devices and policy rules (only in ADOMs that have devices — empty system ADOMs are skipped). Each device is also bucketed by its dvmdb `ha_mode` (1/2 = HA cluster, anything else = standalone) into `ha_clusters`/`standalones`, shown under the Managed Firewalls count on the dashboard (the "members" figure is `clusters × 2`, an approximation). Results live in an in-memory dict; `/api/summary` reads from it instantly.
 
 **Critical production requirement:** Gunicorn must use `--worker-class gthread`. The default `sync` worker forks child processes — background threads from the parent do not transfer, so the scheduler would never fire. Use `--workers 2 --threads 4 --worker-class gthread`.
 
