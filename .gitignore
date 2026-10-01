@@ -89,3 +89,6 @@ graphify-out/
 
 # Superpowers AI planning workspace (internal — not project content)
 .superpowers/
+
+# Superpowers git worktree scratch space (internal — not project content)
+.worktrees/

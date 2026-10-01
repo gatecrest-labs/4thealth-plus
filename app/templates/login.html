@@ -1,51 +1,30 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Login — 4THealth+</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
-</head>
-<body class="login-page">
-<div class="login-card">
-  <h1 class="login-title">&#128274; 4THealth+</h1>
-  <p class="login-subtitle">Network Operations Dashboard</p>
-
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for cat, msg in messages %}
-    <div class="alert alert-{{ cat }}">{{ msg }}</div>
-    {% endfor %}
-  {% endwith %}
-
-  <form method="post" action="{{ url_for('auth.login') }}" autocomplete="off">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-    <div class="form-group">
-      <label for="username">Username</label>
-      <input type="text" id="username" name="username" class="form-control"
-             autocomplete="username" required autofocus />
-    </div>
-    <div class="form-group">
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" class="form-control"
-             autocomplete="current-password" required />
-    </div>
-    <button type="submit" class="btn btn-primary btn-block">Sign In</button>
-  </form>
-
-  <div class="login-theme-row">
-    <button class="btn btn-sm btn-ghost" id="themeToggle">Toggle Dark Mode</button>
+{% extends "base.html" %}
+{% block title %}Login — 4THealth+{% endblock %}
+{% block flashes %}{% endblock %}
+{% block content %}
+<div class="login-page">
+  <div class="login-card">
+    <h1 class="login-title">&#128274; 4THealth+</h1>
+    <p class="login-subtitle">Network Operations Dashboard</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+    <form method="post" action="{{ url_for('auth.login') }}" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" class="form-control"
+               autocomplete="username" required autofocus />
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" class="form-control"
+               autocomplete="current-password" required />
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+    </form>
   </div>
 </div>
-<script>
-(function () {
-  const stored = localStorage.getItem('theme') || 'light';
-  document.documentElement.setAttribute('data-theme', stored);
-  document.getElementById('themeToggle').addEventListener('click', () => {
-    const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('theme', next);
-  });
-})();
-</script>
-</body>
-</html>
+{% endblock %}

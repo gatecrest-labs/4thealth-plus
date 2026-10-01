@@ -138,6 +138,11 @@ def login():
             next_url = request.args.get("next", "").strip()
             if next_url and _safe_redirect(next_url):
                 return redirect(next_url)
+            if not allowed:
+                flash(
+                    "Your account has no tabs assigned. Contact an administrator.",
+                    "warning",
+                )
             return redirect(_first_allowed_url(allowed))
 
         _record_failure(ip, username)
@@ -167,6 +172,11 @@ def sso_login():
     from app import login_metrics as _lm
 
     _lm.record_event(True)
+    if not allowed:
+        flash(
+            "Your account has no tabs assigned. Contact an administrator.",
+            "warning",
+        )
     return redirect(_first_allowed_url(allowed))
 
 
