@@ -136,6 +136,40 @@ def update_group(
     return True
 
 
+def add_group_member(group_name: str, username: str) -> None:
+    """No-op if the group does not exist."""
+    group = get_group(group_name)
+    if group is None:
+        return
+    members = set(group["members"])
+    members.add(username)
+    update_group(
+        group_name,
+        members=sorted(members),
+        allowed_tabs=group["allowed_tabs"],
+        adom_restrict=group["adom_restrict"],
+        allowed_adoms=group["allowed_adoms"],
+        ad_groups=group["ad_groups"],
+    )
+
+
+def remove_group_member(group_name: str, username: str) -> None:
+    """No-op if the group does not exist."""
+    group = get_group(group_name)
+    if group is None:
+        return
+    members = set(group["members"])
+    members.discard(username)
+    update_group(
+        group_name,
+        members=sorted(members),
+        allowed_tabs=group["allowed_tabs"],
+        adom_restrict=group["adom_restrict"],
+        allowed_adoms=group["allowed_adoms"],
+        ad_groups=group["ad_groups"],
+    )
+
+
 def delete_group(name: str) -> bool:
     with _lock:
         groups = _load()
