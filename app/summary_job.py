@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 _store: dict = {
     "firewalls_total": None,
     "rules_total": None,
+    "ha_clusters": None,
+    "standalones": None,
     "last_updated": None,  # ISO-8601 UTC string
     "status": "pending",  # pending | running | ok | error
     "error": None,
@@ -56,6 +58,16 @@ def get_summary() -> dict:
 # ── Core calculation ──────────────────────────────────────────────────────────
 
 
+def _is_ha_cluster(device) -> bool:
+    """True if a dvmdb device record is an HA cluster (ha_mode 1 or 2)."""
+    if not isinstance(device, dict):
+        return False
+    try:
+        return int(device.get("ha_mode") or 0) in (1, 2)
+    except (TypeError, ValueError):
+        return False
+
+
 def _run_job(app):
     """Calculate managed firewall and policy-rule totals."""
     if _running.is_set():
@@ -75,6 +87,8 @@ def _run_job(app):
 
         firewalls_total = 0
         rules_total = 0
+        ha_clusters = 0
+        standalones = 0
 
         with make_client() as client:
             # ── Step 1: enumerate ADOMs ───────────────────────────────────
@@ -94,6 +108,12 @@ def _run_job(app):
                 try:
                     devices = client.get_devices(adom)
                     count = len(devices) if isinstance(devices, list) else 0
+                    if isinstance(devices, list):
+                        for d in devices:
+                            if _is_ha_cluster(d):
+                                ha_clusters += 1
+                            else:
+                                standalones += 1
                     firewalls_total += count
                     if count > 0:
                         adoms_with_devices.append(adom)
@@ -140,6 +160,8 @@ def _run_job(app):
                 {
                     "firewalls_total": firewalls_total,
                     "rules_total": rules_total,
+                    "ha_clusters": ha_clusters,
+                    "standalones": standalones,
                     "last_updated": datetime.now(UTC).isoformat(),
                     "status": "ok",
                     "error": None,

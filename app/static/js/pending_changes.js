@@ -400,9 +400,17 @@ function renderDiffPanel(diff) {
        </div>`
     ).join('');
 
-  // VDOM diff blocks
+  // VDOM diff blocks — show ALL vdoms; vdoms with no changes get a brief note.
   const vdomsHtml = diff.vdoms.map(vdom => {
-    if (!vdom.changes.length) return '';
+    if (!vdom.changes.length) {
+      return `<details style="margin-top:.6rem">
+        <summary style="cursor:pointer;font-weight:500;font-size:.82rem;padding:.2rem 0;
+                         color:var(--text-muted);letter-spacing:.03em;text-transform:uppercase">
+          vdom: ${esc(vdom.name)}
+        </summary>
+        <p style="color:var(--text-muted);font-style:italic;font-size:.8rem;margin:.4rem 0 0">No pending changes.</p>
+      </details>`;
+    }
 
     if (!vdomPageState.has(vdom.name)) {
       vdomPageState.set(vdom.name, { page: 1, pageSize: 25 });
@@ -707,9 +715,7 @@ function exportAllPdf(results) {
 
   const deviceSections = results.map((r, idx) => {
     let body = '';
-    if (r.status === 'no_changes') {
-      body = '<p style="font-size:10px;color:#6b7280;font-style:italic">No pending changes.</p>';
-    } else if (r.status === 'error') {
+    if (r.status === 'error') {
       body = `<p style="font-size:10px;color:#b91c1c">Export failed: ${escH(r.error || '')}</p>`;
     } else {
       const s = r.summary || {};
@@ -718,7 +724,12 @@ function exportAllPdf(results) {
         .map(([k, v]) => `<span style="margin-right:12px"><strong>${v}</strong> ${k.replace(/_/g, ' ')}</span>`)
         .join('');
       const vdomBlocks = (r.vdoms || []).map(v => {
-        if (!v.changes || !v.changes.length) return '';
+        if (!v.changes || !v.changes.length) {
+          return `<div style="margin-top:8px">
+            <strong style="font-size:10px">vdom: ${escH(v.name)}</strong>
+            <p style="font-size:9px;color:#6b7280;font-style:italic;margin:2px 0 6px 0">No pending changes.</p>
+          </div>`;
+        }
         const lines = v.changes.map(c => {
           const color  = c.type === 'add' ? '#166534' : c.type === 'remove' ? '#b91c1c' : '#92400e';
           const prefix = c.type === 'add' ? '+' : c.type === 'remove' ? '-' : '~';
@@ -828,7 +839,10 @@ function exportPdf() {
       .join('');
 
     const vdomBlocks = q.vdoms.map(v => {
-      if (!v.changes.length) return '';
+      if (!v.changes.length) {
+        return `<div style="margin-top:8px"><strong style="font-size:10px">vdom: ${escHtml(v.name)}</strong>
+          <p style="font-size:9px;color:#6b7280;font-style:italic;margin:2px 0 6px 0">No pending changes.</p></div>`;
+      }
       const lines = v.changes.map(c => {
         const color = c.type === 'add' ? '#166534' : c.type === 'remove' ? '#b91c1c' : '#92400e';
         const prefix = c.type === 'add' ? '+' : c.type === 'remove' ? '-' : '~';
