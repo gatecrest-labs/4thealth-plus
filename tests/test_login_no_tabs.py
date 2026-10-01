@@ -156,3 +156,29 @@ def test_anonymous_login_page_shows_no_authenticated_topbar(client):
     assert response.status_code == 200
     assert b'class="topbar"' not in response.data
     assert b'action="/logout"' not in response.data
+
+
+def test_flash_message_renders_inside_the_login_card_not_above_it(app, client):
+    import app.auth as auth_mod
+
+    auth_mod.add_user("dave", "Sup3r!Secret123", role="viewer")
+    csrf_token = _get_csrf_token(client)
+
+    response = client.post(
+        "/login",
+        data={"username": "dave", "password": "wrong-password", "csrf_token": csrf_token},
+    )
+
+    html = response.data.decode()
+    assert response.status_code == 401
+    card_start = html.index('<div class="login-card">')
+    flash_pos = html.index('class="alert alert-danger"')
+    card_end = html.index("</form>", card_start)
+    assert card_start < flash_pos < card_end
+
+
+def test_login_page_with_no_flash_has_no_alert_div(client):
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    assert b'class="alert' not in response.data

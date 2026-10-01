@@ -1,10 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Login — 4THealth+{% endblock %}
+{% block flashes %}{% endblock %}
 {% block content %}
 <div class="login-page">
   <div class="login-card">
     <h1 class="login-title">&#128274; 4THealth+</h1>
     <p class="login-subtitle">Network Operations Dashboard</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
     <form method="post" action="{{ url_for('auth.login') }}" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <div class="form-group">
