@@ -1051,6 +1051,13 @@ a:hover { text-decoration: underline; }
   margin-top: .2rem;
 }
 
+.summary-stat-sub {
+  font-size: .72rem;
+  color: var(--text-muted);
+  margin-top: .15rem;
+  min-height: .9rem;
+}
+
 .summary-divider {
   width: 1px;
   background: var(--border);

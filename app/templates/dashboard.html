@@ -8,6 +8,7 @@
   <div class="summary-stat" id="statFirewalls">
     <div class="summary-stat-value" id="statFwTotal"><span class="summary-spinner"></span></div>
     <div class="summary-stat-label">Managed Firewalls</div>
+    <div class="summary-stat-sub" id="statFwBreakdown"></div>
   </div>
   <div class="summary-divider"></div>
   <div class="summary-stat" id="statRules">
@@ -55,5 +56,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/dashboard.js') }}?v=13"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}?v=14"></script>
 {% endblock %}
