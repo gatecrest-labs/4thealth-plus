@@ -45,8 +45,18 @@ package = false
 # types where it raises its own.
 ignore = ["BLE001", "S110", "S112"]
 
+[tool.ruff.format]
+# Vendored verbatim from 4tSuite (adapter/tsuite_adapter.py, written for a
+# 100-column limit); keep it byte-identical across sub-apps, so CI's
+# `ruff format --check` must not reformat it.
+exclude = ["app/tsuite_adapter.py"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["TRY002", "B017"]
+# Vendored verbatim from 4tSuite (adapter/tsuite_adapter.py); keep it
+# byte-identical across sub-apps. Its BLE001 noqa is unused here only
+# because this repo already ignores BLE001 globally.
+"app/tsuite_adapter.py" = ["RUF100"]
 
 [dependency-groups]
 dev = [
