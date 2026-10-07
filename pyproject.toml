@@ -61,5 +61,5 @@ exclude = ["app/tsuite_adapter.py"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "ruff>=0.16.8",
+    "ruff>=0.16.10",
 ]
