@@ -49,10 +49,16 @@ def test_get_cached_devices_returns_copy_not_reference():
     assert len(mod._cache["ADOM1"]["devices"]) == 1
 
 
-def test_get_cache_status_initial():
+def test_get_cache_status_initial(tmp_path, monkeypatch):
     import importlib
 
     import app.pending_status_cache as mod
+    from app import collector_store
+
+    # While "pending", get_cache_status reads the collector's persisted
+    # snapshot; point it at an empty DB so a developer's real
+    # collector_state.db cannot leak into the result.
+    monkeypatch.setattr(collector_store, "_DB_PATH", tmp_path / "test.db")
     importlib.reload(mod)
     status = mod.get_cache_status()
     assert status["status"] == "pending"
