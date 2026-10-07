@@ -128,3 +128,31 @@ def test_push_to_unknown_group_returns_400(app, client):
         headers={"Authorization": f"Bearer {_token(app)}"},
     )
     assert response.status_code == 400
+
+
+def test_manifest_requires_manifest_read_scope(app, client):
+    assert client.get("/4tsuite/manifest").status_code == 403
+    response = client.get("/4tsuite/manifest", headers={"Authorization": f"Bearer {_token(app)}"})
+    assert response.status_code == 403
+
+
+def test_manifest_describes_app(app, client):
+    token = _mint(app.config["_TEST_PRIV_KEY"], scope="manifest_read")
+
+    response = client.get("/4tsuite/manifest", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["app_id"] == "4thealth-plus"
+    assert body["protocol_version"] == 1
+    assert "dashboard" in body["tabs"]
+    assert body["groups"] == ["operators"]
+
+
+def test_push_with_malformed_body_returns_400(app, client):
+    response = client.post(
+        "/4tsuite/groups",
+        json={"group": "operators"},
+        headers={"Authorization": f"Bearer {_token(app)}"},
+    )
+    assert response.status_code == 400

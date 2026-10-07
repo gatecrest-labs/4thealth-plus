@@ -47,6 +47,10 @@ ignore = ["BLE001", "S110", "S112"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["TRY002", "B017"]
+# Vendored verbatim from 4tSuite (adapter/tsuite_adapter.py); keep it
+# byte-identical across sub-apps. Its BLE001 noqa is unused here only
+# because this repo already ignores BLE001 globally.
+"app/tsuite_adapter.py" = ["RUF100"]
 
 [dependency-groups]
 dev = [
