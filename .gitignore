@@ -17,6 +17,7 @@ policy_db.json
 summary_history.json
 smtp_config.json
 config_diff_jobs.json
+package_change_alerts.json
 device_review_jobs.json
 device_review_rollup.json
 rule_hygiene_jobs.json

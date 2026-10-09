@@ -103,6 +103,18 @@ Also lives on the Audit Review tab. See [features.md](features.md#psirt-advisory
 | POST | `/admin/api/config-diff/jobs/<id>/run` | Trigger immediate run (returns 202) |
 | GET | `/admin/api/config-diff/jobs/<id>/status` | Poll run status: `{"running": bool, "last_run": {...}}` |
 
+### Admin — Package Change Alerts
+
+All endpoints are admin-only. A rule is `{name, adom, packages[], email, format ("html"|"csv"|"json"), enabled}`; `packages: []` watches every package in the ADOM. Stored rules also carry `id`, `sent` (dedupe hashes), and `runs` (recent evaluations).
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/admin/api/package-alerts/rules` | List all alert rules with run history |
+| POST | `/admin/api/package-alerts/rules` | Create a rule (201; 400 with `{"error"}` on validation failure) |
+| PUT | `/admin/api/package-alerts/rules/<id>` | Update a rule (404 if missing; keeps dedupe state and history) |
+| DELETE | `/admin/api/package-alerts/rules/<id>` | Delete a rule (404 if missing) |
+| POST | `/admin/api/package-alerts/rules/<id>/test` | Send a sample alert email (404 if missing; 400 with `{"error"}` if SMTP fails) |
+
 ## Map
 
 | Method | Path | Description |

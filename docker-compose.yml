@@ -44,6 +44,7 @@ services:
       - ./api_tokens.json:/app/api_tokens.json:rw
       - ./smtp_config.json:/app/smtp_config.json:rw
       - ./config_diff_jobs.json:/app/config_diff_jobs.json:rw
+      - ./package_change_alerts.json:/app/package_change_alerts.json:rw
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
       - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
       - ./rule_policy_jobs.json:/app/rule_policy_jobs.json:rw
@@ -98,6 +99,7 @@ services:
       - ./api_tokens.json:/app/api_tokens.json:rw
       - ./smtp_config.json:/app/smtp_config.json:rw
       - ./config_diff_jobs.json:/app/config_diff_jobs.json:rw
+      - ./package_change_alerts.json:/app/package_change_alerts.json:rw
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
       - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
       - ./rule_policy_jobs.json:/app/rule_policy_jobs.json:rw

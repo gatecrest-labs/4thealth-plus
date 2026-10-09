@@ -132,6 +132,7 @@ These files are gitignored and must be created from the bundled `*.example.*` te
 | `map_regions.json` | Built-in defaults | Map pin colour regions; created on first admin save |
 | `smtp_config.json` | `smtp_config.example.json` | SMTP configuration for scheduled exports |
 | `config_diff_jobs.json` | `config_diff_jobs.example.json` | Scheduled Config-Delta export jobs |
+| `package_change_alerts.json` | `package_change_alerts.example.json` | Package Change Alert rules and dedupe state |
 | `device_review_jobs.json` | `device_review_jobs.example.json` | Scheduled Audit Review (CIS audit) export jobs |
 | `naming.yaml` | `naming.example.yaml` | Rule-naming standards used by Rule Validation's AI Assist — editable via **Admin → Naming Standards**, see `docs/naming-conventions.md` |
 | `review_requirements.yaml` | `review_requirements.example.yaml` | Approval/risk-review standards used by Rule Validation's AI Assist |
@@ -159,3 +160,5 @@ SMTP settings are stored in `smtp_config.json` (gitignored; copy from `smtp_conf
 | `enabled` | `false` | Must be `true` for any scheduled export to send email |
 
 Scheduled jobs are stored in `config_diff_jobs.json` (gitignored; copy from `config_diff_jobs.example.json`). Jobs are registered with APScheduler at startup and survive server restarts.
+
+Package Change Alert rules are stored in `package_change_alerts.json` (gitignored; copy from `package_change_alerts.example.json`). They have no schedule of their own — they are evaluated at the end of each Config-Delta job run for the rule's ADOM and use the same SMTP settings.

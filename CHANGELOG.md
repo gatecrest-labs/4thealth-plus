@@ -30,6 +30,22 @@ All notable changes to 4THealth+ are documented in this file.
   updated to `audit_review` (Admin → Groups & Permissions).
 
 ### Added
+- **Package Change Alerts:** New Admin → Scheduled section. Rules watch policy
+  packages in an ADOM and, at the end of each Config-Delta job run, email one
+  message per package with a new pending policy diff (attachment 1:
+  policy-section diff; attachment 2: policy "as is" with groups). Identical
+  diffs are not resent; failed sends retry on the next run; device-group
+  package scopes are expanded. Includes "Send test email". Rules live in
+  `package_change_alerts.json`; endpoints under
+  `/admin/api/package-alerts/rules*`. Ported from web/4thealth.
+- **Dashboard ADOM Summary:** one tile per ADOM with firewall and rule counts
+  (`adom_breakdown` in the summary job's store).
+- **Map firewall search:** "Find firewall" box zooms to, opens and highlights
+  a device marker, with not-found / hidden-by-ADOM feedback.
+- **Zone Policy:** Query Flow results export (CSV/JSON/HTML); Admin → Zone
+  Policy backup now also downloads the file, new Restore from Backup
+  (`POST /api/zone/restore`, validated, auto-backs-up the live DB first), and
+  a live rule preview when typing a policy index.
 - **"Exempt" comment whitelist (Rule Hygiene):** add the word "Exempt"
   anywhere in a rule's comment (case-insensitive) and every hygiene check
   silently skips that rule on every future run — interactive and scheduled
