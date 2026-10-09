@@ -695,6 +695,27 @@
     </table>
   </div>
 
+  <!-- Package Change Alerts -->
+  <div class="rr-section-label" style="margin-top:2rem">Package Change Alerts</div>
+  <p class="admin-panel-desc" style="margin-bottom:1rem">
+    Emails one message per changed policy package (pending policy diff + current policy report).
+    Alerts are evaluated at the end of each <strong>Config-Delta</strong> job run for the rule's ADOM, so a rule only fires if an enabled Config-Delta job exists for that ADOM.
+  </p>
+  <button class="btn-primary" onclick="pcaOpenNewModal()" style="margin-bottom:12px">+ Add Alert Rule</button>
+  <div style="overflow-x:auto;margin-top:4px">
+    <table class="admin-table" id="pca-rules-table">
+      <thead>
+        <tr>
+          <th>Name</th><th>ADOM</th><th>Packages</th><th>Format</th><th>Email</th>
+          <th>Last Run</th><th>Status</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="pca-rules-tbody">
+        <tr><td colspan="8" style="color:#6b7280;text-align:center">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
 </div>
 
 <!-- ═══════════════════════  BACKUP PANEL  ═══════════════════════ -->
@@ -865,6 +886,9 @@
   <div style="margin-bottom:1.25rem;display:flex;align-items:center;gap:.75rem">
     <button class="btn btn-secondary" id="zpBackupBtn">&#128190; Backup policy_db.json</button>
     <span id="zpBackupStatus" class="text-muted" style="font-size:.82rem"></span>
+    <input type="file" id="zpRestoreFile" accept=".json,application/json" style="display:none" />
+    <button class="btn btn-danger" id="zpRestoreBtn">Restore from Backup</button>
+    <span id="zpRestoreStatus" class="text-muted" style="font-size:.82rem"></span>
   </div>
 
   <div class="zp-edit-grid">
@@ -975,6 +999,7 @@
           <button class="btn btn-sm btn-secondary" id="epModBtn">Update</button>
           <button class="btn btn-sm btn-danger" id="epRemBtn">Remove</button>
         </div>
+        <div id="epModPreview" style="font-size:.8rem;color:var(--text-muted);margin-top:.35rem"></div>
       </div>
     </div>
 
@@ -1394,10 +1419,66 @@
     </div>
   </div>
 </div>
+
+<div class="modal-overlay hidden" id="pca-modal">
+  <div class="modal-dialog" style="max-width:600px;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <h3 id="pca-modal-title">New Package Change Alert</h3>
+      <button class="modal-close" onclick="pcaCloseModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pca-rule-id">
+      <div class="form-row">
+        <label>Rule Name</label>
+        <input type="text" id="pca-name" placeholder="e.g. Policy owners alert" style="min-width:280px">
+      </div>
+      <div class="form-row">
+        <label>ADOM</label>
+        <select id="pca-adom" style="min-width:200px" onchange="pcaLoadPackages()">
+          <option value="">— select ADOM —</option>
+        </select>
+      </div>
+      <div id="pca-adom-warning" style="display:none;color:var(--warning-color);font-size:.85rem;margin:-4px 0 8px 0"></div>
+      <div class="form-row" style="align-items:flex-start">
+        <label style="padding-top:4px">Packages</label>
+        <div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer">
+            <input type="checkbox" id="pca-all-packages" checked onchange="pcaTogglePackageList()">
+            <span>All packages</span>
+          </label>
+          <div id="pca-package-list" style="display:none;max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:8px;margin-top:6px">
+            <em style="color:var(--text-muted)">Select an ADOM first</em>
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Format</label>
+        <select id="pca-format">
+          <option value="html" selected>HTML (styled report)</option>
+          <option value="csv">CSV</option>
+          <option value="json">JSON</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Email To</label>
+        <textarea id="pca-email" rows="2" placeholder="alice@corp.com, bob@corp.com" style="min-width:280px;resize:vertical"></textarea>
+      </div>
+      <div class="form-row">
+        <label>Enabled</label>
+        <input type="checkbox" id="pca-enabled" checked>
+      </div>
+      <div id="pca-modal-error" style="display:none;color:var(--danger);font-size:.88rem;margin-top:.5rem"></div>
+    </div>
+    <div style="padding:1rem;display:flex;justify-content:flex-end;gap:.5rem;border-top:1px solid var(--border)">
+      <button class="btn-secondary" onclick="pcaCloseModal()">Cancel</button>
+      <button class="btn-primary" onclick="pcaSaveRule()">Save Rule</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=12"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=13"></script>
 <script>
   const DR_CHECK_DEFS = {{ checks_meta | tojson }};
 </script>

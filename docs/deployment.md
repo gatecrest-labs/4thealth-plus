@@ -433,6 +433,7 @@ sudo -u 4thealth /usr/local/bin/uv sync --extra prod --project /opt/4thealth
 # Only needed once per new file — skip if the file already exists
 [ -f smtp_config.json ]        || cp smtp_config.example.json smtp_config.json
 [ -f config_diff_jobs.json ]   || cp config_diff_jobs.example.json config_diff_jobs.json
+[ -f package_change_alerts.json ] || cp package_change_alerts.example.json package_change_alerts.json
 ```
 
 **Restart the service** (always required to load new Python modules and scheduler changes):

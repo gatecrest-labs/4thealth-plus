@@ -188,6 +188,23 @@ Admins can configure weekly scheduled Config-Delta exports in **Admin → Config
 
 Audit Review scheduled reports include a **Host Summary** table at the top of both the email body and the attached file, showing per-device counts for each result type (PASS, FAIL, INSECURE, WARN, CONFIG_MISSING, INFO, Total). The existing per-check aggregate summary remains in the email body below the host summary.
 
+### Package Change Alerts (Admin)
+
+Emails a policy owner when a watched policy package has new pending changes. Configure rules in **Admin → Scheduled → Package Change Alerts → + Add Alert Rule**: a name, an ADOM, the packages to watch (or **All packages**), an attachment format (HTML / CSV / JSON), the recipient address(es), and an enabled flag.
+
+Alerts are evaluated at the **end of every Config-Delta job run** for the rule's ADOM, using the install-preview diffs that run already collected, so it adds no extra install-preview calls. Building the "as is" policy report (attachment 2) does make additional read-only FortiManager calls for the package's rules and the ADOM's address/service objects, only for packages that are actually being alerted on. A rule therefore only fires if an enabled Config-Delta job exists for its ADOM; the UI shows a *no Config-Delta job* warning badge when none does.
+
+For each watched package with a new pending policy diff, one email is sent with two attachments:
+
+1. **Policy changes** — the pending install-preview diff, filtered to policy sections only (`config firewall policy`, address, address group, service, and VIP blocks). Unrelated pending changes such as interface edits are left out.
+2. **Policy "as is"** — the package's current rules with address/service groups expanded at the bottom (the same report the Rule Policy job produces; live hit counts are off).
+
+**De-duplication:** the same pending diff is never emailed twice. A package re-arms once its policy diff disappears (for example after it is installed), so a later change alerts again. A failed send or report is retried on the next Config-Delta run. If any device a package is installed on could not be previewed in a run (or a watched package is not found in the ADOM, or the package lookup fails), that package is skipped for the run and its state is left untouched rather than treated as clean; the skip is noted in the rule's run history, and a failed package lookup is recorded as an error on each rule. Packages scoped to device groups are expanded to the group's member devices.
+
+Use **Send test email** on a rule to verify SMTP and recipients; it sends a sample message and does not touch alert state.
+
+**Limitations:** alerts only see changes staged for install, so a package edited and installed between two Config-Delta runs is not detected. A package installed on several devices produces one alert with the per-device diffs combined.
+
 ### AI Summary
 
 *Admin-gated (`ai_assist_enabled` in Admin → AI Assist).* A **Summarize with AI** button in the diff panel generates a short plain-English description of what's actually changing (new/removed policies, address or service object changes, routing changes) from the parsed CLI diff — capped per device and per line count to keep the LLM payload bounded. The raw CLI diff is always shown/exported unmodified alongside the summary. Scheduled export emails include the same summary automatically (best-effort — silently omitted if narration fails or the ADOM has no changes to summarize).

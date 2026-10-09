@@ -34,6 +34,12 @@
     <button class="btn btn-sm map-filter-btn" id="mapSelectAll">All</button>
     <button class="btn btn-sm map-filter-btn" id="mapSelectNone">None</button>
   </div>
+  <div class="map-filter-row map-search-row">
+    <label class="map-filter-label" for="mapDeviceSearch">Find firewall:</label>
+    <input type="text" id="mapDeviceSearch" class="map-search-input" placeholder="Exact device name…" autocomplete="off" />
+    <button class="btn btn-sm map-filter-btn" id="mapSearchBtn">Search</button>
+    <span id="mapSearchMsg" class="map-search-msg" aria-live="polite"></span>
+  </div>
   <div class="map-stats" id="mapStats"></div>
   <div class="map-health-ledger" id="mapHealthLedger" style="display:none"></div>
 </div>
@@ -55,5 +61,5 @@
     firewalls: {{ ('firewalls' in allowed_tabs) | tojson }},
   };
 </script>
-<script src="{{ url_for('static', filename='js/map.js') }}?v=6"></script>
+<script src="{{ url_for('static', filename='js/map.js') }}?v=7"></script>
 {% endblock %}

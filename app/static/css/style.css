@@ -161,6 +161,10 @@ a:hover { text-decoration: underline; }
 .btn-secondary:hover { background: var(--border); }
 .btn-secondary:disabled { opacity: .45; cursor: default; }
 
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { filter: brightness(.9); }
+.btn-danger:disabled { opacity: .45; cursor: default; }
+
 .btn-link { background: transparent; color: var(--accent); padding: 0; }
 .btn-link:hover { text-decoration: underline; }
 
@@ -2459,6 +2463,35 @@ a:hover { text-decoration: underline; }
   vertical-align: middle;
 }
 
+/* ── Map device search ────────────────────────────────────────────────── */
+.map-search-row { margin-top: .1rem; }
+.map-search-input {
+  padding: .2rem .5rem;
+  font-size: .8rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  width: 220px;
+  outline: none;
+}
+.map-search-input:focus {
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37,99,235,.15);
+}
+.map-search-msg {
+  font-size: .78rem;
+  color: var(--status-red, #e53935);
+}
+@keyframes mapPinPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(255,193,7,.75), 0 1px 4px rgba(0,0,0,.4); }
+  70%  { box-shadow: 0 0 0 10px rgba(255,193,7,0), 0 1px 4px rgba(0,0,0,.4); }
+  100% { box-shadow: 0 0 0 0 rgba(255,193,7,0),   0 1px 4px rgba(0,0,0,.4); }
+}
+.map-pin-highlight {
+  animation: mapPinPulse .8s ease-out 3;
+}
+
 /* ── Versions cache status bar ────────────────────────────────────────── */
 .versions-cache-bar {
   display: flex;
@@ -2919,3 +2952,24 @@ a:hover { text-decoration: underline; }
 .fg-card:hover { background: var(--surface-alt); }
 .fg-card.fg-active { border-color: var(--primary); background: var(--surface-alt); }
 .fg-card-title { font-size: .78em; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .35rem; }
+
+/* ── ADOM Summary tiles ──────────────────────────────────────────────────── */
+.adom-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+.adom-tile {
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  padding: .75rem 1rem;
+  min-width: 130px;
+}
+.adom-tile-name {
+  font-weight: 600;
+  margin-bottom: .25rem;
+}
+.adom-tile-stat {
+  font-size: .875rem;
+  color: var(--text-muted, #6b7280);
+}

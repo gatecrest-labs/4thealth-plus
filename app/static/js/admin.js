@@ -15,7 +15,7 @@
       if (btn.dataset.panel === 'ai-assist' && !_aiAssistLoaded) loadAiAssist();
       if (btn.dataset.panel === 'log-hygiene' && !_logHygieneLoaded) loadLogHygiene();
       if (btn.dataset.panel === 'scheduled') {
-        loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); loadRPJobs();
+        loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); loadRPJobs(); loadPCAlerts();
         _wireJobPageSizes();
       }
       if (btn.dataset.panel === 'backup') { window.loadBackupConfig(); window.loadBackupJobs(); }
@@ -1176,6 +1176,7 @@
     loadZoneEditDropdowns();
   }
 
+  // Backup — server-side copy into backups/, plus a browser download of the same file
   document.getElementById('zpBackupBtn').addEventListener('click', async () => {
     const btn    = document.getElementById('zpBackupBtn');
     const status = document.getElementById('zpBackupStatus');
@@ -1183,19 +1184,56 @@
     status.textContent = 'Backing up…';
     try {
       const resp = await fetch('/api/zone/backup', { method: 'POST' });
-      const data = await resp.json();
-      if (data.ok) {
-        status.textContent = `Saved: ${data.filename}`;
-        status.style.color = 'var(--success)';
-      } else {
-        status.textContent = data.error || 'Backup failed.';
-        status.style.color = 'var(--danger)';
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || 'Backup failed.');
       }
+      const cd = resp.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="?([^";]+)"?/);
+      const filename = match ? match[1] : 'policy_db_backup.json';
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      status.textContent = `Saved: backups/${filename} (also downloaded)`;
+      status.style.color = 'var(--success)';
     } catch (e) {
       status.textContent = e.message;
       status.style.color = 'var(--danger)';
     } finally {
       btn.disabled = false;
+    }
+  });
+
+  // Restore — upload a local JSON file, validate, auto-backup the live DB, overwrite
+  document.getElementById('zpRestoreBtn').addEventListener('click', () => {
+    document.getElementById('zpRestoreFile').click();
+  });
+
+  document.getElementById('zpRestoreFile').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!confirm(`This will overwrite the live policy database with "${file.name}". The current database will be backed up first. Continue?`)) return;
+    const status = document.getElementById('zpRestoreStatus');
+    status.textContent = 'Restoring…';
+    status.style.color = '';
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const resp = await fetch('/api/zone/restore', { method: 'POST', body: fd });
+      const data = await resp.json();
+      status.textContent = data.ok ? (data.message || 'Database restored') : (data.error || 'Restore failed.');
+      status.style.color = data.ok ? 'var(--success)' : 'var(--danger)';
+      if (data.ok) zpReloadAfterEdit();
+    } catch (err) {
+      status.textContent = err.message;
+      status.style.color = 'var(--danger)';
     }
   });
 
@@ -1288,7 +1326,7 @@
     }
     const r = await zpEditPost('/api/zone/policy/modify', { index: idx, field, value });
     zpFlash(r.ok ? r.message : r.error, r.ok);
-    if (r.ok) { document.getElementById('epModVal').value = ''; zpReloadAfterEdit(); }
+    if (r.ok) { document.getElementById('epModVal').value = ''; zpReloadAfterEdit(); zpShowPolicyPreview(); }
   });
 
   document.getElementById('epRemBtn').addEventListener('click', async () => {
@@ -1297,8 +1335,38 @@
     if (!confirm(`Remove policy rule #${idx}? This cannot be undone.`)) return;
     const r = await zpEditPost('/api/zone/policy/remove', { index: idx });
     zpFlash(r.ok ? r.message : r.error, r.ok);
-    if (r.ok) { document.getElementById('epModIdx').value = ''; zpReloadAfterEdit(); }
+    if (r.ok) { document.getElementById('epModIdx').value = ''; zpReloadAfterEdit(); zpShowPolicyPreview(); }
   });
+
+  // Policy index preview — an index is just the rule's live array position and
+  // shifts on add/remove, so show which rule the typed index actually points to.
+  let _zpPolicyPreviewTimer = null;
+  document.getElementById('epModIdx').addEventListener('input', () => {
+    clearTimeout(_zpPolicyPreviewTimer);
+    _zpPolicyPreviewTimer = setTimeout(zpShowPolicyPreview, 300);
+  });
+
+  async function zpShowPolicyPreview() {
+    const el  = document.getElementById('epModPreview');
+    const raw = document.getElementById('epModIdx').value;
+    const idx = parseInt(raw, 10);
+    el.textContent = '';
+    if (raw === '' || Number.isNaN(idx) || idx < 0) return;
+    try {
+      const rows = await fetch('/api/zone/policies').then(r => r.json());
+      if (!Array.isArray(rows)) return;
+      const row = rows.find(p => p.index === idx);
+      if (!row) {
+        el.textContent = `No rule at index ${idx} (valid range: 0-${rows.length - 1})`;
+        el.style.color = 'var(--danger)';
+        return;
+      }
+      const svc = (row.services && row.services.length) ? row.services.join(', ') : 'any';
+      el.textContent = `#${idx}: [${row.policy_set || ''}] ${row.from_zone || ''} → ${row.to_zone || ''} — ${row.access_type || ''} — ${svc}` +
+        (row.description ? ` — "${row.description}"` : '');
+      el.style.color = 'var(--text-muted)';
+    } catch (_) { el.textContent = ''; }
+  }
 
   // ══════════════════════  NAMING STANDARDS  ═════════════════════════════════
 
@@ -2717,4 +2785,202 @@ async function _rpPopulateAdomDropdown(selected) {
   } catch (e) {
     // silent — ADOM list may not be available if FMG is down
   }
+}
+
+// ── Package Change Alerts ─────────────────────────────────────────────────────
+
+let _pcaRules = [];
+let _pcaCdJobs = [];
+
+async function loadPCAlerts() {
+  const tbody = document.getElementById('pca-rules-tbody');
+  if (!tbody) return;
+  try {
+    const [rResp, jResp] = await Promise.all([
+      fetch('/admin/api/package-alerts/rules'),
+      fetch('/admin/api/config-diff/jobs'),
+    ]);
+    _pcaRules = rResp.ok ? await rResp.json() : [];
+    _pcaCdJobs = jResp.ok ? await jResp.json() : [];
+    renderPCAlertsTable();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--danger);text-align:center">Error loading rules: ${escH(String(e))}</td></tr>`;
+  }
+}
+
+function _pcaHasConfigDeltaJob(adom) {
+  return _pcaCdJobs.some(j => j.adom === adom && j.enabled);
+}
+
+function renderPCAlertsTable() {
+  const tbody = document.getElementById('pca-rules-tbody');
+  if (!tbody) return;
+  if (!_pcaRules.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted);text-align:center">No alert rules.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _pcaRules.map(r => {
+    const last = r.runs && r.runs[0];
+    const lastStr = last ? `${last.ran_at.slice(0, 16).replace('T', ' ')} — ${last.alerts_sent || 0} sent` : '—';
+    const statusBadge = last
+      ? (last.status === 'ok'
+          ? '<span class="badge badge-green">ok</span>'
+          : `<span class="badge badge-red" title="${escH((last.errors || []).join('; '))}">error</span>`)
+      : '<span style="color:var(--text-muted)">Never run</span>';
+    const enabledBadge = r.enabled
+      ? '<span class="badge badge-green">Enabled</span>'
+      : '<span class="badge badge-gray">Disabled</span>';
+    const warn = r.enabled && !_pcaHasConfigDeltaJob(r.adom)
+      ? ' <span class="badge badge-yellow" style="background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;font-size:.75rem" title="No enabled Config-Delta job exists for this ADOM, so this rule will never fire.">no Config-Delta job</span>'
+      : '';
+    const pkgs = (r.packages && r.packages.length) ? r.packages.join(', ') : 'All packages';
+    return `<tr>
+      <td>${escH(r.name || '—')}</td>
+      <td>${escH(r.adom)}${warn}</td>
+      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${escH(pkgs)}</td>
+      <td>${escH((r.format || 'html').toUpperCase())}</td>
+      <td style="font-size:11px">${escH(r.email || '')}</td>
+      <td style="font-size:11px">${escH(lastStr)}</td>
+      <td>${statusBadge} ${enabledBadge}</td>
+      <td>
+        <button class="btn-sm" onclick="pcaEditRule('${r.id}')">Edit</button>
+        <button class="btn-sm" onclick="pcaTestRule('${r.id}')">Send test email</button>
+        <button class="btn-sm btn-danger" onclick="pcaDeleteRule('${r.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function _pcaPopulateAdomDropdown(selected) {
+  const sel = document.getElementById('pca-adom');
+  if (!sel) return;
+  try {
+    const resp = await fetch('/admin/api/adoms');
+    const data = await resp.json();
+    sel.innerHTML = '<option value="">— select ADOM —</option>'
+      + (data.adoms || []).map(a =>
+          `<option value="${escH(a)}" ${a === selected ? 'selected' : ''}>${escH(a)}</option>`
+        ).join('');
+    if (selected) sel.value = selected;
+  } catch (e) {
+    // silent — ADOM list unavailable if FMG is down
+  }
+}
+
+async function pcaLoadPackages(selectedPkgs) {
+  const adom = document.getElementById('pca-adom').value;
+  const listDiv = document.getElementById('pca-package-list');
+  const warn = document.getElementById('pca-adom-warning');
+  warn.style.display = adom && !_pcaHasConfigDeltaJob(adom) ? '' : 'none';
+  warn.textContent = 'No enabled Config-Delta job exists for this ADOM — this rule will not fire until one is created.';
+  if (!adom) { listDiv.innerHTML = '<em style="color:var(--text-muted)">Select an ADOM first</em>'; return; }
+  listDiv.innerHTML = '<em style="color:var(--text-muted)">Loading…</em>';
+  try {
+    const resp = await fetch(`/api/hygiene/adoms/${encodeURIComponent(adom)}/packages`);
+    const pkgs = resp.ok ? await resp.json() : [];
+    if (!pkgs.length) { listDiv.innerHTML = '<em style="color:var(--text-muted)">No packages found.</em>'; return; }
+    listDiv.innerHTML = pkgs.map(p => {
+      const name = typeof p === 'string' ? p : (p.name || p);
+      const checked = (selectedPkgs || []).includes(name) ? 'checked' : '';
+      return `<label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer;padding:2px 0">
+        <input type="checkbox" class="pca-pkg-check" value="${escH(name)}" ${checked}>
+        <span>${escH(name)}</span>
+      </label>`;
+    }).join('');
+  } catch (e) {
+    listDiv.innerHTML = `<em style="color:var(--danger)">Error: ${escH(String(e))}</em>`;
+  }
+}
+
+function pcaTogglePackageList() {
+  const all = document.getElementById('pca-all-packages').checked;
+  document.getElementById('pca-package-list').style.display = all ? 'none' : '';
+}
+
+function pcaOpenNewModal() {
+  document.getElementById('pca-modal-title').textContent = 'New Package Change Alert';
+  document.getElementById('pca-rule-id').value = '';
+  document.getElementById('pca-name').value = '';
+  document.getElementById('pca-adom').innerHTML = '<option value="">— select ADOM —</option>';
+  document.getElementById('pca-all-packages').checked = true;
+  document.getElementById('pca-package-list').style.display = 'none';
+  document.getElementById('pca-package-list').innerHTML = '<em style="color:var(--text-muted)">Select an ADOM first</em>';
+  document.getElementById('pca-adom-warning').style.display = 'none';
+  document.getElementById('pca-format').value = 'html';
+  document.getElementById('pca-email').value = '';
+  document.getElementById('pca-enabled').checked = true;
+  document.getElementById('pca-modal-error').style.display = 'none';
+  _pcaPopulateAdomDropdown('');
+  document.getElementById('pca-modal').classList.remove('hidden');
+}
+
+async function pcaEditRule(ruleId) {
+  const rule = _pcaRules.find(r => r.id === ruleId);
+  if (!rule) return;
+  document.getElementById('pca-modal-title').textContent = 'Edit Package Change Alert';
+  document.getElementById('pca-rule-id').value = rule.id;
+  document.getElementById('pca-name').value = rule.name || '';
+  const hasPkgs = !!(rule.packages && rule.packages.length);
+  document.getElementById('pca-all-packages').checked = !hasPkgs;
+  document.getElementById('pca-format').value = rule.format || 'html';
+  document.getElementById('pca-email').value = rule.email || '';
+  document.getElementById('pca-enabled').checked = !!rule.enabled;
+  document.getElementById('pca-modal-error').style.display = 'none';
+  document.getElementById('pca-modal').classList.remove('hidden');
+  await _pcaPopulateAdomDropdown(rule.adom);
+  await pcaLoadPackages(rule.packages || []);
+  pcaTogglePackageList();
+}
+
+function pcaCloseModal() {
+  document.getElementById('pca-modal').classList.add('hidden');
+}
+
+function _pcaCollectFormData() {
+  const all = document.getElementById('pca-all-packages').checked;
+  return {
+    name: document.getElementById('pca-name').value.trim(),
+    adom: document.getElementById('pca-adom').value,
+    packages: all ? [] : [...document.querySelectorAll('.pca-pkg-check:checked')].map(cb => cb.value),
+    format: document.getElementById('pca-format').value,
+    email: document.getElementById('pca-email').value.trim(),
+    enabled: document.getElementById('pca-enabled').checked,
+  };
+}
+
+async function pcaSaveRule() {
+  const ruleId = document.getElementById('pca-rule-id').value;
+  const errEl = document.getElementById('pca-modal-error');
+  errEl.style.display = 'none';
+  try {
+    const url = ruleId ? `/admin/api/package-alerts/rules/${ruleId}` : '/admin/api/package-alerts/rules';
+    const resp = await fetch(url, {
+      method: ruleId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+      body: JSON.stringify(_pcaCollectFormData()),
+    });
+    const body = await resp.json();
+    if (!resp.ok) { errEl.textContent = body.error || 'Save failed'; errEl.style.display = ''; return; }
+    pcaCloseModal();
+    loadPCAlerts();
+  } catch (e) {
+    errEl.textContent = String(e); errEl.style.display = '';
+  }
+}
+
+async function pcaDeleteRule(ruleId) {
+  if (!confirm('Delete this alert rule?')) return;
+  const resp = await fetch(`/admin/api/package-alerts/rules/${ruleId}`, {
+    method: 'DELETE', headers: { 'X-CSRF-Token': getCSRF() },
+  });
+  if (!resp.ok) { alert('Delete failed'); return; }
+  loadPCAlerts();
+}
+
+async function pcaTestRule(ruleId) {
+  const resp = await fetch(`/admin/api/package-alerts/rules/${ruleId}/test`, {
+    method: 'POST', headers: { 'X-CSRF-Token': getCSRF() },
+  });
+  const body = await resp.json().catch(() => ({}));
+  alert(resp.ok ? 'Test email sent.' : `Test email failed: ${body.error || resp.status}`);
 }

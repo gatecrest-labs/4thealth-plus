@@ -62,6 +62,7 @@ from app import config_diff_scheduler as _sched
 from app import device_review_scheduler as _dr_sched
 from app import log_source as _log_source
 from app import log_usage_client as _log_usage_client
+from app import package_change_alerts as _pca
 from app import registry
 from app import rule_hygiene_scheduler as _rh_sched
 from app import rule_policy_scheduler as _rp_sched
@@ -856,3 +857,58 @@ def admin_rp_jobs_status(job_id: str):
         return jsonify({"error": "Job not found"}), 404
     last_run = job["runs"][0] if job.get("runs") else None
     return jsonify({"running": _rp_sched.is_job_running(job_id), "last_run": last_run})
+
+
+# ── Package Change Alerts API ─────────────────────────────────────────────────
+
+
+@bp.route("/api/package-alerts/rules")
+@_admin_required
+def admin_pca_rules_list():
+    return jsonify(_pca.get_all_rules())
+
+
+@bp.route("/api/package-alerts/rules", methods=["POST"])
+@_admin_required
+def admin_pca_rules_create():
+    data = request.get_json(force=True) or {}
+    try:
+        rule = _pca.create_rule(data)
+    except (KeyError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(rule), 201
+
+
+@bp.route("/api/package-alerts/rules/<rule_id>", methods=["PUT"])
+@_admin_required
+def admin_pca_rules_update(rule_id: str):
+    data = request.get_json(force=True) or {}
+    try:
+        rule = _pca.update_rule(rule_id, data)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(rule)
+
+
+@bp.route("/api/package-alerts/rules/<rule_id>", methods=["DELETE"])
+@_admin_required
+def admin_pca_rules_delete(rule_id: str):
+    try:
+        _pca.delete_rule(rule_id)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/package-alerts/rules/<rule_id>/test", methods=["POST"])
+@_admin_required
+def admin_pca_rules_test(rule_id: str):
+    try:
+        _pca.send_test_email(rule_id)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True})

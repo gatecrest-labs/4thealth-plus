@@ -358,3 +358,34 @@ def test_execute_job_ai_summary_disabled_skips_narrative_even_if_globally_enable
 
     assert "called" not in called
     assert "AI Summary" not in sent["body"]
+
+def test_alert_failure_does_not_fail_config_delta_job(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = sched.create_job({
+        "adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
+        "format": "json", "email": "x@x.com", "enabled": False,
+    })
+    results = [{"device": "FW1", "ip": "1.1.1.1", "status": "no_changes",
+                "pkg_status": "nochange", "summary": {}, "vdoms": [], "raw": "", "error": None}]
+    with patch("app.routes.pending_changes_routes.bulk_preview_adom", return_value=results), \
+         patch("app.smtp_client.send_email") as send, \
+         patch("app.package_change_alerts.evaluate_alerts", side_effect=RuntimeError("boom")):
+        sched._execute_job(job["id"])
+    assert send.called  # digest email still sent
+    assert sched.get_all_jobs()[0]["runs"][0]["status"] == "ok"
+
+
+def test_config_delta_job_calls_alert_evaluator(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = sched.create_job({
+        "adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
+        "format": "json", "email": "x@x.com", "enabled": False,
+    })
+    results = []
+    with patch("app.routes.pending_changes_routes.bulk_preview_adom", return_value=results), \
+         patch("app.smtp_client.send_email"), \
+         patch("app.package_change_alerts.evaluate_alerts") as ev:
+        sched._execute_job(job["id"])
+    ev.assert_called_once_with("TEST", results)

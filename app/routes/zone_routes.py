@@ -9,6 +9,8 @@ API (all JSON):
   GET  /api/zone/policies         list all policy rules
   GET  /api/zone/validate         run validation, return report
   GET  /api/zone/segmentation-report  segmentation effectiveness report
+  POST /api/zone/backup           backup policy_db.json (server copy + download)
+  POST /api/zone/restore          restore policy_db.json from an uploaded backup
   POST /api/zone/zone/add         add a zone
   POST /api/zone/zone/remove      remove a zone
   POST /api/zone/zone/modify      modify a zone field
@@ -19,11 +21,13 @@ API (all JSON):
   POST /api/zone/policy/modify    modify a policy rule field
 """
 
+import json
 import re
 import shutil
 from datetime import datetime
+from pathlib import Path
 
-from flask import Blueprint, jsonify, render_template, request, session
+from flask import Blueprint, jsonify, render_template, request, send_file, session
 
 import app.zone_db as zdb
 from app import registry
@@ -161,7 +165,23 @@ def api_segmentation_report():
         return internal_api_error("segmentation report", exc)
 
 
-# ── Backup ────────────────────────────────────────────────────────────────────
+# ── Backup / Restore ──────────────────────────────────────────────────────────
+
+
+def _create_backup(suffix: str = "") -> Path:
+    """Copy policy_db.json into backups/ with a date-sequenced name, return the new path."""
+    backup_dir = zdb.DB_PATH.parent / "backups"
+    backup_dir.mkdir(exist_ok=True)
+    today = datetime.now().astimezone().date().strftime("%Y%m%d")
+    # find next slot 001-100, wrapping back to 001 at 101
+    for n in range(1, 102):
+        seq = ((n - 1) % 100) + 1
+        name = f"policy_db_{today}_{seq:03d}{suffix}.json"
+        dest = backup_dir / name
+        if not dest.exists():
+            break
+    shutil.copy2(zdb.DB_PATH, dest)
+    return dest
 
 
 @bp.route("/api/zone/backup", methods=["POST"])
@@ -170,18 +190,39 @@ def api_backup():
     if not zdb.db_available():
         return _err("policy_db.json not found", 503)
     try:
-        backup_dir = zdb.DB_PATH.parent / "backups"
-        backup_dir.mkdir(exist_ok=True)
-        today = datetime.now().astimezone().date().strftime("%Y%m%d")
-        # find next slot 001-100, wrapping back to 001 at 101
-        for n in range(1, 102):
-            seq = ((n - 1) % 100) + 1
-            name = f"policy_db_{today}_{seq:03d}.json"
-            dest = backup_dir / name
-            if not dest.exists():
-                break
-        shutil.copy2(zdb.DB_PATH, dest)
-        return _ok(f"Backed up to backups/{name}", filename=name)
+        dest = _create_backup()
+        return send_file(
+            dest,
+            mimetype="application/json",
+            as_attachment=True,
+            download_name=dest.name,
+        )
+    except Exception as exc:
+        return internal_api_error("zone_policy", exc)
+
+
+@bp.route("/api/zone/restore", methods=["POST"])
+@admin_required
+def api_restore():
+    if "file" not in request.files:
+        return _err("No file uploaded")
+    f = request.files["file"]
+    try:
+        new_db = json.loads(f.read())
+    except (ValueError, UnicodeDecodeError) as exc:
+        return _err(f"Uploaded file is not valid JSON: {exc}")
+    if not isinstance(new_db, dict):
+        return _err("Uploaded file must be a JSON object")
+
+    report = zdb.validate_db(new_db)
+    if not report["ok"]:
+        return _err("Validation failed: " + "; ".join(report["errors"]))
+
+    try:
+        if zdb.db_available():
+            _create_backup(suffix="_prerestore")
+        zdb.save_db(new_db)
+        return _ok("Database restored", warnings=report["warnings"])
     except Exception as exc:
         return internal_api_error("zone_policy", exc)
 

@@ -237,6 +237,20 @@ def _execute_job(job_id: str) -> None:
         # The interactive tab clicks devices one at a time; this matches that.
         results = bulk_preview_adom(adom, max_workers=1)
 
+        # Package Change Alerts reuse these results (no extra FMG preview
+        # calls). Isolated: an alert failure must never fail this job or
+        # suppress its own digest email below.
+        try:
+            from app.package_change_alerts import evaluate_alerts
+
+            evaluate_alerts(adom, results)
+        except Exception as exc:
+            app_log(
+                "ERROR",
+                "config_diff_scheduler",
+                f"Package change alerts failed for ADOM {adom}: {exc}",
+            )
+
         ok_count = sum(1 for r in results if r["status"] == "ok")
         record: dict[str, Any] = {
             "ran_at": datetime.datetime.now(datetime.UTC)

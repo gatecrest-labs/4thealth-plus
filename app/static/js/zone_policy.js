@@ -31,6 +31,8 @@ document.querySelectorAll('.zp-tab').forEach(btn => {
    QUERY PANEL
    ════════════════════════════════════════════════════════════════════════════ */
 
+let lastQuery = null;
+
 async function runQuery() {
   const src     = document.getElementById('zpSrc').value.trim();
   const dst     = document.getElementById('zpDst').value.trim();
@@ -53,6 +55,7 @@ async function runQuery() {
     const data = await resp.json();
     if (!resp.ok) { showQueryError(data.error || 'Query failed.'); return; }
     renderQueryResults(data);
+    lastQuery = { src, dst, service: svc, verbose, ranAt: new Date(), results: data };
     document.getElementById('zpResults').style.display = '';
     document.getElementById('zpStatusLine').textContent = `Last query: ${new Date().toLocaleString()}`;
   } catch (e) {
@@ -156,6 +159,138 @@ document.getElementById('zpQueryBtn').addEventListener('click', runQuery);
 document.getElementById('zpSvc').addEventListener('keydown', e => {
   if (e.key === 'Enter') runQuery();
 });
+
+/* ── Export report ─────────────────────────────────────────────────────────── */
+
+function zpTimestamp() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function zpDownload(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function formatInputList(raw) {
+  return (raw || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean).join(', ');
+}
+
+function ruleSummary(p) {
+  const svc = p.services && p.services.length ? ` [${p.services.join(', ')}]` : '';
+  return `${p.policy_set || ''}: ${p.matched_from_zone || p.from_zone || ''} → ${p.matched_to_zone || p.to_zone || ''} (${p.access_type || ''}${svc})`;
+}
+
+function buildCsvReport(q) {
+  const csvEsc = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
+  const lines = [
+    '# Zone Policy Query Report',
+    `# Generated,${csvEsc(q.ranAt.toLocaleString())}`,
+    `# Source Input,${csvEsc(formatInputList(q.src))}`,
+    `# Destination Input,${csvEsc(formatInputList(q.dst))}`,
+    `# Service Input,${csvEsc(q.service || '(any)')}`,
+    `# Show All Matching Rules,${q.verbose}`,
+    `# Total Flows,${q.results.length}`,
+    '',
+    'Source,Destination,Service,Verdict,Source Zones,Destination Zones,Governing Rule(s),All Matching Rules',
+  ];
+  q.results.forEach(r => {
+    const gov = (r.governing || []).map(ruleSummary).join(' | ') || '(none)';
+    const all = (r.all_policies || []).map(ruleSummary).join(' | ') || '(none)';
+    lines.push([
+      csvEsc(r.src), csvEsc(r.dst), csvEsc(r.service || ''), csvEsc(verdictLabel(r.verdict)),
+      csvEsc((r.src_zones || []).join(', ')), csvEsc((r.dst_zones || []).join(', ')),
+      csvEsc(gov), csvEsc(all),
+    ].join(','));
+  });
+  return lines.join('\n');
+}
+
+function buildJsonReport(q) {
+  return JSON.stringify({
+    meta: {
+      generated_at: q.ranAt.toISOString(),
+      source_input: q.src,
+      destination_input: q.dst,
+      service_input: q.service || null,
+      show_all_matching_rules: q.verbose,
+      total_flows: q.results.length,
+    },
+    results: q.results,
+  }, null, 2);
+}
+
+function buildHtmlReport(q) {
+  const rows = q.results.map(r => `
+    <tr>
+      <td>${esc(r.src)}</td>
+      <td>${esc(r.dst)}</td>
+      <td>${esc(r.service || '(any)')}</td>
+      <td class="verdict-${verdictClass(r.verdict)}">${esc(verdictLabel(r.verdict))}</td>
+      <td>${esc((r.src_zones || []).join(', ') || '—')}</td>
+      <td>${esc((r.dst_zones || []).join(', ') || '—')}</td>
+      <td>${(r.governing || []).map(p => esc(ruleSummary(p))).join('<br>') || '(none)'}</td>
+    </tr>`).join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Zone Policy Query Report</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; margin: 2rem; color: #1a1a1a; }
+  h1 { font-size: 1.3rem; margin-bottom: .25rem; }
+  .meta { font-size: .85rem; color: #555; margin-bottom: 1.25rem; }
+  .meta div { margin-bottom: .15rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th, td { border: 1px solid #ddd; padding: .5rem .6rem; text-align: left; vertical-align: top; }
+  th { background: #f3f3f3; }
+  .verdict-ALLOWED { color: #15803d; font-weight: 600; }
+  .verdict-BLOCKED { color: #b91c1c; font-weight: 600; }
+  .verdict-UNKNOWN { color: #92700a; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Zone Policy Query Report</h1>
+  <div class="meta">
+    <div><strong>Generated:</strong> ${esc(q.ranAt.toLocaleString())}</div>
+    <div><strong>Source input:</strong> ${esc(formatInputList(q.src))}</div>
+    <div><strong>Destination input:</strong> ${esc(formatInputList(q.dst))}</div>
+    <div><strong>Service input:</strong> ${esc(q.service || '(any)')}</div>
+    <div><strong>Show all matching rules:</strong> ${q.verbose ? 'Yes' : 'No'}</div>
+    <div><strong>Total flows:</strong> ${q.results.length}</div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Source</th><th>Destination</th><th>Service</th><th>Verdict</th>
+        <th>Source Zones</th><th>Destination Zones</th><th>Governing Rule(s)</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`;
+}
+
+function exportZoneReport() {
+  if (!lastQuery) return;
+  const format   = document.getElementById('zpExportFormat').value;
+  const filename = `zone-report-${zpTimestamp()}.${format}`;
+  if (format === 'csv')  { zpDownload(filename, buildCsvReport(lastQuery), 'text/csv'); return; }
+  if (format === 'json') { zpDownload(filename, buildJsonReport(lastQuery), 'application/json'); return; }
+  zpDownload(filename, buildHtmlReport(lastQuery), 'text/html');
+}
+
+document.getElementById('zpExportBtn').addEventListener('click', exportZoneReport);
 
 /* ════════════════════════════════════════════════════════════════════════════
    BROWSE PANEL

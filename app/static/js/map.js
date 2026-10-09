@@ -116,11 +116,12 @@ function esc(s) {
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let activeAdoms  = null;   // null = all; Set of adom names when filtered
-let leafletMap   = null;
-let clusterGroup = null;
-let allDevices   = [];
-let pollTimer    = null;
+let activeAdoms   = null;   // null = all; Set of adom names when filtered
+let leafletMap    = null;
+let clusterGroup  = null;
+let allDevices    = [];
+let pollTimer     = null;
+let markersByName = new Map();  // lowercase name → { marker, device }
 
 // ── Leaflet initialisation ───────────────────────────────────────────────────
 
@@ -223,15 +224,56 @@ function makeMarker(device) {
 function renderMarkers() {
   if (!clusterGroup) return;
   clusterGroup.clearLayers();
+  markersByName.clear();
 
   const visible = activeAdoms === null
     ? allDevices
     : allDevices.filter(d => activeAdoms.has(d.adom));
 
-  visible.forEach(d => clusterGroup.addLayer(makeMarker(d)));
+  visible.forEach(d => {
+    const m = makeMarker(d);
+    clusterGroup.addLayer(m);
+    markersByName.set(d.name.toLowerCase(), { marker: m, device: d });
+  });
 
   const statsEl = document.getElementById('mapStats');
   if (statsEl) statsEl.textContent = `Showing ${visible.length} of ${allDevices.length} devices`;
+}
+
+// ── Device search ────────────────────────────────────────────────────────────
+
+function searchDevice(query) {
+  const msgEl = document.getElementById('mapSearchMsg');
+  const q = query.trim();
+  if (!q) { if (msgEl) msgEl.textContent = ''; return; }
+
+  const entry = markersByName.get(q.toLowerCase());
+  if (!entry) {
+    // Check if device exists but is hidden by ADOM filter
+    const exists = allDevices.some(d => d.name.toLowerCase() === q.toLowerCase());
+    if (msgEl) msgEl.textContent = exists
+      ? `"${q}" is not visible — check ADOM filter.`
+      : `No device named "${q}" found.`;
+    return;
+  }
+
+  if (msgEl) msgEl.textContent = '';
+  clusterGroup.zoomToShowLayer(entry.marker, () => {
+    entry.marker.openPopup();
+    highlightMarker(entry.marker);
+  });
+}
+
+function highlightMarker(marker) {
+  const el = marker.getElement();
+  if (!el) return;
+  const pin = el.querySelector('.map-pin');
+  if (!pin) return;
+  pin.classList.remove('map-pin-highlight');
+  // Force reflow so re-triggering the animation works if called twice
+  void pin.offsetWidth;
+  pin.classList.add('map-pin-highlight');
+  setTimeout(() => pin.classList.remove('map-pin-highlight'), 2400);
 }
 
 // ── Health ledger ────────────────────────────────────────────────────────────
@@ -418,6 +460,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (window._perms.isAdmin) {
     const btn = document.getElementById('mapRefreshBtn');
     if (btn) { btn.style.display = ''; btn.addEventListener('click', triggerRefresh); }
+  }
+
+  const searchInput = document.getElementById('mapDeviceSearch');
+  const searchBtn   = document.getElementById('mapSearchBtn');
+  if (searchInput) {
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') searchDevice(searchInput.value);
+    });
+    searchInput.addEventListener('input', () => {
+      const msgEl = document.getElementById('mapSearchMsg');
+      if (msgEl && !searchInput.value.trim()) msgEl.textContent = '';
+    });
+  }
+  if (searchBtn) {
+    searchBtn.addEventListener('click', () => {
+      if (searchInput) searchDevice(searchInput.value);
+    });
   }
 
   await Promise.all([loadStateGeoJSON(), loadRegions()]);
