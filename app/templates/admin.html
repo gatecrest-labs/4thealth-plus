@@ -865,6 +865,9 @@
   <div style="margin-bottom:1.25rem;display:flex;align-items:center;gap:.75rem">
     <button class="btn btn-secondary" id="zpBackupBtn">&#128190; Backup policy_db.json</button>
     <span id="zpBackupStatus" class="text-muted" style="font-size:.82rem"></span>
+    <input type="file" id="zpRestoreFile" accept=".json,application/json" style="display:none" />
+    <button class="btn btn-danger" id="zpRestoreBtn">Restore from Backup</button>
+    <span id="zpRestoreStatus" class="text-muted" style="font-size:.82rem"></span>
   </div>
 
   <div class="zp-edit-grid">
@@ -975,6 +978,7 @@
           <button class="btn btn-sm btn-secondary" id="epModBtn">Update</button>
           <button class="btn btn-sm btn-danger" id="epRemBtn">Remove</button>
         </div>
+        <div id="epModPreview" style="font-size:.8rem;color:var(--text-muted);margin-top:.35rem"></div>
       </div>
     </div>
 

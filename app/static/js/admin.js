@@ -1176,6 +1176,7 @@
     loadZoneEditDropdowns();
   }
 
+  // Backup — server-side copy into backups/, plus a browser download of the same file
   document.getElementById('zpBackupBtn').addEventListener('click', async () => {
     const btn    = document.getElementById('zpBackupBtn');
     const status = document.getElementById('zpBackupStatus');
@@ -1183,19 +1184,56 @@
     status.textContent = 'Backing up…';
     try {
       const resp = await fetch('/api/zone/backup', { method: 'POST' });
-      const data = await resp.json();
-      if (data.ok) {
-        status.textContent = `Saved: ${data.filename}`;
-        status.style.color = 'var(--success)';
-      } else {
-        status.textContent = data.error || 'Backup failed.';
-        status.style.color = 'var(--danger)';
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || 'Backup failed.');
       }
+      const cd = resp.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="?([^";]+)"?/);
+      const filename = match ? match[1] : 'policy_db_backup.json';
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      status.textContent = `Saved: backups/${filename} (also downloaded)`;
+      status.style.color = 'var(--success)';
     } catch (e) {
       status.textContent = e.message;
       status.style.color = 'var(--danger)';
     } finally {
       btn.disabled = false;
+    }
+  });
+
+  // Restore — upload a local JSON file, validate, auto-backup the live DB, overwrite
+  document.getElementById('zpRestoreBtn').addEventListener('click', () => {
+    document.getElementById('zpRestoreFile').click();
+  });
+
+  document.getElementById('zpRestoreFile').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!confirm(`This will overwrite the live policy database with "${file.name}". The current database will be backed up first. Continue?`)) return;
+    const status = document.getElementById('zpRestoreStatus');
+    status.textContent = 'Restoring…';
+    status.style.color = '';
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const resp = await fetch('/api/zone/restore', { method: 'POST', body: fd });
+      const data = await resp.json();
+      status.textContent = data.ok ? (data.message || 'Database restored') : (data.error || 'Restore failed.');
+      status.style.color = data.ok ? 'var(--success)' : 'var(--danger)';
+      if (data.ok) zpReloadAfterEdit();
+    } catch (err) {
+      status.textContent = err.message;
+      status.style.color = 'var(--danger)';
     }
   });
 
@@ -1288,7 +1326,7 @@
     }
     const r = await zpEditPost('/api/zone/policy/modify', { index: idx, field, value });
     zpFlash(r.ok ? r.message : r.error, r.ok);
-    if (r.ok) { document.getElementById('epModVal').value = ''; zpReloadAfterEdit(); }
+    if (r.ok) { document.getElementById('epModVal').value = ''; zpReloadAfterEdit(); zpShowPolicyPreview(); }
   });
 
   document.getElementById('epRemBtn').addEventListener('click', async () => {
@@ -1297,8 +1335,38 @@
     if (!confirm(`Remove policy rule #${idx}? This cannot be undone.`)) return;
     const r = await zpEditPost('/api/zone/policy/remove', { index: idx });
     zpFlash(r.ok ? r.message : r.error, r.ok);
-    if (r.ok) { document.getElementById('epModIdx').value = ''; zpReloadAfterEdit(); }
+    if (r.ok) { document.getElementById('epModIdx').value = ''; zpReloadAfterEdit(); zpShowPolicyPreview(); }
   });
+
+  // Policy index preview — an index is just the rule's live array position and
+  // shifts on add/remove, so show which rule the typed index actually points to.
+  let _zpPolicyPreviewTimer = null;
+  document.getElementById('epModIdx').addEventListener('input', () => {
+    clearTimeout(_zpPolicyPreviewTimer);
+    _zpPolicyPreviewTimer = setTimeout(zpShowPolicyPreview, 300);
+  });
+
+  async function zpShowPolicyPreview() {
+    const el  = document.getElementById('epModPreview');
+    const raw = document.getElementById('epModIdx').value;
+    const idx = parseInt(raw, 10);
+    el.textContent = '';
+    if (raw === '' || Number.isNaN(idx) || idx < 0) return;
+    try {
+      const rows = await fetch('/api/zone/policies').then(r => r.json());
+      if (!Array.isArray(rows)) return;
+      const row = rows.find(p => p.index === idx);
+      if (!row) {
+        el.textContent = `No rule at index ${idx} (valid range: 0-${rows.length - 1})`;
+        el.style.color = 'var(--danger)';
+        return;
+      }
+      const svc = (row.services && row.services.length) ? row.services.join(', ') : 'any';
+      el.textContent = `#${idx}: [${row.policy_set || ''}] ${row.from_zone || ''} → ${row.to_zone || ''} — ${row.access_type || ''} — ${svc}` +
+        (row.description ? ` — "${row.description}"` : '');
+      el.style.color = 'var(--text-muted)';
+    } catch (_) { el.textContent = ''; }
+  }
 
   // ══════════════════════  NAMING STANDARDS  ═════════════════════════════════
 
