@@ -57,6 +57,15 @@
   <div id="zpRunning" class="text-muted" style="display:none;font-style:italic;margin-top:.5rem">Querying…</div>
 
   <div id="zpResults" style="display:none;margin-top:1.25rem">
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+      <label for="zpExportFormat" style="font-size:.85rem;color:var(--text-muted)">Export as</label>
+      <select id="zpExportFormat" class="form-control" style="width:auto">
+        <option value="html" selected>HTML</option>
+        <option value="csv">CSV</option>
+        <option value="json">JSON</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" id="zpExportBtn">&#8595; Export Report</button>
+    </div>
     <div id="zpResultCards"></div>
   </div>
 </div>
