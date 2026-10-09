@@ -49,6 +49,22 @@ function renderSummary(d) {
     const ts = new Date(d.last_updated);
     meta.textContent = 'Counts as of ' + ts.toLocaleString();
   }
+
+  renderAdomSummary(d.adom_breakdown || []);
+}
+
+function renderAdomSummary(breakdown) {
+  const card = document.getElementById('adomSummaryCard');
+  const grid = document.getElementById('adomSummaryGrid');
+  if (!card || !grid) return;
+  if (!breakdown || !breakdown.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  grid.innerHTML = breakdown.map(d => `
+    <div class="adom-tile">
+      <div class="adom-tile-name">${escHtml(d.name)}</div>
+      <div class="adom-tile-stat">${d.fw_count} firewall${d.fw_count !== 1 ? 's' : ''}</div>
+      <div class="adom-tile-stat">${Number(d.rule_count).toLocaleString()} rules</div>
+    </div>`).join('');
 }
 
 function startSummaryPoller(onDone) {

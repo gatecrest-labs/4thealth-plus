@@ -33,6 +33,14 @@
   </div>
 </div>
 
+<!-- ── ADOM Summary ──────────────────────────────────────────────────────── -->
+<div class="card" id="adomSummaryCard" style="display:none">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+    <span style="font-size:.95rem;font-weight:600">ADOM Summary</span>
+  </div>
+  <div class="adom-summary-grid" id="adomSummaryGrid"></div>
+</div>
+
 <div class="page-header">
   <div>
     <h2>Infrastructure Health</h2>
@@ -56,5 +64,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/dashboard.js') }}?v=14"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}?v=15"></script>
 {% endblock %}

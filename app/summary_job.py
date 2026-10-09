@@ -24,6 +24,7 @@ _store: dict = {
     "rules_total": None,
     "ha_clusters": None,
     "standalones": None,
+    "adom_breakdown": [],
     "last_updated": None,  # ISO-8601 UTC string
     "status": "pending",  # pending | running | ok | error
     "error": None,
@@ -89,6 +90,8 @@ def _run_job(app):
         rules_total = 0
         ha_clusters = 0
         standalones = 0
+        adom_fw: dict[str, int] = {}
+        adom_rules: dict[str, int] = {}
 
         with make_client() as client:
             # ── Step 1: enumerate ADOMs ───────────────────────────────────
@@ -115,6 +118,7 @@ def _run_job(app):
                             else:
                                 standalones += 1
                     firewalls_total += count
+                    adom_fw[adom] = count
                     if count > 0:
                         adoms_with_devices.append(adom)
                 except Exception as exc:
@@ -136,16 +140,29 @@ def _run_job(app):
                         adom,
                         len(packages),
                     )
+                    adom_rule_count = 0
                     for pkg in packages:
                         pkg_path = pkg.get("path", pkg.get("name", ""))
                         if not pkg_path:
                             continue
                         count = client.get_policy_count(adom, pkg_path)
                         rules_total += count
+                        adom_rule_count += count
+                    adom_rules[adom] = adom_rule_count
                 except Exception as exc:
                     logger.warning(
                         "summary_job: policy count for ADOM %s failed: %s", adom, exc
                     )
+
+        adom_breakdown = [
+            {
+                "name": a,
+                "fw_count": adom_fw.get(a, 0),
+                "rule_count": adom_rules.get(a, 0),
+            }
+            for a in adom_names
+            if adom_fw.get(a, 0) > 0
+        ]
 
         elapsed = round(_time.monotonic() - t0, 1)
         logger.info(
@@ -162,6 +179,7 @@ def _run_job(app):
                     "rules_total": rules_total,
                     "ha_clusters": ha_clusters,
                     "standalones": standalones,
+                    "adom_breakdown": adom_breakdown,
                     "last_updated": datetime.now(UTC).isoformat(),
                     "status": "ok",
                     "error": None,
