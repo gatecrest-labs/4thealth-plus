@@ -91,7 +91,16 @@ def _first_allowed_url(allowed_tabs: list) -> str:
     for key, meta in registry.get_registry().items():
         if key in allowed_tabs:
             return url_for(meta["endpoint"])
+    if "user" in session:
+        return url_for("auth.no_access")
     return url_for("auth.login")
+
+
+@bp.route("/no-access")
+def no_access():
+    if "user" not in session:
+        return redirect(url_for("auth.login"))
+    return render_template("no_access.html")
 
 
 @bp.route("/login", methods=["GET", "POST"])
@@ -125,6 +134,9 @@ def login():
             allowed = list(get_allowed_tabs(username, ad_groups=ad_groups, role=role))
             session["allowed_tabs"] = allowed
             session["login_at"] = int(time.time())
+            # A local login must never inherit an SSO marker from a
+            # previous session, or it would be subject to revocation checks.
+            session.pop("sso_login_at", None)
             app_log(
                 "INFO",
                 "auth",
@@ -138,11 +150,6 @@ def login():
             next_url = request.args.get("next", "").strip()
             if next_url and _safe_redirect(next_url):
                 return redirect(next_url)
-            if not allowed:
-                flash(
-                    "Your account has no tabs assigned. Contact an administrator.",
-                    "warning",
-                )
             return redirect(_first_allowed_url(allowed))
 
         _record_failure(ip, username)
@@ -168,15 +175,11 @@ def sso_login():
     allowed = list(get_allowed_tabs(username, ad_groups=[], role="sso"))
     session["allowed_tabs"] = allowed
     session["login_at"] = int(time.time())
+    session["sso_login_at"] = time.time()
     app_log("INFO", "auth", "SSO login successful", username=username)
     from app import login_metrics as _lm
 
     _lm.record_event(True)
-    if not allowed:
-        flash(
-            "Your account has no tabs assigned. Contact an administrator.",
-            "warning",
-        )
     return redirect(_first_allowed_url(allowed))
 
 

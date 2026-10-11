@@ -20,13 +20,17 @@ def _apply_group_change(username: str, group: str, is_member: bool) -> None:
         groups.remove_group_member(group, username)
 
 
-bp = create_blueprint(
-    app_id=APP_ID,
-    display_name="4tHealth+",
-    health_path="/login",
-    # KNOWN_TABS is reassigned at startup (app/__init__.py), so read it lazily.
-    get_tabs=lambda: sorted(groups.KNOWN_TABS),
-    get_groups=lambda: [g["name"] for g in groups.list_groups()],
-    apply_group_change=_apply_group_change,
-    verify_service_token=verify_service_token,
-)
+def make_blueprint(checker=None):
+    """Build the protocol blueprint; advertise ``revocations`` only when a
+    session checker is configured (the capability needs one to be honored)."""
+    return create_blueprint(
+        app_id=APP_ID,
+        display_name="4tHealth+",
+        health_path="/login",
+        # KNOWN_TABS is reassigned at startup (app/__init__.py), so read it lazily.
+        get_tabs=lambda: sorted(groups.KNOWN_TABS),
+        get_groups=lambda: [g["name"] for g in groups.list_groups()],
+        apply_group_change=_apply_group_change,
+        verify_service_token=verify_service_token,
+        capabilities=["revocations"] if checker else [],
+    )
