@@ -118,6 +118,10 @@ def tab_required(*tab_keys: str):
             ):
                 if request.path.startswith("/api/"):
                     return jsonify({"error": "Access denied"}), 403
+                if not flask_session.get("allowed_tabs"):
+                    # Authenticated but granted nothing at all: explain it
+                    # instead of a bare 403 (still no access to this page).
+                    return redirect(url_for("auth.no_access"))
                 abort(403)
             return f(*args, **kwargs)
 

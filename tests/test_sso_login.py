@@ -105,3 +105,40 @@ def test_sso_session_survives_a_second_authenticated_request(app, client):
     assert response.status_code == 200
     with client.session_transaction() as sess:
         assert sess.get("user") == "alice"
+
+
+BANNER = "Your account has no tabs assigned. Contact an administrator."
+
+
+def test_zero_grant_sso_user_lands_on_no_access_page_with_banner(app, client):
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="mallory")
+    response = client.get(f"/sso/login?token={token}", follow_redirects=True)
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert BANNER in body
+    assert "mallory" in body  # nav shows the signed-in user
+    assert "/logout" in body  # working logout form
+
+
+def test_zero_grant_sso_user_hitting_root_is_not_given_a_bare_403(app, client):
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="mallory")
+    client.get(f"/sso/login?token={token}")
+    response = client.get("/", follow_redirects=True)
+    assert response.status_code == 200
+    assert BANNER in response.get_data(as_text=True)
+
+
+def test_zero_grant_user_still_cannot_reach_real_tabs(app, client):
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="mallory")
+    client.get(f"/sso/login?token={token}")
+    for path in ("/firewalls", "/versions"):
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code in (302, 403), path
+        if response.status_code == 302:
+            assert "/no-access" in response.headers["Location"] or "/login" in response.headers["Location"]
+
+
+def test_no_access_page_requires_a_session(client):
+    response = client.get("/no-access", follow_redirects=False)
+    assert response.status_code == 302
+    assert "/login" in response.headers["Location"]
