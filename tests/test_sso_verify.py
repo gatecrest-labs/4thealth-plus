@@ -1,3 +1,4 @@
+import datetime
 import time
 
 import jwt
@@ -5,6 +6,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from app import sso_verify
 from app.sso_verify import verify_service_token, verify_token
 
 
@@ -97,3 +99,80 @@ def test_verify_service_token_rejects_wrong_scope(keys):
 def test_verify_service_token_rejects_login_token_with_no_scope(keys):
     token = _mint(keys, sub="alice")
     assert verify_service_token(token, expected_scope="groups_push") is None
+
+
+def _new_key():
+    private = Ed25519PrivateKey.generate()
+    public_pem = private.public_key().public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    return private, public_pem
+
+
+def _token(private, sub="alice"):
+    now = datetime.datetime.now(datetime.UTC)
+    return jwt.encode(
+        {
+            "sub": sub,
+            "aud": sso_verify.APP_ID,
+            "iss": "4tsuite",
+            "iat": now,
+            "nbf": now,
+            "exp": now + datetime.timedelta(minutes=5),
+        },
+        private,
+        algorithm="EdDSA",
+    )
+
+
+def test_bundle_verifies_a_token_signed_by_either_key(tmp_path, monkeypatch):
+    (k1, p1), (k2, p2) = _new_key(), _new_key()
+    bundle = tmp_path / "sso_public_key.pem"
+    bundle.write_bytes(p1 + p2)
+    monkeypatch.setattr(sso_verify, "PUBLIC_KEY_PATH", bundle)
+    assert sso_verify.verify_token(_token(k1)) == "alice"
+    assert sso_verify.verify_token(_token(k2)) == "alice"
+
+
+def test_token_from_a_key_not_in_the_file_fails(tmp_path, monkeypatch):
+    (_, p1), (k2, _) = _new_key(), _new_key()
+    only_first = tmp_path / "sso_public_key.pem"
+    only_first.write_bytes(p1)
+    monkeypatch.setattr(sso_verify, "PUBLIC_KEY_PATH", only_first)
+    assert sso_verify.verify_token(_token(k2)) is None
+
+
+def test_single_pem_file_still_works(tmp_path, monkeypatch):
+    k, p = _new_key()
+    single = tmp_path / "sso_public_key.pem"
+    single.write_bytes(p)
+    monkeypatch.setattr(sso_verify, "PUBLIC_KEY_PATH", single)
+    assert sso_verify.verify_token(_token(k)) == "alice"
+
+
+def test_empty_or_missing_key_file_fails_closed(tmp_path, monkeypatch):
+    k, _ = _new_key()
+    empty = tmp_path / "empty.pem"
+    empty.write_bytes(b"")
+    for path in (empty, tmp_path / "missing.pem"):
+        monkeypatch.setattr(sso_verify, "PUBLIC_KEY_PATH", path)
+        assert sso_verify.verify_token(_token(k)) is None
+
+
+def test_garbage_key_file_fails_closed(tmp_path, monkeypatch):
+    k, _ = _new_key()
+    junk = tmp_path / "junk.pem"
+    junk.write_bytes(
+        b"-----BEGIN PUBLIC KEY-----\nnot a key\n-----END PUBLIC KEY-----\n"
+    )
+    monkeypatch.setattr(sso_verify, "PUBLIC_KEY_PATH", junk)
+    assert sso_verify.verify_token(_token(k)) is None
+
+
+def test_directory_at_key_path_fails_closed(tmp_path, monkeypatch):
+    # Docker bind-mounts an empty directory when the host file is absent.
+    k, _ = _new_key()
+    directory = tmp_path / "sso_public_key.pem"
+    directory.mkdir()
+    monkeypatch.setattr(sso_verify, "PUBLIC_KEY_PATH", directory)
+    assert sso_verify.verify_token(_token(k)) is None
