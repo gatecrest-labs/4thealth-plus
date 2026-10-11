@@ -37,6 +37,22 @@ def _revalidate_session() -> tuple | None:
         flask_session.clear()
         return redirect(url_for("auth.login")), 302
 
+    # --- 4tSuite revocation (SSO-established sessions only) ---
+    sso_login_at = flask_session.get("sso_login_at")
+    if sso_login_at is not None:
+        checker = current_app.extensions.get("tsuite_session_checker")
+        if checker is not None and not checker(
+            flask_session.get("user", ""), sso_login_at
+        ):
+            flask_session.clear()
+            if (
+                request.path.startswith("/api/")
+                or request.path.startswith("/admin/api/")
+                or request.path.startswith("/external/api/")
+            ):
+                return jsonify({"error": "Not authenticated"}), 401
+            return redirect(url_for("auth.login")), 302
+
     lifetime = current_app.config.get("SESSION_ABSOLUTE_LIFETIME", 36000)
     if _time.time() - login_at > lifetime:
         flask_session.clear()

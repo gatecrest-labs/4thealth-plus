@@ -156,3 +156,19 @@ def test_push_with_malformed_body_returns_400(app, client):
         headers={"Authorization": f"Bearer {_token(app)}"},
     )
     assert response.status_code == 400
+
+
+def test_manifest_advertises_revocations_only_when_checker_configured(app, client, monkeypatch):
+    from flask import Flask
+
+    from app.routes import sync_routes
+
+    token = _mint(app.config["_TEST_PRIV_KEY"], scope="manifest_read")
+    headers = {"Authorization": f"Bearer {token}"}
+    # Test app has no TSUITE_REVOCATIONS_* env -> no checker -> no capability.
+    assert "revocations" not in client.get("/4tsuite/manifest", headers=headers).get_json()["capabilities"]
+
+    probe = Flask("probe")
+    probe.register_blueprint(sync_routes.make_blueprint(lambda u, t: True))
+    body = probe.test_client().get("/4tsuite/manifest", headers=headers).get_json()
+    assert body is not None and "revocations" in body["capabilities"]

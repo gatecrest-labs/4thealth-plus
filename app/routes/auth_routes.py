@@ -134,6 +134,9 @@ def login():
             allowed = list(get_allowed_tabs(username, ad_groups=ad_groups, role=role))
             session["allowed_tabs"] = allowed
             session["login_at"] = int(time.time())
+            # A local login must never inherit an SSO marker from a
+            # previous session, or it would be subject to revocation checks.
+            session.pop("sso_login_at", None)
             app_log(
                 "INFO",
                 "auth",
@@ -172,6 +175,7 @@ def sso_login():
     allowed = list(get_allowed_tabs(username, ad_groups=[], role="sso"))
     session["allowed_tabs"] = allowed
     session["login_at"] = int(time.time())
+    session["sso_login_at"] = time.time()
     app_log("INFO", "auth", "SSO login successful", username=username)
     from app import login_metrics as _lm
 

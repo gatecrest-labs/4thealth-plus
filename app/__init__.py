@@ -288,9 +288,18 @@ def create_app(test_config: dict | None = None) -> Flask:
     # then pull the bp object out and register it with Flask.
     import importlib
 
+    # 4tSuite revocation checker (None when TSUITE_REVOCATIONS_* is unset,
+    # which disables the per-request check and the capability advert).
+    from app.tsuite_adapter import session_checker_from_env
+
+    checker = session_checker_from_env()
+    app.extensions["tsuite_session_checker"] = checker
+
     for module_path in _BLUEPRINT_MODULES:
         mod = importlib.import_module(module_path)
-        if hasattr(mod, "bp"):
+        if hasattr(mod, "make_blueprint"):
+            app.register_blueprint(mod.make_blueprint(checker))
+        elif hasattr(mod, "bp"):
             app.register_blueprint(mod.bp)
 
     # Sync KNOWN_TABS from the registry so groups.py and the Admin UI
