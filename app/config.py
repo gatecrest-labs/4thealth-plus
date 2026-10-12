@@ -88,6 +88,10 @@ class Config:
     RADIUS_GROUP_ADMIN = os.environ.get("RADIUS_GROUP_ADMIN", "")
     RADIUS_GROUP_VIEWER = os.environ.get("RADIUS_GROUP_VIEWER", "")
 
+    # SSO sessions are admins when the user is a member of this group (membership is
+    # pushed from 4tSuite). Empty disables SSO admin; a missing group makes nobody admin.
+    SSO_ADMIN_GROUP = os.environ.get("SSO_ADMIN_GROUP", "administrators").strip()
+
     # "inline" = start every BackgroundScheduler job in this same process
     # (the old, single-process behaviour — convenient for local dev and
     # for anyone not running the separate collector process). Anything

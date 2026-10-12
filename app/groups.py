@@ -81,6 +81,15 @@ def get_group(name: str) -> dict | None:
     return _group_to_dict(name, g)
 
 
+def is_member(username: str, group_name: str) -> bool:
+    """True when `username` is listed in `members` of the named group."""
+    if not group_name:
+        return False
+    with _lock:
+        group = _load().get(group_name)
+    return bool(group) and username in group.get("members", [])
+
+
 def create_group(
     name: str,
     members: list[str] | None = None,

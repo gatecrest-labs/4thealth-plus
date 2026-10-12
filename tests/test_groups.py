@@ -70,3 +70,26 @@ def test_add_group_member_preserves_other_fields(tmp_path, monkeypatch):
     assert group["allowed_tabs"] == ["dashboard"]
     assert group["adom_restrict"] is True
     assert group["allowed_adoms"] == ["root"]
+
+
+def test_is_member_true_only_for_listed_members(tmp_path, monkeypatch):
+    import app.groups as g
+
+    monkeypatch.setattr(g, "GROUPS_FILE", tmp_path / "groups.json")
+    g.create_group("administrators", members=["alice"], allowed_tabs=[])
+    assert g.is_member("alice", "administrators") is True
+    assert g.is_member("bob", "administrators") is False
+    assert g.is_member("alice", "missing") is False
+    assert g.is_member("alice", "") is False
+
+
+def test_sso_admin_group_defaults_to_administrators():
+    import os
+
+    import pytest
+
+    if os.environ.get("SSO_ADMIN_GROUP") is not None:
+        pytest.skip("SSO_ADMIN_GROUP is set in this environment")
+    from app.config import Config
+
+    assert Config.SSO_ADMIN_GROUP == "administrators"
