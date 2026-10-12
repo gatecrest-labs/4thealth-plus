@@ -24,6 +24,18 @@ from flask import abort, current_app, jsonify, redirect, request, url_for
 from flask import session as flask_session
 
 
+def _sso_role(username: str, entry: dict | None) -> str:
+    """Role for an SSO-established session, from current membership and any local entry."""
+    from app.groups import is_member
+
+    admin_group = current_app.config.get("SSO_ADMIN_GROUP", "")
+    if is_member(username, admin_group) or (entry and entry.get("role") == "admin"):
+        return "admin"
+    if entry is not None:
+        return entry.get("role", "viewer")
+    return "sso"
+
+
 def _revalidate_session() -> tuple | None:
     """Re-check that the session is still valid on every request.
 
@@ -88,6 +100,8 @@ def _revalidate_session() -> tuple | None:
         else:
             # Re-sync role and tabs from disk for local users
             flask_session["role"] = entry.get("role", "viewer")
+        if flask_session.get("sso_login_at") is not None:
+            flask_session["role"] = _sso_role(username, entry)
         flask_session["allowed_tabs"] = list(
             get_allowed_tabs(
                 username, ad_groups=ad_groups, role=flask_session.get("role")

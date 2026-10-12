@@ -234,6 +234,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     if test_config:
         app.config.update(test_config)
 
+    if app.config.get("RADIUS_ENABLED"):
+        app.logger.warning(
+            "RADIUS_ENABLED is deprecated: sign in through 4tSuite (central RADIUS/LDAP/TACACS+) "
+            "and set SSO_ADMIN_GROUP; this standalone client will be removed in a later release."
+        )
+
     @app.before_request
     def _security_filters():
         ensure_csrf_token()
