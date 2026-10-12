@@ -170,9 +170,14 @@ def sso_login():
         abort(403)
     session.permanent = True
     session["user"] = username
-    session["role"] = "sso"
+    from flask import current_app
+
+    from app.groups import is_member
+
+    role = "admin" if is_member(username, current_app.config.get("SSO_ADMIN_GROUP", "")) else "sso"
+    session["role"] = role
     session["ad_groups"] = []
-    allowed = list(get_allowed_tabs(username, ad_groups=[], role="sso"))
+    allowed = list(get_allowed_tabs(username, ad_groups=[], role=role))
     session["allowed_tabs"] = allowed
     session["login_at"] = int(time.time())
     session["sso_login_at"] = time.time()

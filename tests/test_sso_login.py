@@ -246,3 +246,80 @@ def test_sso_then_direct_local_login_drops_sso_marker(app, client, monkeypatch):
         assert "sso_login_at" not in sess
     app.extensions["tsuite_session_checker"] = _explode
     assert client.get("/", follow_redirects=False).status_code == 200
+
+
+def _add_admin_group(members):
+    import app.groups as groups_mod
+
+    groups_mod.create_group("administrators", members=members, allowed_tabs=[])
+
+
+def test_sso_user_in_the_admin_group_gets_the_admin_role(app, client):
+    _add_admin_group(["alice"])
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="alice")
+    client.get(f"/sso/login?token={token}")
+    with client.session_transaction() as sess:
+        assert sess["role"] == "admin"
+
+
+def test_sso_user_outside_the_admin_group_stays_sso(app, client):
+    _add_admin_group(["someone-else"])
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="alice")
+    client.get(f"/sso/login?token={token}")
+    with client.session_transaction() as sess:
+        assert sess["role"] == "sso"
+
+
+def test_empty_sso_admin_group_makes_nobody_admin(app, client):
+    app.config["SSO_ADMIN_GROUP"] = ""
+    _add_admin_group(["alice"])
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="alice")
+    client.get(f"/sso/login?token={token}")
+    with client.session_transaction() as sess:
+        assert sess["role"] == "sso"
+
+
+def test_missing_admin_group_makes_nobody_admin(app, client):
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="alice")  # no 'administrators' group exists
+    client.get(f"/sso/login?token={token}")
+    with client.session_transaction() as sess:
+        assert sess["role"] == "sso"
+
+
+def test_removal_from_the_admin_group_drops_admin_on_the_next_request(app, client):
+    import app.groups as groups_mod
+
+    _add_admin_group(["alice"])
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="alice")
+    client.get(f"/sso/login?token={token}")
+    groups_mod.update_group("administrators", members=[], allowed_tabs=[])
+
+    client.get("/api/summary")
+
+    with client.session_transaction() as sess:
+        assert sess["role"] == "sso"
+
+
+def test_adding_to_the_admin_group_grants_admin_on_the_next_request(app, client):
+    import app.groups as groups_mod
+
+    _add_admin_group([])
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="alice")
+    client.get(f"/sso/login?token={token}")
+    groups_mod.update_group("administrators", members=["alice"], allowed_tabs=[])
+
+    client.get("/api/summary")
+
+    with client.session_transaction() as sess:
+        assert sess["role"] == "admin"
+
+
+def test_sso_user_with_a_local_admin_entry_stays_admin(app, client, monkeypatch):
+    import app.auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "_load_users", lambda: {"alice": {"role": "admin"}})
+    token = _mint(app.config["_TEST_PRIV_KEY"], sub="alice")  # not in any admin group
+    client.get(f"/sso/login?token={token}")
+    client.get("/api/summary")
+    with client.session_transaction() as sess:
+        assert sess["role"] == "admin"
