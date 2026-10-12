@@ -45,7 +45,7 @@ from collections.abc import Callable, Sequence
 
 from flask import Blueprint, abort, jsonify, request
 
-ADAPTER_VERSION = "1.1.0"
+ADAPTER_VERSION = "1.2.0"
 PROTOCOL_VERSION = 1
 
 
@@ -121,6 +121,7 @@ def create_blueprint(
 
 GRACE_SECONDS = 300
 CACHE_SECONDS = 30
+RETRY_SECONDS = 5  # re-probe interval after a failed fetch once the grace has run out
 _MAX_BODY = 1024 * 1024
 _CHUNK = 8192
 
@@ -178,7 +179,12 @@ def make_session_checker(
         try:
             users, server_time = _parse_revocations(fetch())
         except Exception:  # noqa: BLE001 - any failure is "4tSuite unavailable"
-            state["fetched_at"] = now  # do not hammer a down server
+            # Do not hammer a down server. Once past the grace every session is already
+            # rejected, so probe again soon: recovery must not wait out a full cache window.
+            retry = cache_seconds
+            if now - state["last_good"] > grace_seconds:
+                retry = min(cache_seconds, RETRY_SECONDS)
+            state["fetched_at"] = now - cache_seconds + retry
             return
         state["users"] = users
         state["offset"] = server_time - now
