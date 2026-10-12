@@ -174,7 +174,11 @@ def sso_login():
 
     from app.groups import is_member
 
-    role = "admin" if is_member(username, current_app.config.get("SSO_ADMIN_GROUP", "")) else "sso"
+    role = (
+        "admin"
+        if is_member(username, current_app.config.get("SSO_ADMIN_GROUP", ""))
+        else "sso"
+    )
     session["role"] = role
     session["ad_groups"] = []
     allowed = list(get_allowed_tabs(username, ad_groups=[], role=role))
