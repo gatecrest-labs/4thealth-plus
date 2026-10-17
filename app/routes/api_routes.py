@@ -15,6 +15,12 @@ from app.security import internal_api_error, upstream_api_error
 bp = Blueprint("api", __name__, url_prefix="/api")
 
 
+@bp.route("/health")
+def health():
+    """Unauthenticated liveness/readiness target — no FMG or session dependency."""
+    return jsonify({"status": "ok"}), 200
+
+
 def _health_status(cpu: float, mem: float) -> str:
     if cpu >= Config.CPU_CRIT or mem >= Config.MEM_CRIT:
         return "red"
