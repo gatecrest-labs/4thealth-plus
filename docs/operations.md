@@ -94,15 +94,10 @@ map_cache: done in 18.4s — 846 devices with coords across 10 ADOMs
 
 ---
 
-## Optional: Application Health Endpoint
+## Application Health Endpoint
 
-Add to `app/routes/api_routes.py`:
-
-```python
-@bp.route("/health")
-def health():
-    return jsonify({"status": "ok"}), 200
-```
+`GET /api/health` (`app/routes/api_routes.py`) returns `{"status": "ok"}` with no auth and no
+FortiManager/SMTP dependency — use it for load balancer or container health checks.
 
 ```bash
 curl -sk https://4thealth.yourdomain.com/api/health
