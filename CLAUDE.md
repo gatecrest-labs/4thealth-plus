@@ -841,6 +841,14 @@ Persists jobs in `rule_hygiene_jobs.json` (gitignored; copy `rule_hygiene_jobs.e
 | `POST` | `/admin/api/rule-hygiene/jobs/<id>/run` | Trigger an immediate run |
 | `GET` | `/admin/api/rule-hygiene/jobs/<id>/status` | Get last run status / history |
 
+#### NAT Report Scheduled Jobs
+
+`app/nat_report_scheduler.py` — APScheduler-based scheduler mirroring `rule_hygiene_scheduler.py`. Persists jobs in `nat_report_jobs.json` (gitignored; copy `nat_report_jobs.example.json`). Job fields: `name`, `adom`, `days_of_week`, `time`, `format` (`csv|json|html`), `email`, `enabled`, `runs[]`.
+
+Each run lists every NATted address in the ADOM and the rules using it, per policy package, as one emailed attachment. Rows carry a `Type`: **VIP** (inbound destination NAT; matched when the VIP name is in a rule's `dstaddr`, address groups expanded) or **IP Pool** (outbound source NAT; matched on a rule's `poolname`). VIPs come from the ADOM shared DB plus a per-device sweep; a per-device VIP only matches packages whose scope includes that device/VDOM. NAT objects no rule uses get one row with blank package/rule fields. Known limits: VIP groups and per-device IP pools are not matched. Run history shows last run time and ok/error status in Admin → Scheduled → NAT Report Jobs.
+
+Admin endpoints (all `admin_required`): `GET/POST /admin/api/nat-report/jobs`, `PUT/DELETE /admin/api/nat-report/jobs/<id>`, `POST .../<id>/run`, `GET .../<id>/status`.
+
 #### Package Change Alerts
 
 `app/package_change_alerts.py` — not a scheduler: it is driven by `config_diff_scheduler._execute_job`, which calls `evaluate_alerts(adom, results)` right after `bulk_preview_adom()` returns (wrapped in its own try/except so an alert failure never fails the Config-Delta job or its digest email). It reuses those install-preview results — no extra FMG preview calls.

@@ -47,6 +47,7 @@ services:
       - ./package_change_alerts.json:/app/package_change_alerts.json:rw
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
       - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
+      - ./nat_report_jobs.json:/app/nat_report_jobs.json:rw
       - ./rule_policy_jobs.json:/app/rule_policy_jobs.json:rw
       - ./summary_history.json:/app/summary_history.json:rw
       - ./license_status.json:/app/license_status.json:rw
@@ -102,6 +103,7 @@ services:
       - ./package_change_alerts.json:/app/package_change_alerts.json:rw
       - ./device_review_jobs.json:/app/device_review_jobs.json:rw
       - ./rule_hygiene_jobs.json:/app/rule_hygiene_jobs.json:rw
+      - ./nat_report_jobs.json:/app/nat_report_jobs.json:rw
       - ./rule_policy_jobs.json:/app/rule_policy_jobs.json:rw
       - ./summary_history.json:/app/summary_history.json:rw
       - ./license_status.json:/app/license_status.json:rw

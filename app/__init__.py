@@ -155,6 +155,18 @@ def start_all_schedulers(app: Flask) -> None:
         except Exception as exc:
             app.logger.warning("Rule Hygiene scheduler failed to start: %s", exc)
 
+    if not app.config.get("_NAT_SCHEDULER_STARTED"):
+        app.config["_NAT_SCHEDULER_STARTED"] = True
+        try:
+            from app.nat_report_scheduler import (
+                init_scheduler as init_nat_scheduler,
+            )
+
+            with app.app_context():
+                init_nat_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("NAT Report scheduler failed to start: %s", exc)
+
     if not app.config.get("_RP_SCHEDULER_STARTED"):
         app.config["_RP_SCHEDULER_STARTED"] = True
         try:

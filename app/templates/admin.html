@@ -675,6 +675,87 @@
   </div>
   <div class="pagination" id="rhJobsPager" style="display:none"></div>
 
+  <!-- NAT Report Scheduled Jobs -->
+  <div class="rr-section-label" style="margin-top:2rem">NAT Report Jobs</div>
+  <p class="admin-panel-desc" style="margin-bottom:1rem">Each job lists every NATted IP in an ADOM &mdash; VIPs (inbound) and IP Pools (outbound) &mdash; with the rules that use them per policy package, and emails the report.</p>
+  <button class="btn-primary" onclick="showNATJobForm()" style="margin-bottom:12px">+ Add Job</button>
+
+  <div id="natJobForm" class="job-form-panel" style="display:none">
+    <h4 style="margin:0 0 12px" id="natJobFormTitle">New NAT Report Job</h4>
+    <input type="hidden" id="natJobFormId">
+    <div class="form-row">
+      <label>Name</label>
+      <input type="text" id="natJobFormName" placeholder="e.g. Weekly NAT Report — Enterprise" style="min-width:280px">
+    </div>
+    <div class="form-row">
+      <label>ADOM</label>
+      <select id="natJobFormAdom" style="min-width:200px"></select>
+    </div>
+    <div class="form-row">
+      <label>Day(s)</label>
+      <div class="day-picker">
+        <label class="day-picker-item"><input type="checkbox" id="natDayChk-SUN" value="SUN"> Sun</label>
+        <label class="day-picker-item"><input type="checkbox" id="natDayChk-MON" value="MON"> Mon</label>
+        <label class="day-picker-item"><input type="checkbox" id="natDayChk-TUE" value="TUE"> Tue</label>
+        <label class="day-picker-item"><input type="checkbox" id="natDayChk-WED" value="WED"> Wed</label>
+        <label class="day-picker-item"><input type="checkbox" id="natDayChk-THU" value="THU"> Thu</label>
+        <label class="day-picker-item"><input type="checkbox" id="natDayChk-FRI" value="FRI"> Fri</label>
+        <label class="day-picker-item"><input type="checkbox" id="natDayChk-SAT" value="SAT"> Sat</label>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Time (24h)</label>
+      <input type="time" id="natJobFormTime" value="04:00">
+    </div>
+    <div class="form-row">
+      <label>Format</label>
+      <select id="natJobFormFormat">
+        <option value="html" selected>HTML (styled report)</option>
+        <option value="csv">CSV</option>
+        <option value="json">JSON</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Email To</label>
+      <input type="text" id="natJobFormEmail" placeholder="alice@corp.com, bob@corp.com" style="min-width:280px">
+    </div>
+    <div class="form-row">
+      <label>Enabled</label>
+      <input type="checkbox" id="natJobFormEnabled" checked>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn-primary" onclick="saveNATJob()">Save</button>
+      <button class="btn-secondary" onclick="cancelNATJobForm()">Cancel</button>
+      <span id="natJobFormMsg" style="font-size:12px;align-self:center"></span>
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 4px">
+    <span id="natJobsCount" style="font-size:.82rem;color:var(--text-muted)"></span>
+    <div style="display:flex;align-items:center;gap:.5rem;font-size:.82rem">
+      <span style="color:var(--text-muted)">Per page:</span>
+      <select id="natJobsPageSize" style="padding:.2rem .4rem;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);font-size:.82rem">
+        <option value="10" selected>10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+      </select>
+    </div>
+  </div>
+  <div style="overflow-x:auto;margin-top:4px">
+    <table class="admin-table" id="natJobsTable">
+      <thead>
+        <tr>
+          <th>Name</th><th>ADOM</th><th>Days</th><th>Time</th><th>Format</th>
+          <th>Email</th><th>Last Run</th><th>Last Status</th><th>Enabled</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="natJobsTableBody">
+        <tr><td colspan="10" style="color:#6b7280;text-align:center">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination" id="natJobsPager" style="display:none"></div>
+
   <!-- Rule Policy Scheduled Jobs -->
   <div class="rr-section-label" style="margin-top:2rem">Rule Policy Jobs</div>
   <p class="admin-panel-desc" style="margin-bottom:1rem">Each job exports policy rules for selected packages in an ADOM and emails per-package reports as zip attachments.</p>
@@ -1446,8 +1527,14 @@
             <input type="checkbox" id="pca-all-packages" checked onchange="pcaTogglePackageList()">
             <span>All packages</span>
           </label>
-          <div id="pca-package-list" style="display:none;max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:8px;margin-top:6px">
-            <em style="color:var(--text-muted)">Select an ADOM first</em>
+          <div id="pca-package-list" style="display:none;border:1px solid var(--border);border-radius:4px;margin-top:6px">
+            <div style="padding:6px 8px;border-bottom:1px solid var(--border)">
+              <input type="text" id="pca-pkg-search" placeholder="Search packages…" style="width:100%;box-sizing:border-box;font-size:.88rem" oninput="_pcaPkgSearchChanged()">
+            </div>
+            <div id="pca-pkg-items" style="max-height:180px;overflow-y:auto;padding:6px 8px">
+              <em style="color:var(--text-muted)">Select an ADOM first</em>
+            </div>
+            <div id="pca-pkg-pagination" style="display:none;padding:6px 8px;border-top:1px solid var(--border);align-items:center;gap:6px;flex-wrap:wrap;font-size:.82rem"></div>
           </div>
         </div>
       </div>
