@@ -62,6 +62,7 @@ from app import config_diff_scheduler as _sched
 from app import device_review_scheduler as _dr_sched
 from app import log_source as _log_source
 from app import log_usage_client as _log_usage_client
+from app import nat_report_scheduler as _nat_sched
 from app import package_change_alerts as _pca
 from app import registry
 from app import rule_hygiene_scheduler as _rh_sched
@@ -793,6 +794,70 @@ def admin_rh_jobs_status(job_id: str):
         return jsonify({"error": "Job not found"}), 404
     last_run = job["runs"][0] if job.get("runs") else None
     return jsonify({"running": _rh_sched.is_job_running(job_id), "last_run": last_run})
+
+
+# ── NAT Report Scheduled Jobs API ────────────────────────────────────────────
+
+
+@bp.route("/api/nat-report/jobs")
+@_admin_required
+def admin_nat_jobs_list():
+    return jsonify(_nat_sched.get_all_jobs())
+
+
+@bp.route("/api/nat-report/jobs", methods=["POST"])
+@_admin_required
+def admin_nat_jobs_create():
+    data = request.get_json(force=True) or {}
+    try:
+        job = _nat_sched.create_job(data)
+    except (KeyError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(job), 201
+
+
+@bp.route("/api/nat-report/jobs/<job_id>", methods=["PUT"])
+@_admin_required
+def admin_nat_jobs_update(job_id: str):
+    data = request.get_json(force=True) or {}
+    try:
+        job = _nat_sched.update_job(job_id, data)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(job)
+
+
+@bp.route("/api/nat-report/jobs/<job_id>", methods=["DELETE"])
+@_admin_required
+def admin_nat_jobs_delete(job_id: str):
+    try:
+        _nat_sched.delete_job(job_id)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/nat-report/jobs/<job_id>/run", methods=["POST"])
+@_admin_required
+def admin_nat_jobs_run(job_id: str):
+    jobs = _nat_sched.get_all_jobs()
+    if not any(j["id"] == job_id for j in jobs):
+        return jsonify({"error": "Job not found"}), 404
+    _nat_sched.run_job_now(job_id)
+    return jsonify({"ok": True, "message": "Job started"}), 202
+
+
+@bp.route("/api/nat-report/jobs/<job_id>/status")
+@_admin_required
+def admin_nat_jobs_status(job_id: str):
+    jobs = _nat_sched.get_all_jobs()
+    job = next((j for j in jobs if j["id"] == job_id), None)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    last_run = job["runs"][0] if job.get("runs") else None
+    return jsonify({"running": _nat_sched.is_job_running(job_id), "last_run": last_run})
 
 
 # ── Rule Policy Scheduled Jobs API ────────────────────────────────────────────

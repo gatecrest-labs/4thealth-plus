@@ -2011,6 +2011,49 @@ a:hover { text-decoration: underline; }
 
 .zp-zone-card.zp-open .zp-zone-body { display: block; }
 
+/* Child zone expandable rows (Browse tab) */
+.zp-child-zones { margin: .4rem 0 .25rem; }
+
+.zp-child-zone-row {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: .3rem;
+  background: var(--bg);
+}
+
+.zp-child-zone-toggle {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .3rem .5rem;
+  cursor: pointer;
+  font-size: .84rem;
+  user-select: none;
+  border-radius: 4px;
+}
+
+.zp-child-zone-toggle:hover { background: var(--border); border-radius: 4px; }
+
+.zp-child-zone-chevron {
+  font-size: .62rem;
+  color: var(--text-muted);
+  transition: transform .15s;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.zp-child-zone-row.zp-open .zp-child-zone-chevron { transform: rotate(90deg); }
+
+.zp-child-zone-name { font-weight: 600; }
+
+.zp-child-zone-body {
+  display: none;
+  padding: .3rem .5rem .4rem;
+  border-top: 1px solid var(--border);
+}
+
+.zp-child-zone-row.zp-open .zp-child-zone-body { display: block; }
+
 /* Validate badge */
 .zp-validate-badge {
   display: inline-block;

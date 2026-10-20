@@ -21,6 +21,7 @@ package_change_alerts.json
 device_review_jobs.json
 device_review_rollup.json
 rule_hygiene_jobs.json
+nat_report_jobs.json
 hygiene_rollup.json
 rule_policy_jobs.json
 backup_config.json

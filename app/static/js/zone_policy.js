@@ -385,10 +385,39 @@ function renderZones() {
       z.description ? `<span class="text-muted">Desc:</span> ${esc(z.description)}` : '',
     ].filter(Boolean).join('&ensp;·&ensp;');
 
-    const hierarchy = [
-      z.parents.length ? `<div class="text-muted" style="font-size:.8rem">Parents: ${z.parents.map(p => `<strong>${esc(p)}</strong>`).join(', ')}</div>` : '',
-      z.children.length ? `<div class="text-muted" style="font-size:.8rem">Children: ${z.children.map(c => `<strong>${esc(c)}</strong>`).join(', ')}</div>` : '',
-    ].filter(Boolean).join('');
+    const parentsLine = z.parents.length
+      ? `<div class="text-muted" style="font-size:.8rem;margin-bottom:.25rem">Parents: ${z.parents.map(p => `<strong>${esc(p)}</strong>`).join(', ')}</div>`
+      : '';
+
+    const childrenSection = z.children.length
+      ? `<div class="zp-child-zones">
+          <div class="text-muted" style="font-size:.8rem;margin-bottom:.25rem">Children</div>
+          ${z.children.map(childName => {
+            const child = _allZones.find(cz => cz.name === childName);
+            const childSubnets = child ? child.subnets : [];
+            const childSubnetBadge = `<span class="zp-badge zp-badge-neutral" style="font-size:.72rem">${childSubnets.length} subnet${childSubnets.length !== 1 ? 's' : ''}</span>`;
+            const childSubnetTable = childSubnets.length
+              ? `<table class="data-table" style="margin-top:.3rem">
+                  <thead><tr><th>Subnet</th><th>Description</th></tr></thead>
+                  <tbody>${childSubnets.map(s =>
+                    `<tr><td style="font-family:monospace;font-size:.82rem">${esc(s.subnet)}</td>
+                         <td style="font-size:.8rem;color:var(--text-muted)">${esc(s.description || '—')}</td></tr>`
+                  ).join('')}</tbody>
+                </table>`
+              : `<p class="text-muted" style="font-size:.82rem;margin:.2rem 0 0">No subnets assigned.</p>`;
+            return `<div class="zp-child-zone-row">
+              <div class="zp-child-zone-toggle">
+                <span class="zp-child-zone-chevron">&#9654;</span>
+                <span class="zp-child-zone-name">${esc(childName)}</span>
+                ${childSubnetBadge}
+              </div>
+              <div class="zp-child-zone-body">${childSubnetTable}</div>
+            </div>`;
+          }).join('')}
+        </div>`
+      : '';
+
+    const hierarchy = [parentsLine, childrenSection].filter(Boolean).join('');
 
     return `<div class="zp-zone-card">
       <div class="zp-zone-header" data-idx="${idx}">
