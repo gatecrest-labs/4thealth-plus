@@ -259,6 +259,12 @@ def _save_rule_state(rule_id: str, sent: dict | None, record: dict) -> None:
 
 _MIME = {"html": "text/html", "csv": "text/csv", "json": "application/json"}
 
+_DIFF_TYPE_STYLE: dict[str, tuple[str, str]] = {
+    "add": ("+", "display:block;white-space:pre;background:#dcfce7;color:#166534"),
+    "remove": ("-", "display:block;white-space:pre;background:#fee2e2;color:#b91c1c"),
+    "modify": ("~", "display:block;white-space:pre;background:#fef3c7;color:#92400e"),
+}
+
 
 def _safe(name: str) -> str:
     return re.sub(r"[^\w\-]", "_", name)
@@ -299,10 +305,21 @@ def build_diff_attachment(
         for device in sorted(diffs):
             for vdom in sorted(diffs[device]):
                 parts.append(
-                    f"<h3>{html.escape(device)} / {html.escape(vdom)}</h3><pre>"
+                    f"<h3>{html.escape(device)} / {html.escape(vdom)}</h3>"
+                    "<div style='font-family:monospace;font-size:.88rem;border:1px solid #e5e7eb;border-radius:4px;overflow:hidden;margin-bottom:8px'>"
                 )
-                parts.extend(html.escape(c["line"]) + "\n" for c in diffs[device][vdom])
-                parts.append("</pre>")
+                for c in diffs[device][vdom]:
+                    prefix, style = _DIFF_TYPE_STYLE.get(
+                        c["type"], ("", "display:block;white-space:pre;padding:0 4px")
+                    )
+                    pad = "padding:1px 4px"
+                    parts.append(
+                        f'<span style="{style};{pad}">'
+                        f"{html.escape(prefix + ' ' if prefix else '')}"
+                        f"{html.escape(c['line'])}"
+                        f"</span>"
+                    )
+                parts.append("</div>")
         parts.append("</body></html>")
         data = "".join(parts).encode()
     return {"filename": f"{base}.{fmt}", "data": data, "mimetype": _MIME[fmt]}
