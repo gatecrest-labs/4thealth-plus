@@ -115,13 +115,49 @@ def _addr_subnet(ao: dict) -> str:
     return ""
 
 
-def _ip_in_range(ip_str: str, start_str: str, end_str: str) -> bool:
-    """Return True if ip_str falls between start_str and end_str (inclusive)."""
+def _parse_search_range(raw: str) -> tuple[str, str] | None:
+    """Parse a NAT lookup query into an inclusive (start, end) IPv4 pair.
+
+    Accepts a single IP, a CIDR ("10.1.0.0/16"), or trailing-wildcard octets
+    ("10.1.*.*" or "10.1.*"). Returns None for anything else, including a
+    wildcard followed by a concrete octet ("10.*.1.1").
+    """
+    raw = raw.strip()
     try:
-        ip = ipaddress.ip_address(ip_str)
-        start = ipaddress.ip_address(start_str)
-        end = ipaddress.ip_address(end_str)
-        return start <= ip <= end
+        ip = str(ipaddress.ip_address(raw))
+        return ip, ip
+    except ValueError:
+        pass
+    if "/" in raw:
+        try:
+            net = ipaddress.ip_network(raw, strict=False)
+        except ValueError:
+            return None
+        return str(net[0]), str(net[-1])
+    if "*" in raw:
+        octets = raw.split(".")
+        if not 1 <= len(octets) <= 4:
+            return None
+        fixed = [o for o in octets if o != "*"]
+        # Wildcards must be a trailing run: every "*" follows all concrete octets.
+        if octets[: len(fixed)] != fixed or not fixed:
+            return None
+        if not all(o.isdigit() and 0 <= int(o) <= 255 for o in fixed):
+            return None
+        pad = 4 - len(fixed)
+        return (
+            ".".join(fixed + ["0"] * pad),
+            ".".join(fixed + ["255"] * pad),
+        )
+    return None
+
+
+def _ranges_overlap(a_start: str, a_end: str, b_start: str, b_end: str) -> bool:
+    """True if inclusive IP ranges A and B share at least one address."""
+    try:
+        a0, a1 = ipaddress.ip_address(a_start), ipaddress.ip_address(a_end)
+        b0, b1 = ipaddress.ip_address(b_start), ipaddress.ip_address(b_end)
+        return a0 <= b1 and b0 <= a1
     except ValueError:
         return False
 
@@ -1100,6 +1136,8 @@ def hygiene_nat_lookup(adom: str):
     """Search VIP and IP pool objects in an ADOM for a given IP address.
 
     Matches: VIP extip, VIP mappedip ranges, IP pool startip-endip ranges.
+    The query may be a single IP, a CIDR ("10.1.0.0/16"), or trailing
+    wildcard octets ("10.1.*.*"); ranges match any object they overlap.
     Body: { "ip": "203.0.113.10" }
     Returns: { results, total, searched_ip }
     """
@@ -1110,10 +1148,13 @@ def hygiene_nat_lookup(adom: str):
     raw_ip = (data.get("ip") or "").strip()
     if not raw_ip:
         return jsonify({"error": "ip is required"}), 400
-    try:
-        searched_ip = str(ipaddress.ip_address(raw_ip))
-    except ValueError:
-        return jsonify({"error": f"Invalid IP address: {raw_ip!r}"}), 400
+    search_range = _parse_search_range(raw_ip)
+    if search_range is None:
+        return jsonify(
+            {"error": f"Invalid IP address, CIDR or wildcard: {raw_ip!r}"}
+        ), 400
+    search_start, search_end = search_range
+    searched_ip = search_start if search_start == search_end else raw_ip
 
     results = []
 
@@ -1232,7 +1273,7 @@ def hygiene_nat_lookup(adom: str):
             mapped_ranges_strs = []
 
         matched = False
-        if _ip_in_range(searched_ip, ext_ip_start, ext_ip_end):
+        if _ranges_overlap(search_start, search_end, ext_ip_start, ext_ip_end):
             matched = True
         if not matched:
             for rng in mapped_ranges_strs:
@@ -1240,7 +1281,9 @@ def hygiene_nat_lookup(adom: str):
                     start, _, end = rng.partition("-")
                 else:
                     start = end = rng
-                if _ip_in_range(searched_ip, start.strip(), end.strip()):
+                if _ranges_overlap(
+                    search_start, search_end, start.strip(), end.strip()
+                ):
                     matched = True
                     break
 
@@ -1279,7 +1322,7 @@ def hygiene_nat_lookup(adom: str):
         end_ip = pool.get("endip", "")
         if not name or not start_ip or not end_ip:
             continue
-        if not _ip_in_range(searched_ip, start_ip, end_ip):
+        if not _ranges_overlap(search_start, search_end, start_ip, end_ip):
             continue
         results.append(
             {

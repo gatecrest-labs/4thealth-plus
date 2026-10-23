@@ -185,7 +185,7 @@ Four sections, each with its own ADOM selector, working independently (tab displ
    - Export (CSV/JSON/PDF) — each export includes a filter header block at the top (package, ADOM, timestamp, search terms, total/filtered counts)
 2. **Object Lookup** — search address/service objects and groups by name; "Where Used" traces direct and group-indirect policy references.
 3. **Interface Lookup** — find which firewall interface(s) in an ADOM are assigned a given IP.
-4. **NAT Lookup** — search VIP and IP Pool objects by IP.
+4. **NAT Lookup** — search VIP and IP Pool objects by IP, CIDR (`10.1.0.0/16`), or trailing-wildcard octets (`10.1.*.*`); ranges match any object they overlap.
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`. Gated to both `rule_hygiene` and `audit_review` tabs — the latter because Audit Review's own Log-Based Rule Review section (see below) also resolves package rules through this endpoint.
 
