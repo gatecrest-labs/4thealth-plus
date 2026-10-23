@@ -1281,7 +1281,9 @@ def hygiene_nat_lookup(adom: str):
                     start, _, end = rng.partition("-")
                 else:
                     start = end = rng
-                if _ranges_overlap(search_start, search_end, start.strip(), end.strip()):
+                if _ranges_overlap(
+                    search_start, search_end, start.strip(), end.strip()
+                ):
                     matched = True
                     break
 
