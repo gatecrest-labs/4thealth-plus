@@ -558,3 +558,65 @@ def test_where_used_invalid_category_returns_400(client):
     resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
                  {"name": "HOST-10.1.1.1", "category": "vip"})
     assert resp.status_code == 400
+
+
+# ── NAT Lookup: CIDR and wildcard-octet queries ──────────────────────────────
+
+def _nat_vip(name, extip):
+    return {
+        "name": name,
+        "extip": extip,
+        "extintf": "wan1",
+        "mappedip": [{"range": "10.0.0.1-10.0.0.1"}],
+        "portforward": "disable",
+    }
+
+
+def _nat_lookup(client, query, vips=(), pools=()):
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = list(vips)
+        inst.get_ippool_objects.return_value = list(pools)
+        return _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": query})
+
+
+def test_nat_lookup_cidr_matches_vip(client):
+    resp = _nat_lookup(
+        client, "203.0.113.0/24",
+        vips=[_nat_vip("in_net", "203.0.113.77"), _nat_vip("out_net", "198.51.100.1")],
+    )
+    assert resp.status_code == 200
+    assert [r["name"] for r in resp.get_json()["results"]] == ["in_net"]
+
+
+def test_nat_lookup_cidr_overlaps_pool(client):
+    pools = [{"name": "p", "startip": "203.0.113.200", "endip": "203.0.114.50", "type": "overload"}]
+    resp = _nat_lookup(client, "203.0.113.0/24", pools=pools)
+    assert resp.status_code == 200
+    assert resp.get_json()["total"] == 1
+
+
+def test_nat_lookup_wildcard_matches_vip(client):
+    resp = _nat_lookup(
+        client, "203.0.*.*",
+        vips=[_nat_vip("hit", "203.0.113.5"), _nat_vip("miss", "203.1.0.5")],
+    )
+    assert resp.status_code == 200
+    assert [r["name"] for r in resp.get_json()["results"]] == ["hit"]
+
+
+def test_nat_lookup_wildcard_matches_pool(client):
+    pools = [{"name": "p", "startip": "203.0.113.1", "endip": "203.0.113.20", "type": "overload"}]
+    resp = _nat_lookup(client, "203.0.113.*", pools=pools)
+    assert resp.status_code == 200
+    assert resp.get_json()["total"] == 1
+
+
+def test_nat_lookup_non_trailing_wildcard_rejected(client):
+    resp = _nat_lookup(client, "10.*.1.1")
+    assert resp.status_code == 400
+
+
+def test_nat_lookup_invalid_cidr_rejected(client):
+    resp = _nat_lookup(client, "10.0.0.0/33")
+    assert resp.status_code == 400
