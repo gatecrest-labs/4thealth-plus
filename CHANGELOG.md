@@ -4,6 +4,9 @@ All notable changes to 4THealth+ are documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Device Versions — Hardware Model charts:** bar charts under the firmware-version charts (global and per-ADOM) counting online physical units by model. HA clusters are expanded into individual members with Primary/Secondary badges; VM FortiGates group into "Virtual"; no model is "Unknown". New `/api/adoms/<adom>/units` endpoint; the global versions cache now stores `ip`, `serial`, `platform` and `ha_role` per unit.
+
 ### Changed
 - **Renamed "Device Review" tab to "Audit Review"** and merged the Rule
   Review tab's Hygiene Analysis section into it. Internal tab key

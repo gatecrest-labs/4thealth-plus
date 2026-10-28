@@ -423,6 +423,20 @@ Two independent sections:
    (pre-warmed cache, `app/versions_cache.py`) + per-ADOM version bar chart.
    Select an ADOM from the dropdown; click a bar to list devices on that
    version.
+
+   **Hardware Model charts** sit beneath each version chart (global and
+   per-ADOM): same bar style, online **physical units** only. HA clusters are
+   expanded into individual member entries via `expand_ha_members()` in
+   `fmg_helpers.py` (the cluster's logical record is not counted; members come
+   from `ha_slave`, Primary/Secondary by `prio`, IP inherited from the cluster
+   when a member reports none), so an active/passive pair counts as 2 units.
+   Model bucketing via `modelBucket()` in `versions.js`: any model matching
+   `VM` lands in one **Virtual** bar; blank/`n/a` is **Unknown**. Global bars
+   open an exportable unit list; per-ADOM bars filter the unit list below
+   (combinable with the version filter). `versions_cache.py` now also records
+   `ip`, `serial`, `platform`, `ha_role` per unit. The per-ADOM chart uses
+   `GET /api/adoms/<adom>/units` (`tab_required("versions")`), not the
+   Firewalls tab's `/devices` endpoint.
 2. **License Status** (below) — SVG donut charts showing Licensed / Expired
    / Unknown device counts for the selected ADOM (or fleet-wide when no
    ADOM is selected), plus a second "Expiring Soon" donut bucketing
