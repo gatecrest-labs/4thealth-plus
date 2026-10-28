@@ -12,7 +12,7 @@ dependencies = [
     "pysnmp>=7.1.30",
     "cryptography>=50.0.2",
     "pyzipper>=0.4.0",
-    "paramiko>=5.0.0",
+    "paramiko>=5.1.0",
     "pyyaml>=6.0.3",
     "anthropic>=1.13.0",
     "openai>=3.31.0",
@@ -61,5 +61,5 @@ exclude = ["app/tsuite_adapter.py"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "ruff>=0.17.0",
+    "ruff>=0.17.1",
 ]

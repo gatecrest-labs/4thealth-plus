@@ -15,6 +15,10 @@ let globalDevices   = [];   // all-ADOMs device list for click-through
 let globalSelVer    = null; // selected version in the global chart
 let globalDetPage   = 1;
 let globalDetSize   = 10;
+let selectedModel   = null; // currently selected model filter in the per-ADOM chart
+let globalSelModel  = null; // selected model bucket in the global chart
+let globalModelPage = 1;
+let globalModelSize = 10;
 
 /* ── License state ─────────────────────────────────────────────────────── */
 let licenseDevices   = [];
@@ -84,6 +88,165 @@ function normalizeVersions(devices) {
     }
     return d;
   });
+}
+
+/* ── HA role badge ─────────────────────────────────────────────────────── */
+function haRoleBadge(role) {
+  if (!role) return '';
+  const colour = role === 'Primary'
+    ? 'background:#dbeafe;color:#1e40af'
+    : 'background:#f3f4f6;color:#374151';
+  return ` <span style="display:inline-block;font-size:.65em;padding:1px 5px;border-radius:3px;${colour};font-weight:600;vertical-align:middle;margin-left:4px">${escHtml(role)}</span>`;
+}
+
+/* ── Hardware model bucketing ──────────────────────────────────────────── */
+// VM-based FortiGates (FortiGate-VM64-KVM, -AWS, -AZURE, -GCP, …) share one
+// "Virtual" bar; devices with no model reported fall into "Unknown".
+function modelBucket(d) {
+  const p = String(d.platform ?? '').trim();
+  if (!p || p.toLowerCase() === 'n/a') return 'Unknown';
+  if (/(^|[-_ ])vm/i.test(p)) return 'Virtual';
+  return p;
+}
+
+function sortedModelEntries(counts) {
+  const rank = k => (k === 'Unknown' ? 2 : k === 'Virtual' ? 1 : 0);
+  return Object.entries(counts).sort((a, b) =>
+    rank(a[0]) - rank(b[0]) || b[1] - a[1] || a[0].localeCompare(b[0], undefined, { numeric: true }));
+}
+
+function modelChartRows(online, selected, hint) {
+  const total  = online.length;
+  const counts = {};
+  for (const d of online) {
+    const m = modelBucket(d);
+    counts[m] = (counts[m] || 0) + 1;
+  }
+  return sortedModelEntries(counts).map(([model, count]) => {
+    const pct    = ((count / total) * 100).toFixed(1);
+    const barPct = Math.round((count / total) * 100);
+    const active = selected === model ? ' ver-row-active' : '';
+    return `
+<div class="version-row${active}" data-model="${escHtml(model)}" title="${escHtml(hint(model))}">
+  <div class="version-name">${escHtml(model)}</div>
+  <div class="version-bar-wrap">
+    <div class="version-bar" style="width:${barPct}%"></div>
+  </div>
+  <div class="version-count">${count} device${count !== 1 ? 's' : ''}</div>
+  <div class="version-pct">${pct}%</div>
+</div>`;
+  }).join('');
+}
+
+/* ── Global hardware model chart ───────────────────────────────────────── */
+function buildGlobalModelChart(devices) {
+  const online   = devices.filter(d => d.status !== 'offline');
+  const nOffline = devices.length - online.length;
+  if (!online.length) return '';
+  const offlineNote = nOffline > 0
+    ? ` <span style="font-size:.8em;color:var(--text-muted)">(${nOffline} offline hidden)</span>`
+    : '';
+  return `
+<div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
+  <div class="version-summary">
+    <span class="version-total">${online.length}</span>
+    <span class="version-total-label">online unit${online.length !== 1 ? 's' : ''} by hardware model — <strong>All ADOMs</strong>${offlineNote}</span>
+  </div>
+  <div class="version-chart" id="globalModelChart">${modelChartRows(online, globalSelModel, m => m)}</div>
+</div>`;
+}
+
+function _wireGlobalModelChart() {
+  const chart = document.getElementById('globalModelChart');
+  if (!chart) return;
+  chart.addEventListener('click', e => {
+    const row = e.target.closest('[data-model]');
+    if (!row) return;
+    const model = row.dataset.model;
+    if (globalSelModel === model) {
+      _closeGlobalModelDetail();
+      return;
+    }
+    globalSelModel  = model;
+    globalModelPage = 1;
+    _refreshGlobalModelActive();
+    _renderGlobalModelDetail(model);
+  });
+}
+
+function _refreshGlobalModelActive() {
+  document.querySelectorAll('#globalModelChart .version-row').forEach(r => {
+    r.classList.toggle('ver-row-active', r.dataset.model === globalSelModel);
+  });
+}
+
+function _closeGlobalModelDetail() {
+  globalSelModel  = null;
+  globalModelPage = 1;
+  const panel = document.getElementById('globalModelDetail');
+  panel.style.display = 'none';
+  panel.innerHTML = '';
+  _refreshGlobalModelActive();
+}
+
+function _renderGlobalModelDetail(model) {
+  const matched   = globalDevices.filter(d => modelBucket(d) === model && d.status !== 'offline');
+  const panel     = document.getElementById('globalModelDetail');
+  const pageTotal = Math.ceil(matched.length / globalModelSize) || 1;
+  globalModelPage = Math.min(globalModelPage, pageTotal);
+  const slice     = matched.slice((globalModelPage - 1) * globalModelSize, globalModelPage * globalModelSize);
+
+  const tableRows = slice.map(d => `
+<tr>
+  <td>${escHtml(d.name)}${haRoleBadge(d.ha_role)}</td>
+  <td><code>${escHtml(d.ip)}</code></td>
+  <td>${escHtml(d.platform)}</td>
+  <td>${escHtml(d.version || 'unknown')}</td>
+  <td>${escHtml(d.adom || '—')}</td>
+  <td>${escHtml(d.serial)}</td>
+</tr>`).join('');
+
+  const sizeOpts = [10, 25, 50].map(n =>
+    `<option value="${n}" ${globalModelSize === n ? 'selected' : ''}>${n}</option>`).join('');
+  const btnStyle = 'background:var(--surface-alt);border:1px solid var(--border);color:var(--text)';
+
+  panel.style.display = '';
+  panel.innerHTML = `
+<div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
+  <div class="table-controls" style="margin-bottom:.75rem">
+    <span style="font-weight:600">${escHtml(model)} &mdash; ${matched.length} unit${matched.length !== 1 ? 's' : ''} across all ADOMs &mdash; page ${globalModelPage} of ${pageTotal}</span>
+    <div class="table-controls-right">
+      <select id="globalModelSize" class="form-select-sm">${sizeOpts}</select>
+      <span>per page</span>
+      <button class="btn btn-sm" id="gmExportCsv"  style="${btnStyle}">&#8681; CSV</button>
+      <button class="btn btn-sm" id="gmExportJson" style="${btnStyle}">&#8681; JSON</button>
+      <button class="btn btn-sm" id="gmExportPdf"  style="${btnStyle}">&#8681; PDF</button>
+      <button class="btn btn-sm btn-ghost" id="globalModelCloseBtn">&#10005; Close</button>
+    </div>
+  </div>
+  <table class="data-table">
+    <thead><tr><th>Name</th><th>IP</th><th>Model</th><th>Version</th><th>ADOM</th><th>Serial</th></tr></thead>
+    <tbody>${tableRows || '<tr><td colspan="6" class="empty-state" style="padding:.75rem 1rem">No devices.</td></tr>'}</tbody>
+  </table>
+  ${_gdPagination(globalModelPage, pageTotal)}
+</div>`;
+
+  document.getElementById('globalModelCloseBtn').addEventListener('click', _closeGlobalModelDetail);
+  document.getElementById('globalModelSize').addEventListener('change', function () {
+    globalModelSize = parseInt(this.value, 10);
+    globalModelPage = 1;
+    _renderGlobalModelDetail(model);
+  });
+  panel.querySelectorAll('[data-gdpage]').forEach(btn => {
+    btn.addEventListener('click', function () {
+      if (this.disabled) return;
+      globalModelPage = parseInt(this.dataset.gdpage, 10);
+      _renderGlobalModelDetail(model);
+    });
+  });
+  document.getElementById('gmExportCsv').addEventListener('click',  () => _gdExport('csv',  `model_${model}`, matched));
+  document.getElementById('gmExportJson').addEventListener('click', () => _gdExport('json', `model_${model}`, matched));
+  document.getElementById('gmExportPdf').addEventListener('click',  () => _gdExportPdf(model, matched, 'Device Hardware Model'));
 }
 
 /* ── Build a version chart block (shared by global and per-ADOM) ────────── */
@@ -174,6 +337,7 @@ async function loadGlobalVersions(forceRefresh) {
 
     // Cache is still warming — show a spinner and poll every 3 s
     if (status === 'running' || status === 'pending') {
+      document.getElementById('globalModelsContent').innerHTML = '';
       container.innerHTML = _renderCacheBar(status, lastUpdated, error) +
         '<div class="loading-placeholder">Building version index… this may take a minute.</div>';
       _wireRefreshBtn();
@@ -191,12 +355,16 @@ async function loadGlobalVersions(forceRefresh) {
     }
     globalDevices = normalizeVersions(devices);
     globalSelVer  = null;
+    globalSelModel = null;
     document.getElementById('globalVersionDetail').style.display = 'none';
+    document.getElementById('globalModelDetail').style.display = 'none';
     container.innerHTML =
       _renderCacheBar(status, lastUpdated, error) +
       buildVersionChart(globalDevices, 'All ADOMs', 'globalVersionChart');
+    document.getElementById('globalModelsContent').innerHTML = buildGlobalModelChart(globalDevices);
     _wireRefreshBtn();
     _wireGlobalChart();
+    _wireGlobalModelChart();
 
   } catch (_) {
     container.innerHTML = '<div class="loading-placeholder">Could not load version data.</div>';
@@ -245,7 +413,7 @@ function _renderGlobalDetail(ver) {
 
   const tableRows = slice.map(d => `
 <tr>
-  <td>${escHtml(d.name)}</td>
+  <td>${escHtml(d.name)}${haRoleBadge(d.ha_role)}</td>
   <td><code>${escHtml(d.ip)}</code></td>
   <td>${escHtml(d.platform)}</td>
   <td>${escHtml(d.adom || '—')}</td>
@@ -259,7 +427,7 @@ function _renderGlobalDetail(ver) {
   panel.innerHTML = `
 <div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
   <div class="table-controls" style="margin-bottom:.75rem">
-    <span style="font-weight:600">${escHtml(ver)} &mdash; ${matched.length} device${matched.length !== 1 ? 's' : ''} across all ADOMs &mdash; page ${globalDetPage} of ${pageTotal}</span>
+    <span style="font-weight:600">${escHtml(ver)} &mdash; ${matched.length} unit${matched.length !== 1 ? 's' : ''} across all ADOMs &mdash; page ${globalDetPage} of ${pageTotal}</span>
     <div class="table-controls-right">
       <select id="globalDetSize" class="form-select-sm">${sizeOpts}</select>
       <span>per page</span>
@@ -338,9 +506,9 @@ function _gdExport(format, ver, matched) {
   URL.revokeObjectURL(url);
 }
 
-function _gdExportPdf(ver, matched) {
+function _gdExportPdf(ver, matched, heading = 'Device Versions') {
   const ts    = new Date().toLocaleString();
-  const title = `Device Versions — ${ver}`;
+  const title = `${heading} — ${ver}`;
   const esc   = s => String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -401,6 +569,7 @@ async function loadAdoms() {
 async function loadVersions(adom) {
   currentAdom = adom;
   selectedVer = null;
+  selectedModel = null;
   detailPage  = 1;
 
   document.getElementById('adomCloseBtn').style.display = '';
@@ -409,7 +578,7 @@ async function loadVersions(adom) {
   container.innerHTML = '<div class="loading-placeholder">Loading devices…</div>';
   loadLicenseStatus(adom);
   try {
-    const resp = await fetch(`/api/adoms/${encodeURIComponent(adom)}/devices`);
+    const resp = await fetch(`/api/adoms/${encodeURIComponent(adom)}/units`);
     if (resp.status === 401) { location.href = '/login'; return; }
     const data = await resp.json();
     if (!Array.isArray(data)) {
@@ -479,16 +648,17 @@ function renderPage() {
     : '';
 
   // Detail table shows all devices (online + offline); version filter applies to both
-  const filtered  = selectedVer
-    ? allDevices.filter(d => (d.version || 'unknown') === selectedVer)
-    : allDevices;
+  const filtered  = allDevices.filter(d =>
+    (!selectedVer || (d.version || 'unknown') === selectedVer) &&
+    (!selectedModel || modelBucket(d) === selectedModel));
   const pageTotal = Math.ceil(filtered.length / detailSize) || 1;
   detailPage      = Math.min(detailPage, pageTotal);
   const slice     = filtered.slice((detailPage - 1) * detailSize, detailPage * detailSize);
 
-  const filterLabel = selectedVer
-    ? `${escHtml(selectedVer)} — ${filtered.length} device${filtered.length !== 1 ? 's' : ''}`
-    : `All versions — ${allDevices.length} device${allDevices.length !== 1 ? 's' : ''}`;
+  const activeFilters = [selectedVer, selectedModel].filter(Boolean).map(escHtml);
+  const filterLabel = activeFilters.length
+    ? `${activeFilters.join(' + ')} — ${filtered.length} device${filtered.length !== 1 ? 's' : ''}`
+    : `All devices — ${allDevices.length} device${allDevices.length !== 1 ? 's' : ''}`;
 
   const offlineBadge = `<span style="display:inline-block;font-size:.7em;padding:1px 5px;border-radius:3px;background:#fee2e2;color:#991b1b;font-weight:600;vertical-align:middle;margin-left:4px">OFFLINE</span>`;
 
@@ -496,7 +666,7 @@ function renderPage() {
     const isOffline = d.status === 'offline';
     return `
 <tr${isOffline ? ' style="opacity:0.6"' : ''}>
-  <td>${escHtml(d.name)}${isOffline ? offlineBadge : ''}</td>
+  <td>${escHtml(d.name)}${isOffline ? offlineBadge : ''}${haRoleBadge(d.ha_role)}</td>
   <td><code>${escHtml(d.ip)}</code></td>
   <td>${escHtml(d.platform)}</td>
   <td>${escHtml(d.version || 'unknown')}</td>
@@ -511,11 +681,20 @@ function renderPage() {
 <div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
   <div class="version-summary">
     <span class="version-total">${chartTotal}</span>
-    <span class="version-total-label">online device${chartTotal !== 1 ? 's' : ''} in <strong>${escHtml(currentAdom)}</strong>${offlineNote}</span>
-    ${selectedVer ? `<button class="btn btn-sm" id="clearFilter" style="margin-left:1rem;background:var(--surface-alt);border:1px solid var(--border);color:var(--text)">&#10005; Clear filter</button>` : ''}
+    <span class="version-total-label">online unit${chartTotal !== 1 ? 's' : ''} in <strong>${escHtml(currentAdom)}</strong>${offlineNote}</span>
+    ${selectedVer || selectedModel ? `<button class="btn btn-sm" id="clearFilter" style="margin-left:1rem;background:var(--surface-alt);border:1px solid var(--border);color:var(--text)">&#10005; Clear filter</button>` : ''}
   </div>
   <div class="version-chart" id="versionChart">${chartRows}</div>
   <p class="version-click-hint">Click a version bar to filter the device list below.</p>
+</div>
+
+<div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
+  <div class="version-summary">
+    <span class="version-total">${chartTotal}</span>
+    <span class="version-total-label">online unit${chartTotal !== 1 ? 's' : ''} by hardware model in <strong>${escHtml(currentAdom)}</strong>${offlineNote}</span>
+  </div>
+  <div class="version-chart" id="modelChart">${modelChartRows(online, selectedModel, m => `Click to filter devices by ${m}`)}</div>
+  <p class="version-click-hint">Click a model bar to filter the device list below.</p>
 </div>
 
 <div class="table-wrapper">
@@ -547,10 +726,20 @@ function renderPage() {
     renderPage();
   });
 
+  // Model bar click — select/deselect
+  document.getElementById('modelChart').addEventListener('click', e => {
+    const row = e.target.closest('[data-model]');
+    if (!row) return;
+    const model = row.dataset.model;
+    selectedModel = selectedModel === model ? null : model;
+    detailPage    = 1;
+    renderPage();
+  });
+
   // Clear filter button
   const clearBtn = document.getElementById('clearFilter');
   if (clearBtn) clearBtn.addEventListener('click', () => {
-    selectedVer = null; detailPage = 1; renderPage();
+    selectedVer = null; selectedModel = null; detailPage = 1; renderPage();
   });
 
   // Page size

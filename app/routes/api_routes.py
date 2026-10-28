@@ -8,6 +8,7 @@ from flask import Blueprint, Response, jsonify, request, session, stream_with_co
 from app.config import Config
 from app.decorators import admin_required, check_adom_access, tab_required
 from app.fmg_client import PROXY_ENDPOINTS, FMGClient, FMGError
+from app.fmg_helpers import expand_ha_members
 from app.fmg_helpers import make_client as _make_client
 from app.license_status import parse_license_payload
 from app.security import internal_api_error, upstream_api_error
@@ -569,6 +570,54 @@ def devices(adom: str):
                     "ha_mode": d.get("ha_mode", d.get("ha_group_name", "")),
                 }
             )
+        return jsonify(result)
+    except FMGError as exc:
+        return upstream_api_error("api", exc)
+    except Exception as exc:
+        return internal_api_error("api", exc)
+
+
+# ── Per-ADOM device list expanded for HA clusters (versions tab) ─────────────
+
+
+@bp.route("/adoms/<adom>/units")
+@tab_required("versions")
+def adom_units(adom: str):
+    """Return one record per physical FortiGate unit, expanding HA clusters.
+
+    Identical to /adoms/<adom>/devices but each HA cluster is split into
+    individual member entries (primary + slaves) so the version and model
+    charts count real hardware units.  Used only by versions.js.
+    """
+    if err := check_adom_access(adom):
+        return err
+    try:
+        with _make_client() as client:
+            raw = client.get_devices(adom)
+        result = []
+        for d in raw:
+            if not isinstance(d, dict):
+                continue
+            os_ver = d.get("os_ver", 0)
+            mr = d.get("mr")
+            patch = d.get("patch")
+            major = (
+                int(os_ver) // 100
+                if str(os_ver).isdigit() and int(os_ver) >= 100
+                else os_ver
+            )
+            if mr is not None and patch is not None and int(patch) >= 0:
+                version = f"v{major}.{mr}.{patch}"
+            elif mr is not None:
+                version = f"v{major}.{mr}"
+            else:
+                version = "n/a"
+            conn_status = d.get("conn_status", d.get("connection_status", -1))
+            try:
+                conn_status = int(conn_status)
+            except (TypeError, ValueError):
+                conn_status = -1
+            result.extend(expand_ha_members(d, version, adom, conn_status))
         return jsonify(result)
     except FMGError as exc:
         return upstream_api_error("api", exc)

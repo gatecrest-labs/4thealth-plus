@@ -12,6 +12,10 @@
 <!-- Global version detail panel (shown when a bar in the global chart is clicked) -->
 <div id="globalVersionDetail" style="display:none"></div>
 
+<!-- All-ADOM hardware model chart + detail panel -->
+<div id="globalModelsContent"></div>
+<div id="globalModelDetail" style="display:none"></div>
+
 <!-- ADOM selector -->
 <div class="controls-row" style="margin-top:1.5rem">
   <label for="adomSelect">ADOM:</label>
@@ -28,5 +32,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/versions.js') }}?v=13"></script>
+<script src="{{ url_for('static', filename='js/versions.js') }}?v=14"></script>
 {% endblock %}
