@@ -109,6 +109,105 @@
   </div>
 </div>
 
+<!-- ── Rule Lookup ───────────────────────────────────────────────────────────── -->
+<div class="rr-section-label" style="margin-top:2rem">Rule Lookup</div>
+<div class="hygiene-selectors">
+  <div class="hygiene-selector-row" style="flex-wrap:wrap;gap:.5rem">
+    <label for="rlAdom">ADOM</label>
+    <select id="rlAdom" class="form-select">
+      <option value="">— select ADOM —</option>
+    </select>
+
+    <label for="rlSrc" style="white-space:nowrap">Source</label>
+    <input type="text" id="rlSrc" class="form-control" placeholder="IP, CIDR, 10.1.1.* or group name (grp-App*)" style="max-width:260px" disabled />
+    <label for="rlDst" style="white-space:nowrap">Destination</label>
+    <input type="text" id="rlDst" class="form-control" placeholder="IP, CIDR, 10.1.1.* or group name" style="max-width:260px" disabled />
+    <label for="rlPort" style="white-space:nowrap">Port</label>
+    <input type="text" id="rlPort" class="form-control" placeholder="tcp/443, 443 or http" style="max-width:160px" disabled />
+    <button class="btn btn-primary" id="rlSearchBtn" disabled>Search</button>
+    <span id="rlRunning" class="text-muted" style="display:none;font-style:italic">Searching…</span>
+  </div>
+
+  <div class="pv-progress-wrap" id="rlProgressWrap">
+    <div class="pv-progress-track"><div class="pv-progress-bar"></div></div>
+  </div>
+</div>
+
+<div id="rlResults" style="display:none;margin-top:1rem">
+  <div class="results-close-row">
+    <button class="btn btn-sm btn-ghost" id="rlCloseBtn" title="Close rule lookup">&#10005; Close</button>
+  </div>
+  <div class="obj-lookup-result-header">
+    <span id="rlSummary" class="obj-lookup-summary"></span>
+    <div class="hygiene-export-row">
+      <button class="btn btn-sm" id="rlRefreshBtn" title="Rebuild the cached rules for this ADOM">&#8635; Refresh data</button>
+      <button class="btn btn-sm" id="rlExportCsv">&#8659; CSV</button>
+      <button class="btn btn-sm" id="rlExportJson">&#8659; JSON</button>
+      <button class="btn btn-sm" id="rlExportPdf">&#8659; PDF</button>
+    </div>
+  </div>
+  <div id="rlAsOf" class="text-muted" style="font-size:.78rem;margin:.25rem 0"></div>
+  <div id="rlPortOnlyBanner" class="rl-banner" style="display:none">
+    <span id="rlPortOnlyText"></span>
+    <button class="btn btn-sm btn-primary" id="rlPortOnlyBtn">Show port-only matches</button>
+  </div>
+
+  <div class="route-controls" style="margin:.5rem 0 .5rem;flex-wrap:wrap;gap:.5rem">
+    <input type="text" id="rlFilter" class="form-control" placeholder="Filter results (supports regex)…" style="max-width:360px" />
+    <select id="rlFieldFilter" class="form-select-sm" title="Filter within a single field">
+      <option value="">All fields</option>
+      <option value="firewall">Firewall / VDOM</option>
+      <option value="package">Package</option>
+      <option value="name">Name</option>
+      <option value="id">ID</option>
+      <option value="comment">Comment</option>
+      <option value="srcaddr">Source</option>
+      <option value="dstaddr">Destination</option>
+      <option value="service">Service</option>
+      <option value="srcintf">Src Interface</option>
+      <option value="dstintf">Dst Interface</option>
+    </select>
+    <label style="font-size:.8rem;display:flex;align-items:center;gap:.3rem;white-space:nowrap">
+      <input type="checkbox" id="rlRegexMode" /> Regex
+    </label>
+    <select id="rlPageSize" class="form-select-sm">
+      <option value="10">10</option>
+      <option value="25" selected>25</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select>
+    <span class="text-muted" style="font-size:.8rem">per page</span>
+    <span class="text-muted" style="font-size:.78rem">
+      <span class="rl-m rl-m-exact">exact</span>
+      <span class="rl-m rl-m-broader">rule is broader</span>
+      <span class="rl-m rl-m-narrower">rule is narrower</span>
+    </span>
+  </div>
+
+  <div class="table-wrapper">
+    <div class="table-controls">
+      <span id="rlCount"></span>
+    </div>
+    <table class="data-table" id="rlTable">
+      <thead>
+        <tr>
+          <th style="min-width:9rem">Firewall / VDOM &middot; Package</th>
+          <th style="min-width:9rem">Name / ID / Comment</th>
+          <th style="width:5rem">Status / Action</th>
+          <th>Source</th>
+          <th>Destination</th>
+          <th>Service</th>
+          <th style="width:4.5rem">Interfaces</th>
+        </tr>
+      </thead>
+      <tbody id="rlTbody"></tbody>
+    </table>
+    <div class="pagination" id="rlPagination"></div>
+  </div>
+</div>
+
+<div id="rlError" class="alert alert-danger" style="display:none"></div>
+
 <!-- ── Section 2: Object Lookup ──────────────────────────────────────────────── -->
 <div class="rr-section-label" style="margin-top:2rem">Object Lookup</div>
 <div class="hygiene-selectors">
@@ -338,4 +437,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/hygiene.js') }}?v=17"></script>
+<script src="{{ url_for('static', filename='js/rule_lookup.js') }}?v=2"></script>
 {% endblock %}

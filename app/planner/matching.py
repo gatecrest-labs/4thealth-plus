@@ -200,6 +200,32 @@ class ServiceCatalog:
         """Resolve a reference by name. None means unresolvable (unknown)."""
         return self._resolve(name, seen=set())
 
+    def leaf_names(self, name: str) -> list[str]:
+        """Service objects a group expands to (cycle-safe); [] for a plain object."""
+        if name not in self._groups:
+            return []
+        out: list[str] = []
+        seen: set[str] = set()
+        stack = [name]
+        while stack:
+            n = stack.pop()
+            if n in seen:
+                continue
+            seen.add(n)
+            if n in self._groups:
+                members = self._groups[n].get("member", [])
+                stack.extend(
+                    reversed(
+                        [
+                            m if isinstance(m, str) else m.get("name", "")
+                            for m in members
+                        ]
+                    )
+                )
+            elif n in self._objects:
+                out.append(n)
+        return out
+
     def exact_match_name(self, ranges: list[PortRange]) -> str | None:
         """Name of an existing service object whose ranges equal `ranges`."""
         want = set(ranges)

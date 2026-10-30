@@ -11,12 +11,13 @@ API (JSON, all read-only):
 """
 
 import ipaddress
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 from flask import Blueprint, jsonify, render_template, request, session
 
-from app import registry
+from app import registry, rule_lookup, rule_lookup_cache
 from app.decorators import check_adom_access, tab_required
 from app.fmg_client import FMGError
 from app.fmg_helpers import make_client
@@ -632,6 +633,98 @@ def hygiene_policy_pblocks():
         return internal_api_error("hygiene", exc)
 
     return jsonify({"pblocks": pblocks})
+
+
+# ── API: rule lookup (cached rules, see app/rule_lookup_cache.py) ─────────────
+
+_IPISH_RE = re.compile(r"^[\d.*/]+$")
+_NAME_RE = re.compile(r"^[\w\-.*/ ()]+$")
+
+
+def _parse_addr_search(text: str):
+    """IP/CIDR/wildcard -> list of networks; otherwise a name pattern (str)."""
+    text = text.strip()
+    try:
+        return rule_lookup.parse_ip_query(text)
+    except ValueError:
+        if _IPISH_RE.match(text) or not _NAME_RE.match(text):
+            raise
+        return text
+
+
+@bp.route("/api/hygiene/adoms/<adom>/rule-lookup", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_rule_lookup(adom: str):
+    """Search cached policy rules of an ADOM by source, destination and port.
+
+    Body: { src, dst, port, include_port_only }
+    """
+    if err := check_adom_access(adom):
+        return err
+    if adom.lower().startswith("forti"):
+        return jsonify({"error": "Unknown ADOM"}), 404
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+    fields = []
+    for key in ("src", "dst", "port"):
+        val = data.get(key)
+        if val is not None and not isinstance(val, str):
+            return jsonify({"error": f"{key} must be a string"}), 400
+        fields.append((val or "").strip())
+    src_t, dst_t, port_t = fields
+    if not (src_t or dst_t or port_t):
+        return jsonify({"error": "Enter a source, destination or port"}), 400
+
+    entry = rule_lookup_cache.get_adom(adom)
+    if entry is None:
+        rule_lookup_cache.refresh_adom_async(adom)
+        return jsonify({"status": "warming"}), 202
+    if rule_lookup_cache.is_stale(entry):
+        rule_lookup_cache.refresh_adom_async(adom)
+    ctx = entry["ctx"]
+
+    try:
+        q = rule_lookup.Query(
+            src=_parse_addr_search(src_t) if src_t else None,
+            dst=_parse_addr_search(dst_t) if dst_t else None,
+            port=rule_lookup.parse_port_query(
+                port_t, lambda n: rule_lookup.resolve_service_name(ctx, n)
+            )
+            if port_t
+            else None,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
+        result = rule_lookup.search(
+            entry["rules"], q, ctx, bool(data.get("include_port_only"))
+        )
+    except Exception as exc:
+        return internal_api_error("hygiene", exc)
+    return jsonify(
+        {
+            **result,
+            "total": len(result["rows"]),
+            "last_updated": entry.get("last_updated"),
+            "status": entry.get("status"),
+            "error": entry.get("error"),
+            "package_errors": entry.get("package_errors", []),
+            "searched": {"src": src_t, "dst": dst_t, "port": port_t},
+        }
+    )
+
+
+@bp.route("/api/hygiene/adoms/<adom>/rule-lookup/refresh", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_rule_lookup_refresh(adom: str):
+    if err := check_adom_access(adom):
+        return err
+    if adom.lower().startswith("forti"):
+        return jsonify({"error": "Unknown ADOM"}), 404
+    rule_lookup_cache.refresh_adom_async(adom)
+    return jsonify({"status": "refreshing"}), 202
 
 
 # ── API: object expansion maps (deferred, called after policy table renders) ──
