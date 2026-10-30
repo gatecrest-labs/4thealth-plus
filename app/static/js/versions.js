@@ -105,7 +105,10 @@ function haRoleBadge(role) {
 function modelBucket(d) {
   const p = String(d.platform ?? '').trim();
   if (!p || p.toLowerCase() === 'n/a') return 'Unknown';
-  if (/(^|[-_ ])vm/i.test(p)) return 'Virtual';
+  // VM64-*, ARM64-* (FortiGate ARM64 is cloud-only: AWS/Azure/GCP/OCI/KVM), and
+  // bare hypervisor/cloud suffixes (e.g. FortiGate-AWS, FortiGate-VMX).
+  if (/(^|[-_ ])(vm|arm64)/i.test(p) ||
+      /[-_ ](aws|azure|gcp|oci|alicloud|kvm|xen|hyperv|vmware|openstack)$/i.test(p)) return 'Virtual';
   return p;
 }
 
@@ -122,12 +125,16 @@ function modelChartRows(online, selected, hint) {
     const m = modelBucket(d);
     counts[m] = (counts[m] || 0) + 1;
   }
-  return sortedModelEntries(counts).map(([model, count]) => {
+  const entries = sortedModelEntries(counts);
+  // Scale bars to the largest bucket so small models stay visible; the
+  // percentage column still shows share of total.
+  const maxCount = Math.max(...entries.map(e => e[1]));
+  return entries.map(([model, count]) => {
     const pct    = ((count / total) * 100).toFixed(1);
-    const barPct = Math.round((count / total) * 100);
+    const barPct = Math.max(2, Math.round((count / maxCount) * 100));
     const active = selected === model ? ' ver-row-active' : '';
     return `
-<div class="version-row${active}" data-model="${escHtml(model)}" title="${escHtml(hint(model))}">
+<div class="version-row model-row${active}" data-model="${escHtml(model)}" title="${escHtml(hint(model))}">
   <div class="version-name">${escHtml(model)}</div>
   <div class="version-bar-wrap">
     <div class="version-bar" style="width:${barPct}%"></div>

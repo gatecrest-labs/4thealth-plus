@@ -32,6 +32,7 @@ FMG_API_TOKEN=your-bearer-token-here   # preferred
 FMG_VERIFY_SSL=false
 CPU_WARN=70  CPU_CRIT=90
 MEM_WARN=75  MEM_CRIT=90
+RULE_LOOKUP_CACHE_INTERVAL_MIN=60  # Rule Lookup cache refresh interval
 SUMMARY_REFRESH_HOUR=1   # nightly summary recalculation hour (default 01:00)
 SUMMARY_REFRESH_MINUTE=0
 SNMP_ENABLED=false       # enable SNMPv3 polling for FortiManager/FortiAnalyzer/FortiAuthenticator CPU/mem
@@ -186,6 +187,11 @@ Four sections, each with its own ADOM selector, working independently (tab displ
 2. **Object Lookup** — search address/service objects and groups by name; "Where Used" traces direct and group-indirect policy references.
 3. **Interface Lookup** — find which firewall interface(s) in an ADOM are assigned a given IP.
 4. **NAT Lookup** — search VIP and IP Pool objects by IP, CIDR (`10.1.0.0/16`), or trailing-wildcard octets (`10.1.*.*`); ranges match any object they overlap.
+5. **Rule Lookup** — searches every policy rule of an ADOM by source, destination and port without live FMG calls. Files: `app/rule_lookup.py` (pure matching engine), `app/rule_lookup_cache.py` (cache), `app/static/js/rule_lookup.js` (UI), routes `POST /api/hygiene/adoms/<adom>/rule-lookup` (+ `/refresh`) in `hygiene_routes.py`, tab key `rule_hygiene`.
+   - **Cache:** in-memory per process. Unlike upstream (`web/4thealth`) there is deliberately NO scheduler wired into `start_all_schedulers()` — the collector's memory is invisible to web workers. The first search for an ADOM returns 202 "warming" and builds it in the background; later searches rebuild lazily once an entry is older than `RULE_LOOKUP_CACHE_INTERVAL_MIN` (default 60), serving stale data meanwhile. A failed refresh keeps previous data (`status: error`); failed packages are listed in `package_errors`. Policy-block rules are expanded.
+   - **Inputs:** source/destination accept IP, CIDR, dotted netmask, trailing-octet wildcard (`10.1.*.*`) or an address/group name pattern (`grp-App*`); port accepts `tcp/443`, a bare port (tcp or udp), a range, or a service name.
+   - **Labels per field:** `exact`, `broader`, `narrower`, `overlap`, `name`. A rule is listed if source or destination matches; port-only matches are counted and shown on request (`include_port_only`).
+   - **Not matched:** `all`/`any` or negated (`srcaddr-negate`/`dstaddr-negate`) fields — counted in `skipped_count`. FQDN/geography objects match by name only.
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`. Gated to both `rule_hygiene` and `audit_review` tabs — the latter because Audit Review's own Log-Based Rule Review section (see below) also resolves package rules through this endpoint.
 

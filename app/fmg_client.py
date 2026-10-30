@@ -966,13 +966,16 @@ class FMGClient:
                 )
         return result
 
-    def get_pblock_policies(self, adom: str, block_name: str) -> list:
+    def get_pblock_policies(
+        self, adom: str, block_name: str, strict: bool = False
+    ) -> list:
         """Return firewall policies from a policy block (pblock) in an ADOM.
 
         FMG 7.2+ stores policy blocks under:
           /pm/config/adom/<adom>/pblock/<block_name>/firewall/policy
 
-        Returns [] if the block doesn't exist or is inaccessible.
+        Returns [] if the block doesn't exist or is inaccessible; with
+        strict=True an FMG error status raises FMGError instead.
         """
         url = f"/pm/config/adom/{adom}/pblock/{block_name}/firewall/policy"
         all_policies: list = []
@@ -989,6 +992,8 @@ class FMGClient:
             data = self._post(body)
             result = data.get("result", [{}])[0]
             if result.get("status", {}).get("code", -1) != 0:
+                if strict:
+                    raise FMGError(f"FMG error on {url}: {result.get('status')}")
                 return []
             page = result.get("data", [])
             if not isinstance(page, list):

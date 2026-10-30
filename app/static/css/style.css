@@ -721,6 +721,10 @@ a:hover { text-decoration: underline; }
 
 .version-row:hover { background: var(--surface-alt); }
 
+/* Hardware model names (e.g. FortiGateRugged-60F, FortiGate-ARM64-AWS) are longer than version strings */
+.version-row.model-row { grid-template-columns: 220px 1fr 120px 60px; }
+.version-row.model-row .version-name { overflow: hidden; text-overflow: ellipsis; }
+
 .version-row.ver-row-active {
   background: rgba(59,130,246,.12);
   outline: 2px solid var(--accent);
@@ -1844,6 +1848,64 @@ a:hover { text-decoration: underline; }
   background: rgba(16,185,129,.1);
   color: var(--success, #22c55e);
   border: 1px solid rgba(16,185,129,.25);
+}
+
+/* ── Rule Lookup match highlights ───────────────────────────────────────── */
+.rl-m {
+  display: inline-block;
+  font-size: .72rem;
+  padding: .1rem .35rem;
+  border-radius: 3px;
+  margin: .1rem .1rem 0 0;
+  white-space: nowrap;
+}
+.rl-m-exact {
+  background: rgba(16,185,129,.14);
+  color: var(--success, #22c55e);
+  border: 1px solid rgba(16,185,129,.4);
+}
+.rl-m-broader {
+  background: rgba(234,179,8,.16);
+  color: var(--warning, #fd7e14);
+  border: 1px solid rgba(234,179,8,.5);
+}
+.rl-m-narrower {
+  background: rgba(59,130,246,.12);
+  color: var(--accent, #3b82f6);
+  border: 1px solid rgba(59,130,246,.35);
+}
+.rl-how {
+  font-size: .64rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  opacity: .85;
+  margin-left: .3rem;
+}
+.rl-plain { display: block; font-size: .8rem; }
+
+/* Keep the results table inside the page: wrap long names instead of scrolling. */
+#rlTable td { overflow-wrap: anywhere; vertical-align: top; }
+#rlTable .rl-m { white-space: normal; }
+.rl-sub { font-size: .72rem; color: var(--text-muted); }
+.rl-comment {
+  font-size: .72rem;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rl-more summary { font-size: .72rem; color: var(--accent); cursor: pointer; margin-top: .15rem; }
+.rl-banner {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: .6rem .8rem;
+  font-size: .8rem;
+  margin: .5rem 0;
 }
 
 /* ── Zone Policy tab ────────────────────────────────────────────────────── */
@@ -3016,3 +3078,5 @@ a:hover { text-decoration: underline; }
   font-size: .875rem;
   color: var(--text-muted, #6b7280);
 }
+
+.rl-via { font-size: .7rem; color: var(--text-muted); margin: 0 0 .2rem .5rem; }
