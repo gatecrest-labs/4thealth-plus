@@ -96,7 +96,7 @@ def _run_refresh(app: Flask) -> None:
                 _state["error"] = None
 
             logger.info("pending_status_cache: refresh started")
-            from app.fmg_helpers import make_client
+            from app.fmg_helpers import format_fortios_version, make_client
 
             with make_client() as client:
                 raw_adoms = client.get_adoms()
@@ -128,20 +128,7 @@ def _run_refresh(app: Flask) -> None:
                         if not name or name in seen:
                             continue
                         seen.add(name)
-                        os_ver = d.get("os_ver", 0)
-                        mr = d.get("mr")
-                        patch = d.get("patch")
-                        major = (
-                            int(os_ver) // 100
-                            if str(os_ver).isdigit() and int(os_ver) >= 100
-                            else os_ver
-                        )
-                        if mr is not None and patch is not None:
-                            version = f"v{major}.{mr}.{patch}"
-                        elif mr is not None:
-                            version = f"v{major}.{mr}"
-                        else:
-                            version = "n/a"
+                        version = format_fortios_version(d)
                         embedded_vdoms = d.get("vdom") or []
                         vdom_list = (
                             [

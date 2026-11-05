@@ -161,6 +161,12 @@ Each group in `groups.json` may include:
 
 `FMGClient` in `app/fmg_client.py` authenticates to FortiManager's JSON-RPC API (`/jsonrpc`) and queries managed FortiGate devices through FortiManager's proxy endpoint (`/sys/proxy/json`). This means the app never connects directly to individual firewalls — all firewall data flows through FortiManager.
 
+**Version, swallowed failures, proxy errors.** `client.version` (an `FMGVersion`, lazily read from `/sys/status`, `None` if unavailable) lets code branch on the FMG release — `client.version >= (7, 6)`; it orders on major.minor.patch only. Several methods deliberately swallow failures and return `{}`/`[]`; each such failure is now also recorded in `client.degraded[op] = {url, code, message}` (via `_note_degraded`), so "no data" can be told apart from "FMG refused" (`FMGError.code` is FMG's status code; `-11` = no permission for the API token's admin profile). Only `get_performance`, `get_resource_usage` and `get_audit_log` record so far — add `_note_degraded` to other swallow sites as they are touched. `_proxy()` treats a per-device wrapper that has a non-zero `status` and no `response` (e.g. `No tunnel 80` when the FGFM tunnel is down) as an error: `http_status` 502, empty `payload`, plus a `proxy_error` key — it is never returned as device data.
+
+**Recorded FMG fixtures.** `app/fmg_recorder.py` captures and replays FMG JSON-RPC traffic so FMG-version breakage shows up in CI. Set `FMG_RECORD_FILE=<path>` (or run `scripts/record_fmg_fixture.py`, which also swaps real ADOM/device names for neutral ones) and every `FMGClient._post` exchange is scrubbed (secrets, IPv4s, serials, e-mails, supplied literals) and saved; tests plug `ReplayTransport(path).post` into a client (`c._post = ...`) and run the real methods and the API self-test offline. Fixtures live in `tests/fixtures/fmg_<version>/exchanges.json`; `tests/test_fmg_replay_fixtures.py` runs every one (add the new directory's expectations to `EXPECTED`). The repo is public: scrubbing is best-effort, so read a capture before committing it. Identical requests replay in recorded order (task polling); URLs whose params change per run (audit-log time window) go in `loose_urls`.
+
+**Device firmware strings** (`v7.6.8`, `v8.0.2`) come from `app.fmg_helpers.format_fortios_version(device, prefix="v", unknown="n/a")` — the single implementation behind the Versions, Map, Config-Delta, Audit Review, license-sweep and executive-summary views, and Device Review's firmware check (`prefix=""`). It handles FMG's legacy `os_ver` encoding (`700` → 7), string `os_ver` like `"7.0"` (leading integer only), and drops an unknown patch (`-1`/missing) instead of rendering `v7.6.-1`. Don't re-inline this; `app/psirt/engine.py` keeps its own copy only because that package is vendored.
+
 Health status uses a three-tier model: green (healthy), yellow (warn threshold crossed), red (crit threshold crossed or unreachable). Thresholds are the `CPU_WARN/CRIT` and `MEM_WARN/CRIT` env vars.
 
 Sessions expire after 1 hour. `COOKIE_SECURE` is automatically set when SSL is active.
@@ -743,6 +749,8 @@ Table rows show a single compact badge (highest-priority state). The diff panel 
 
 **Diff generation:** `get_install_preview()` in `app/fmg_client.py` chains four FMG JSON-RPC calls: stage the modified package (`/securityconsole/install/package`, `flags=["preview"]`) → generate the combined preview (`/securityconsole/install/preview`) → fetch the CLI text (`/securityconsole/preview/result`) → cancel the pending-install lock (`/securityconsole/package/cancel/install`). `get_package_info()` treats FMG 7.6.x's `"conflict"` package status the same as `"modified"` for staging purposes (7.4.x never returns `"conflict"`). `preview/result` is looked up first by the `install/preview` task's own ID (the key confirmed working on FMG 7.4.10), falling back to the staging task's ID if that returns no diff (required on FMG 7.6.7) — this fallback ordering was reverse-engineered by capturing FMG 7.6.7's own GUI JSON-RPC traffic. `parse_preview_diff()` then parses the raw CLI text into `{type: "add"|"remove"|"modify", line: str}` objects grouped by VDOM.
 
+**Serialisation and timeouts:** FMG's staging context is ADOM-scoped, and overlapping previews queue behind each other on the FMG (a second user's stage task timed out at 120s on FMG 8.0.2 when it overlapped another). `get_install_preview()` therefore takes an OS file lock (`flock`, `_adom_preview_lock`) per (FortiManager, ADOM) around the staging cycle only — the read-only prelude runs outside it — so concurrent previews from any thread or gunicorn worker of one container run one after another instead of colliding. It does **not** cover other containers (the collector is separate), which are still serialised only by FMG itself. `FMG_PREVIEW_TIMEOUT_SECS` (default 120) bounds one FMG task; `FMG_PREVIEW_LOCK_WAIT_SECS` (default 900) bounds the wait for the lock. The log line `install_preview diff_source=preview_task|stage_task taskid=…` records which task id supplied the diff (7.4.x answers on the preview task; 7.6.7 and 8.0.2 only on the stage task).
+
 **Export queue:** Multiple devices can be staged before exporting. Changing ADOM clears the queue with a confirmation prompt. Each export includes a metadata header (ADOM, device list, timestamp, username via `PC_USER` template global).
 
 **Routes in `app/routes/pending_changes_routes.py`:**
@@ -989,7 +997,17 @@ Config-Delta's AI Summary (Admin → AI Assist) — there is no separate
 host-metrics toggle.
 
 Sub-tabs: Groups & Permissions, Map Region Colors, External API, AI Assist,
-Scheduled, Backup, **Zone Policy**, **Log Hygiene**, Application Logs.
+Scheduled, Backup, **Zone Policy**, **Log Hygiene**, **API Self-Test**, Application Logs.
+
+**API Self-Test sub-tab** — `POST /admin/api/fmg-selftest` runs `app/fmg_selftest.py::run_selftest()`,
+a read-only registry of the FMG calls the app depends on (system status, ADOMs, resource/audit-log,
+devices, revisions, packages, policies, objects, and a live-device proxy probe), against an
+auto-picked sample ADOM/device/package. Each check reports `ok` / `denied` (FMG code `-11`, i.e. the
+token's admin profile lacks access) / `error` / `skipped`, with the app feature that depends on it.
+Use it after an FMG upgrade or token change. It never runs the install-preview chain (that stages a
+package on the FMG) and never writes. When the sample device is unreachable via FMG (`device_proxy`
+fails, e.g. FGFM tunnel down) the three live-device checks are `skipped`, not reported as passing.
+It only runs on an explicit button click, never on page load. Add a call to `_CHECKS` to cover it.
 
 **Zone Policy sub-tab** — Validate and Edit Database (zone/subnet/policy
 rule CRUD against `policy_db.json`) moved here from the Zone Policy nav tab

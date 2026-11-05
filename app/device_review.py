@@ -1300,20 +1300,11 @@ def _run_firmware_version(
     # Build version string from meta
     version_str = meta.get("version_str", "")
     if not version_str:
-        os_ver = meta.get("os_ver", 0)
-        mr = meta.get("mr")
-        patch = meta.get("patch")
-        major = (
-            int(os_ver) // 100
-            if str(os_ver).isdigit() and int(os_ver) >= 100
-            else os_ver
+        from app.fmg_helpers import format_fortios_version
+
+        version_str = format_fortios_version(
+            meta, prefix="", unknown=str(meta.get("os_ver", 0))
         )
-        if mr is not None and patch is not None:
-            version_str = f"{major}.{mr}.{patch}"
-        elif mr is not None:
-            version_str = f"{major}.{mr}"
-        else:
-            version_str = str(os_ver)
 
     if not version_str or version_str in ("0", "0.0", "0.0.0"):
         return [

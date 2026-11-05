@@ -33,6 +33,7 @@ App settings (JSON):
   GET    /admin/api/ai-usage         bucketed AI Assist call/cost history (?range= or ?start=&end=)
   GET    /admin/api/host-metrics     bucketed host CPU/mem/disk history (?range=1h|4h|12h|1d|7d|14d)
   GET    /admin/api/login-metrics    bucketed login success/failure history (?range=1h|4h|12h|1d|7d|14d)
+  POST   /admin/api/fmg-selftest     read-only FortiManager API self-test: per-call ok/denied/error/skipped + FMG version
 
 External API tokens (JSON):
   GET    /admin/api/tokens           list tokens (hashes never returned)
@@ -450,6 +451,24 @@ def api_host_metrics():
     from app.host_metrics import get_metrics
 
     return jsonify(get_metrics(request.args.get("range", "1h")))
+
+
+@bp.route("/api/fmg-selftest", methods=["POST"])
+@_admin_required
+def api_fmg_selftest():
+    """Run the read-only FortiManager API self-test (app/fmg_selftest.py).
+
+    POST (not GET) because it makes ~20 live FMG calls — an explicit action,
+    and CSRF-protected. Always JSON: an unreachable FMG yields 502, not 500.
+    """
+    from app import fmg_helpers, fmg_selftest
+
+    try:
+        with fmg_helpers.make_client() as client:
+            report = fmg_selftest.run_selftest(client)
+    except Exception as exc:  # unreachable host, bad auth, TLS, ...
+        return jsonify({"error": f"Could not run self-test: {exc}"}), 502
+    return jsonify(report)
 
 
 @bp.route("/api/login-metrics")

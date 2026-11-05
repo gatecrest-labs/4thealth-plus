@@ -69,7 +69,7 @@ def _run_job(app):
     t0 = _time.monotonic()
 
     try:
-        from app.fmg_helpers import make_client
+        from app.fmg_helpers import format_fortios_version, make_client
 
         result = []
         # Keyed by device name alone — the same physical device can appear in
@@ -137,20 +137,7 @@ def _run_job(app):
                         if lat == 0.0 and lon == 0.0:
                             continue
 
-                        os_ver = d.get("os_ver", 0)
-                        mr = d.get("mr")
-                        patch = d.get("patch")
-                        major = (
-                            int(os_ver) // 100
-                            if str(os_ver).isdigit() and int(os_ver) >= 100
-                            else os_ver
-                        )
-                        if mr is not None and patch is not None and int(patch) >= 0:
-                            version = f"v{major}.{mr}.{patch}"
-                        elif mr is not None:
-                            version = f"v{major}.{mr}"
-                        else:
-                            version = "n/a"
+                        version = format_fortios_version(d)
 
                         conn_status = d.get(
                             "conn_status", d.get("connection_status", -1)

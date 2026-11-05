@@ -142,13 +142,13 @@ def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
     # FMG's install-preview staging context is ADOM-scoped: a new
     # install/package call from any concurrent worker replaces the previous
     # device's staged context, causing preview/result to return an empty diff.
-    # Serialise only the staging cycle; fast read-only calls run in parallel.
-    _staging_lock = threading.Lock()
+    # FMGClient.get_install_preview serialises the staging cycle per
+    # (FortiManager, ADOM) with a cross-thread / cross-process lock, so this
+    # pool needs no lock of its own; fast read-only calls still run in parallel.
 
     def _preview_one(dev: dict) -> dict:
         try:
-            # Staging must be serialised within the ADOM to avoid context conflicts.
-            with _staging_lock, make_client() as client:
+            with make_client() as client:
                 raw = client.get_install_preview(adom, dev["name"])
 
             # Read-only calls (vdoms, pkg_status) run in parallel across workers.

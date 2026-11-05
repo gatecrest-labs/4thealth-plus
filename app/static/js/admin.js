@@ -3203,6 +3203,67 @@ async function pcaDeleteRule(ruleId) {
   loadPCAlerts();
 }
 
+/* ── FortiManager API self-test ─────────────────────────────────────────────── */
+
+const _SELFTEST_BADGE = { ok: 'badge-green', denied: 'badge-yellow', error: 'badge-red', skipped: 'badge-gray' };
+
+function renderFmgSelftest(r) {
+  const s = r.summary || {};
+  const sample = r.sample || {};
+  const ver = r.fmg_version
+    ? `FortiManager <strong>v${escH(r.fmg_version)}</strong> (train ${escH(r.train)})`
+    : 'FortiManager version <strong>unknown</strong>';
+  const where = [sample.adom && `ADOM ${sample.adom}`, sample.device && `device ${sample.device}`,
+                 sample.package && `package ${sample.package}`].filter(Boolean).map(escH).join(' · ') || 'none found';
+  const rows = (r.checks || []).map(c => {
+    const detail = [c.code != null ? `code ${c.code}` : '', c.message].filter(Boolean).map(escH).join(' — ');
+    const hint = c.status === 'denied'
+      ? '<div class="text-muted" style="font-size:.8rem">The API token\'s admin profile lacks read access to this resource.</div>'
+      : '';
+    return `<tr>
+      <td><span class="status-badge ${_SELFTEST_BADGE[c.status] || 'badge-gray'}">${escH(c.status)}</span></td>
+      <td>${escH(c.label)}</td>
+      <td class="text-muted">${escH(c.feature)}</td>
+      <td>${detail}${hint}</td>
+      <td class="text-muted">${c.ms} ms</td>
+    </tr>`;
+  }).join('');
+  return `
+    <p>${ver}. Sample: ${where}.</p>
+    <p>
+      <span class="status-badge badge-green">${s.ok || 0} ok</span>
+      <span class="status-badge badge-yellow">${s.denied || 0} denied</span>
+      <span class="status-badge badge-red">${s.error || 0} error</span>
+      <span class="status-badge badge-gray">${s.skipped || 0} skipped</span>
+    </p>
+    <div class="table-wrapper"><table class="data-table">
+      <thead><tr><th>Result</th><th>Call</th><th>Used by</th><th>Detail</th><th>Time</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+async function runFmgSelftest() {
+  const btn = document.getElementById('btnFmgSelftest');
+  const out = document.getElementById('fmgSelftestResult');
+  btn.disabled = true;
+  out.innerHTML = '<span class="loading-placeholder">Running… (live FortiManager calls)</span>';
+  try {
+    const resp = await fetch('/admin/api/fmg-selftest', {
+      method: 'POST', headers: { 'X-CSRF-Token': getCSRF() },
+    });
+    const body = await resp.json().catch(() => ({}));
+    out.innerHTML = resp.ok
+      ? renderFmgSelftest(body)
+      : `<span style="color:#991b1b">${escH(body.error || 'Self-test failed (HTTP ' + resp.status + ')')}</span>`;
+  } catch (err) {
+    out.innerHTML = `<span style="color:#991b1b">${escH(String(err))}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btnFmgSelftest')?.addEventListener('click', runFmgSelftest);
+
 async function pcaTestRule(ruleId) {
   const resp = await fetch(`/admin/api/package-alerts/rules/${ruleId}/test`, {
     method: 'POST', headers: { 'X-CSRF-Token': getCSRF() },
