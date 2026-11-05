@@ -1,13 +1,23 @@
 """FortiManager JSON-RPC client — read-only, no device changes."""
 
+import contextlib
+import functools
+import hashlib
 import json
 import os
 import re
+import tempfile
+import threading
 import time
 import warnings
 
 import requests
 import urllib3
+
+try:  # POSIX only; the app runs on Linux/macOS
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
 
 if os.environ.get("FMG_SUPPRESS_INSECURE_WARNING", "true").lower() == "true":
     warnings.filterwarnings(
@@ -101,7 +111,78 @@ PROXY_ENDPOINTS = [
     },
 ]
 
-PREVIEW_TIMEOUT_SECS = 120
+
+def _env_int(name: str, default: int) -> int:
+    """Positive int from the environment, else ``default`` (bad values ignored)."""
+    try:
+        value = int(os.environ.get(name, ""))
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+# How long one FMG task (stage / preview) may run before we give up. FMG 8.0
+# stage tasks have been seen taking ~110s when the FMG is busy, so raise this
+# (FMG_PREVIEW_TIMEOUT_SECS) in slow environments.
+PREVIEW_TIMEOUT_SECS = _env_int("FMG_PREVIEW_TIMEOUT_SECS", 120)
+# How long a preview waits for another preview in the same ADOM to finish.
+PREVIEW_LOCK_WAIT_SECS = _env_int("FMG_PREVIEW_LOCK_WAIT_SECS", 900)
+_PREVIEW_LOCK_DIR = tempfile.gettempdir()
+_thread_locks: dict[str, threading.Lock] = {}  # fallback when fcntl is unavailable
+_thread_locks_guard = threading.Lock()
+
+
+@contextlib.contextmanager
+def _adom_preview_lock(base_url: str, adom: str, wait_secs: float | None = None):
+    """Serialise install-preview staging per (FortiManager, ADOM).
+
+    FMG's staging context is ADOM-scoped: a second ``install/package`` replaces
+    the first one's context, and overlapping previews queue behind each other
+    on the FMG and can blow the task timeout. An OS file lock (``flock``) covers
+    both threads and the gunicorn worker processes of one container. It does
+    NOT cover other containers (e.g. the collector) — those are still
+    serialised only by FMG itself.
+    """
+    wait = PREVIEW_LOCK_WAIT_SECS if wait_secs is None else wait_secs
+    key = hashlib.sha256(f"{base_url}|{adom}".encode()).hexdigest()[:16]
+    deadline = time.monotonic() + wait
+
+    def _timeout() -> FMGError:
+        return FMGError(
+            f"Timed out after {wait}s waiting for another install preview in ADOM "
+            f"'{adom}' to finish (FMG_PREVIEW_LOCK_WAIT_SECS)"
+        )
+
+    if fcntl is None:  # pragma: no cover
+        with _thread_locks_guard:
+            lock = _thread_locks.setdefault(key, threading.Lock())
+        if not lock.acquire(timeout=wait):
+            raise _timeout()
+        try:
+            yield
+        finally:
+            lock.release()
+        return
+
+    fd = os.open(
+        os.path.join(_PREVIEW_LOCK_DIR, f"4thealth-preview-{key}.lock"),
+        os.O_CREAT | os.O_RDWR,
+        0o600,
+    )
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise _timeout() from None
+                time.sleep(0.25)
+        yield
+    finally:
+        os.close(fd)  # closing the descriptor releases the flock
+
+
 _CONF_STATUS_MAP = {0: "unknown", 1: "insync", 2: "outofsync"}
 # db_status: whether FMG DB has been modified since the last install
 _DB_STATUS_MAP = {0: "unknown", 1: "nomod", 2: "modified"}
@@ -267,8 +348,78 @@ def parse_preview_diff(raw: str) -> dict:
     return {"summary": summary, "vdoms": vdoms_out, "raw": raw}
 
 
+_FMG_VERSION_RE = re.compile(
+    r"v?(\d+)\.(\d+)\.(\d+)(?:\s*[-,]?\s*build\s*0*(\d+))?", re.IGNORECASE
+)
+
+
+@functools.total_ordering
+class FMGVersion:
+    """A parsed FortiManager release, e.g. ``v8.0.2-build0198``.
+
+    Orders on (major, minor, patch) only — the build number is informational —
+    and compares against plain tuples, so ``client.version >= (7, 6)`` works.
+    """
+
+    __slots__ = ("build", "major", "minor", "patch")
+
+    def __init__(self, major: int, minor: int, patch: int, build: int | None = None):
+        self.major, self.minor, self.patch, self.build = major, minor, patch, build
+
+    @property
+    def train(self) -> str:
+        """Release train as ``"major.minor"`` (e.g. ``"8.0"``)."""
+        return f"{self.major}.{self.minor}"
+
+    @property
+    def _key(self) -> tuple:
+        return (self.major, self.minor, self.patch)
+
+    @staticmethod
+    def _other_key(other):
+        if isinstance(other, FMGVersion):
+            return other._key
+        if isinstance(other, tuple):
+            return other
+        return None
+
+    def __eq__(self, other):
+        key = self._other_key(other)
+        return NotImplemented if key is None else self._key == key
+
+    def __lt__(self, other):
+        key = self._other_key(other)
+        return NotImplemented if key is None else self._key < key
+
+    def __hash__(self):
+        return hash(self._key)
+
+    def __repr__(self):
+        return f"FMGVersion({self.major}.{self.minor}.{self.patch}, build={self.build})"
+
+
+def parse_fmg_version(raw) -> "FMGVersion | None":
+    """Parse the ``Version`` field of FMG ``/sys/status``.
+
+    Handles both observed shapes: ``v7.4.5,build2360,240702 (GA)`` (7.x) and
+    ``v8.0.2-build0198 261006 (GA.F)`` (8.0). Returns None when unparseable.
+    """
+    if not isinstance(raw, str):
+        return None
+    m = _FMG_VERSION_RE.search(raw)
+    if not m:
+        return None
+    major, minor, patch, build = m.groups()
+    return FMGVersion(int(major), int(minor), int(patch), int(build) if build else None)
+
+
 class FMGError(Exception):
-    pass
+    """An FMG JSON-RPC failure. ``code`` is FMG's status code when known
+    (e.g. ``-11`` = no permission), else None."""
+
+    def __init__(self, message: str = "", code: int | None = None):
+        super().__init__(message)
+        self.code = code
 
 
 class FMGClient:
@@ -290,6 +441,32 @@ class FMGClient:
         self.session = None
         self._req_id = 0
         self._http = requests.Session()
+        self._version: FMGVersion | None = None
+        # op name -> {url, code, message} for failures a method swallowed.
+        self.degraded: dict[str, dict] = {}
+        # Opt-in traffic capture for building test fixtures (see fmg_recorder).
+        self._recorder = None
+        record_file = os.environ.get("FMG_RECORD_FILE")
+        if record_file:
+            from app.fmg_recorder import Recorder
+
+            self._recorder = Recorder(record_file)
+
+    @property
+    def version(self) -> "FMGVersion | None":
+        """The FortiManager's own release, fetched lazily and cached on success.
+
+        Returns None (never raises) if ``/sys/status`` is unreachable or the
+        token cannot read it, so callers must treat "unknown version" as
+        "use the most compatible behaviour".
+        """
+        if self._version is None:
+            try:
+                raw = self.get_system_status().get("Version")
+            except Exception:
+                return None
+            self._version = parse_fmg_version(raw)
+        return self._version
 
     def _next_id(self) -> int:
         self._req_id += 1
@@ -307,7 +484,10 @@ class FMGClient:
             headers=headers,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if self._recorder is not None:
+            self._recorder.record(body, data)
+        return data
 
     def login(self):
         # Bearer token auth — no login call needed
@@ -366,9 +546,23 @@ class FMGClient:
             body["session"] = self.session
         data = self._post(body)
         result = data.get("result", [{}])[0]
-        if result.get("status", {}).get("code", -1) != 0:
-            raise FMGError(f"FMG error on {url}: {result.get('status')}")
+        status = result.get("status", {})
+        if status.get("code", -1) != 0:
+            raise FMGError(f"FMG error on {url}: {status}", code=status.get("code"))
         return result.get("data", {})
+
+    def _note_degraded(self, op: str, url: str, exc: Exception) -> None:
+        """Record a failure that the caller chose to swallow.
+
+        Return values of the swallowing method are unchanged (still ``{}`` /
+        ``[]``); this only makes the failure observable so "no data" can be
+        told apart from "FMG refused" — see ``degraded``.
+        """
+        self.degraded[op] = {
+            "url": url,
+            "code": getattr(exc, "code", None),
+            "message": str(exc),
+        }
 
     def get_system_status(self) -> dict:
         """Return FortiManager /sys/status."""
@@ -378,14 +572,16 @@ class FMGClient:
         """Return FortiManager /sys/resource/performance (CPU, memory)."""
         try:
             return self._get("/sys/resource/performance")
-        except Exception:
+        except Exception as exc:
+            self._note_degraded("get_performance", "/sys/resource/performance", exc)
             return {}
 
     def get_resource_usage(self) -> dict:
         """Alternative CPU/mem endpoint used on some FMG versions."""
         try:
             return self._get("/sys/resource/usage")
-        except Exception:
+        except Exception as exc:
+            self._note_degraded("get_resource_usage", "/sys/resource/usage", exc)
             return {}
 
     def get_adoms(self) -> list:
@@ -525,7 +721,9 @@ class FMGClient:
                         return
                 time.sleep(2)
             raise FMGError(
-                f"{label} task {taskid} for {device} timed out after {PREVIEW_TIMEOUT_SECS}s"
+                f"{label} task {taskid} for {device} timed out after {PREVIEW_TIMEOUT_SECS}s "
+                "(the FortiManager may be busy with another operation; "
+                "raise FMG_PREVIEW_TIMEOUT_SECS if this recurs)"
             )
 
         # If no packages need staging the device has nothing pending.
@@ -581,6 +779,16 @@ class FMGClient:
                     if r.strip() and r.strip() != "=== No preview result ===":
                         parts.append(r)
                 if parts:
+                    # Record which task id actually carried the diff. 7.4.x
+                    # answers on the preview task; 7.6.7 and 8.0.2 only on the
+                    # stage task — this makes a future FMG change easy to spot.
+                    app_log(
+                        "INFO",
+                        "fmg_client",
+                        f"install_preview diff_source="
+                        f"{'preview_task' if taskid == preview_taskid else 'stage_task'} "
+                        f"taskid={taskid} adom={adom} device={device}",
+                    )
                     return "\n".join(parts)
             return ""
 
@@ -592,84 +800,85 @@ class FMGClient:
         # install/preview — only the LAST staged package's diff survived.
         # Fix: run stage → preview → result → cancel for each package so
         # every VDOM's diff is captured independently.
-        raw_parts: list[str] = []
-        for pkg_name, pkg_vdom_list in pkg_vdoms.items():
-            # Use only the VDOMs assigned to this package — passing all VDOMs
-            # in the scope causes FMG to return an empty diff for per-VDOM packages.
-            pkg_scope = [{"name": device, "vdom": v} for v in pkg_vdom_list]
-            stage_taskid = None
-            preview_taskid = None
-            try:
-                # Step 1: stage this package for preview
+        with _adom_preview_lock(self.base_url, adom):
+            raw_parts: list[str] = []
+            for pkg_name, pkg_vdom_list in pkg_vdoms.items():
+                # Use only the VDOMs assigned to this package — passing all VDOMs
+                # in the scope causes FMG to return an empty diff for per-VDOM packages.
+                pkg_scope = [{"name": device, "vdom": v} for v in pkg_vdom_list]
+                stage_taskid = None
+                preview_taskid = None
                 try:
-                    stage_data = _exec(
-                        "/securityconsole/install/package",
-                        {
-                            "adom": adom,
-                            "flags": ["preview"],
-                            "scope": pkg_scope,
-                            "pkg": pkg_name,
-                        },
-                    )
-                except FMGError as _stage_err:
-                    # RPC rejection — package may have no diff; skip it.
-                    app_log(
-                        "WARNING",
-                        "fmg_client",
-                        f"install_preview SKIP: adom={adom} device={device} "
-                        f"pkg={pkg_name!r} scope_vdoms={pkg_vdom_list} "
-                        f"reason={_stage_err}",
-                    )
-                    continue
-                stage_taskid = stage_data.get("task")
-                if not stage_taskid:
-                    continue
-                _poll(stage_taskid, f"Stage:{pkg_name}")
+                    # Step 1: stage this package for preview
+                    try:
+                        stage_data = _exec(
+                            "/securityconsole/install/package",
+                            {
+                                "adom": adom,
+                                "flags": ["preview"],
+                                "scope": pkg_scope,
+                                "pkg": pkg_name,
+                            },
+                        )
+                    except FMGError as _stage_err:
+                        # RPC rejection — package may have no diff; skip it.
+                        app_log(
+                            "WARNING",
+                            "fmg_client",
+                            f"install_preview SKIP: adom={adom} device={device} "
+                            f"pkg={pkg_name!r} scope_vdoms={pkg_vdom_list} "
+                            f"reason={_stage_err}",
+                        )
+                        continue
+                    stage_taskid = stage_data.get("task")
+                    if not stage_taskid:
+                        continue
+                    _poll(stage_taskid, f"Stage:{pkg_name}")
 
-                # Step 2: generate preview diff linked to this staging context.
-                # FMG 7.6.7's GUI passes preview_taskid = stage_taskid into
-                # install/preview; without it preview/result returns empty.
-                try:
-                    preview_data = _exec(
-                        "/securityconsole/install/preview",
-                        {
-                            "adom": adom,
-                            "flags": ["none"],
-                            "scope": pkg_scope,
-                            "preview_taskid": stage_taskid,
-                        },
-                    )
-                except FMGError:
-                    continue
-                preview_taskid = preview_data.get("task")
-                if not preview_taskid:
-                    continue
-                _poll(preview_taskid, f"Preview:{pkg_name}")
+                    # Step 2: generate preview diff linked to this staging context.
+                    # FMG 7.6.7's GUI passes preview_taskid = stage_taskid into
+                    # install/preview; without it preview/result returns empty.
+                    try:
+                        preview_data = _exec(
+                            "/securityconsole/install/preview",
+                            {
+                                "adom": adom,
+                                "flags": ["none"],
+                                "scope": pkg_scope,
+                                "preview_taskid": stage_taskid,
+                            },
+                        )
+                    except FMGError:
+                        continue
+                    preview_taskid = preview_data.get("task")
+                    if not preview_taskid:
+                        continue
+                    _poll(preview_taskid, f"Preview:{pkg_name}")
 
-                # Step 3: fetch CLI diff text
-                raw = _fetch_result(stage_taskid, preview_taskid, pkg_scope)
-                if raw:
-                    raw_parts.append(raw)
-            except FMGError as exc:
-                if any(
-                    tag in str(exc)
-                    for tag in (f"Stage:{pkg_name}", f"Preview:{pkg_name}")
-                ):
-                    raise
-                # Unexpected mid-cycle error — skip this package
-            finally:
-                # Step 4: cancel ADOM staging lock before next package's cycle.
-                # Must happen even on error so the next staging call gets a
-                # clean context.
-                try:
-                    _exec(
-                        "/securityconsole/package/cancel/install",
-                        {"adom": adom, "scope": pkg_scope},
-                    )
-                except Exception:
-                    pass
+                    # Step 3: fetch CLI diff text
+                    raw = _fetch_result(stage_taskid, preview_taskid, pkg_scope)
+                    if raw:
+                        raw_parts.append(raw)
+                except FMGError as exc:
+                    if any(
+                        tag in str(exc)
+                        for tag in (f"Stage:{pkg_name}", f"Preview:{pkg_name}")
+                    ):
+                        raise
+                    # Unexpected mid-cycle error — skip this package
+                finally:
+                    # Step 4: cancel ADOM staging lock before next package's cycle.
+                    # Must happen even on error so the next staging call gets a
+                    # clean context.
+                    try:
+                        _exec(
+                            "/securityconsole/package/cancel/install",
+                            {"adom": adom, "scope": pkg_scope},
+                        )
+                    except Exception:
+                        pass
 
-        return "\n".join(raw_parts)
+            return "\n".join(raw_parts)
 
     def _proxy(self, adom: str, device: str, resource: str) -> dict:
         body = {
@@ -708,6 +917,26 @@ class FMGClient:
         else:
             device_wrapper = {}
 
+        # Step 1b: FMG could not reach the device at all (e.g. "No tunnel 80" when
+        # the FGFM tunnel is down). The RPC itself still reports success; the
+        # failure lives in the wrapper's own ``status`` and there is NO ``response``.
+        # Treat that as an error — never hand the wrapper back as device data.
+        wrapper_status = device_wrapper.get("status")
+        if (
+            isinstance(wrapper_status, dict)
+            and wrapper_status.get("code", 0) != 0
+            and "response" not in device_wrapper
+        ):
+            return {
+                "rpc_code": rpc_code,
+                "http_status": 502,
+                "payload": {},
+                "proxy_error": {
+                    "code": wrapper_status.get("code"),
+                    "message": str(wrapper_status.get("message", "")).strip(),
+                },
+            }
+
         # Step 2: pull http_status from the wrapper (before diving into response)
         http_status = int(
             device_wrapper.get(
@@ -731,6 +960,18 @@ class FMGClient:
             payload = response
 
         return {"rpc_code": rpc_code, "http_status": http_status, "payload": payload}
+
+    def get_device_proxy_error(self, adom: str, device_name: str) -> dict | None:
+        """Probe whether FMG can currently reach ``device_name`` through its proxy.
+
+        Returns None when the device answers, else ``{"code", "message"}`` from
+        FMG (e.g. ``"... error: No tunnel 80."``). Never raises.
+        """
+        try:
+            r = self._proxy(adom, device_name, "/api/v2/monitor/system/status")
+        except Exception as exc:
+            return {"code": getattr(exc, "code", None), "message": str(exc)}
+        return r.get("proxy_error")
 
     def get_device(self, adom: str, device_name: str) -> dict:
         """Fetch a single device record from FMG's dvmdb — authoritative for inventory fields."""
@@ -1473,11 +1714,21 @@ class FMGClient:
                 body["session"] = self.session
             data = self._post(body)
             result = data.get("result", [{}])[0]
-            if result.get("status", {}).get("code", -1) != 0:
+            status = result.get("status", {})
+            if status.get("code", -1) != 0:
+                self._note_degraded(
+                    "get_audit_log",
+                    "/sys/audit-log",
+                    FMGError(
+                        f"FMG error on /sys/audit-log: {status}",
+                        code=status.get("code"),
+                    ),
+                )
                 return []
             entries = result.get("data", [])
             return entries if isinstance(entries, list) else []
-        except Exception:
+        except Exception as exc:
+            self._note_degraded("get_audit_log", "/sys/audit-log", exc)
             return []
 
     def get_device_health(self, adom: str, device_name: str) -> dict:
