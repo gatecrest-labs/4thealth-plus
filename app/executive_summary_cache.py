@@ -403,18 +403,10 @@ def _hygiene_score(total_findings: int, total_policies: int) -> float | None:
 
 
 def _device_version(d: dict) -> str:
-    """Format a device's firmware version — mirrors versions_cache.py's inline logic."""
-    os_ver = d.get("os_ver", 0)
-    mr = d.get("mr")
-    patch = d.get("patch")
-    major = (
-        int(os_ver) // 100 if str(os_ver).isdigit() and int(os_ver) >= 100 else os_ver
-    )
-    if mr is not None and patch is not None and int(patch) >= 0:
-        return f"v{major}.{mr}.{patch}"
-    if mr is not None:
-        return f"v{major}.{mr}"
-    return "n/a"
+    """Format a device's firmware version (see ``format_fortios_version``)."""
+    from app.fmg_helpers import format_fortios_version
+
+    return format_fortios_version(d)
 
 
 def _list_target_adoms(client) -> list[str]:

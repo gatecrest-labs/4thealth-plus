@@ -28,6 +28,45 @@ def make_client() -> FMGClient:
     )
 
 
+def format_fortios_version(
+    device: dict, *, prefix: str = "v", unknown: str = "n/a"
+) -> str:
+    """Render a dvmdb device record's ``os_ver``/``mr``/``patch`` as ``vX.Y.Z``.
+
+    FMG stores a FortiOS release across three fields:
+      * ``os_ver`` — the major version (``7``, ``8``). Older FMG builds encode it
+        as ``700``; it can also arrive as a string such as ``"7.0"``, where the
+        ``.0`` is a legacy branch suffix and NOT the minor release, so only the
+        leading integer is used.
+      * ``mr`` — the minor release (``6`` for 7.6.x, ``0`` for 8.0.x).
+      * ``patch`` — the patch level; ``-1``/missing/non-numeric means "unknown"
+        and is omitted (``v7.6``), never rendered as ``v7.6.-1``.
+
+    ``prefix`` is ``"v"`` for display and ``""`` for version comparison;
+    ``unknown`` is returned when no usable major/minor is present.
+    """
+    if not isinstance(device, dict):
+        return unknown
+    os_ver = device.get("os_ver")
+    mr = device.get("mr")
+    if os_ver in (None, "", 0, "0") or mr is None:
+        return unknown
+    try:
+        major = int(str(os_ver).strip().split(".")[0])
+        minor = int(mr)
+    except (TypeError, ValueError):
+        return unknown
+    if major >= 100:  # legacy encoding: 700 -> 7
+        major //= 100
+    try:
+        patch = int(device.get("patch"))
+    except (TypeError, ValueError):
+        patch = -1
+    if patch >= 0:
+        return f"{prefix}{major}.{minor}.{patch}"
+    return f"{prefix}{major}.{minor}"
+
+
 def expand_ha_members(d: dict, version: str, adom: str, conn_status: int):
     """Yield one device-record dict per physical unit in an HA cluster (or one for standalone).
 

@@ -61,21 +61,12 @@ _running = threading.Event()
 def _build_firmware_version(device: dict) -> str:
     """Render a device roster dict's os_ver/mr/patch fields as "vX.Y.Z".
 
-    Same shape as the inline logic in app.versions_cache._run_job — pulled
-    out here so app.license_status_cache can attach a firmware string to
-    every device record without duplicating that parsing untested.
+    Thin wrapper over ``app.fmg_helpers.format_fortios_version`` — the one
+    shared implementation — kept so existing callers/tests keep their name.
     """
-    os_ver = device.get("os_ver", 0)
-    mr = device.get("mr")
-    patch = device.get("patch")
-    major = (
-        int(os_ver) // 100 if str(os_ver).isdigit() and int(os_ver) >= 100 else os_ver
-    )
-    if mr is not None and patch is not None and int(patch) >= 0:
-        return f"v{major}.{mr}.{patch}"
-    if mr is not None:
-        return f"v{major}.{mr}"
-    return "n/a"
+    from app.fmg_helpers import format_fortios_version
+
+    return format_fortios_version(device)
 
 
 def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> dict:

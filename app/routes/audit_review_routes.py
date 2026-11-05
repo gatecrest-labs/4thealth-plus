@@ -43,7 +43,7 @@ from app.app_logger import app_log
 from app.decorators import check_adom_access, tab_required
 from app.device_review import _CHECKS_BY_KEY, CHECKS_META, run_checks
 from app.fmg_client import FMGError
-from app.fmg_helpers import make_client
+from app.fmg_helpers import format_fortios_version, make_client
 from app.hygiene import CHECKS as HYGIENE_CHECKS
 from app.security import internal_api_error, upstream_api_error
 
@@ -86,20 +86,7 @@ def device_review_devices(adom: str):
             if not name or name in seen:
                 continue
             seen.add(name)
-            os_ver = d.get("os_ver", 0)
-            mr = d.get("mr")
-            patch = d.get("patch")
-            major = (
-                int(os_ver) // 100
-                if str(os_ver).isdigit() and int(os_ver) >= 100
-                else os_ver
-            )
-            if mr is not None and patch is not None and int(patch) >= 0:
-                version = f"v{major}.{mr}.{patch}"
-            elif mr is not None:
-                version = f"v{major}.{mr}"
-            else:
-                version = ""
+            version = format_fortios_version(d, unknown="")
             devices.append(
                 {
                     "name": name,
