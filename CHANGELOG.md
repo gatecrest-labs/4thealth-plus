@@ -4,6 +4,18 @@ All notable changes to 4THealth+ are documented in this file.
 
 ## [Unreleased]
 
+### FortiManager 7.4 / 7.6 / 8.0 compatibility
+- **Added: FMG version detection.** `FMGClient.version` reads the release from `/sys/status` (lazy, cached, `None` if unavailable) so code can branch on `>= (7, 6)`.
+- **Added: Admin → API Self-Test.** A read-only check of the FMG calls the app depends on (system status, ADOMs, resource/audit-log, devices, revisions, packages, policies, objects, device proxy). Each reports ok / denied (`-11`, token profile lacks access) / error / skipped, with the feature that depends on it. Runs on an explicit click only and never stages an install preview.
+- **Added: recorded FMG fixtures.** `FMG_RECORD_FILE` / `scripts/record_fmg_fixture.py` capture scrubbed JSON-RPC traffic; replay tests run the real client, the self-test and the install-preview chain offline against `tests/fixtures/fmg_8.0.2`. Add 7.4 and 7.6 captures the same way.
+- **Added:** `FMG_PREVIEW_TIMEOUT_SECS` (default 120) and `FMG_PREVIEW_LOCK_WAIT_SECS` (default 900).
+- **Changed: install previews are serialized per FMG + ADOM** with an OS file lock, covering every thread and gunicorn worker of a container (the collector container is still serialized only by FMG). A timeout now says the FMG may be busy. The log records whether the diff came from the preview or the stage task (7.4.x vs 7.6.7 / 8.0.2).
+- **Changed: swallowed FMG failures are recorded** in `client.degraded` (performance, resource usage, audit log so far) and `FMGError` carries FMG's status `code`.
+- **Fixed:** a device whose FGFM tunnel is down (`No tunnel`) was returned as if it were device data, producing blank license status; it is now a 502 with a `proxy_error`.
+- **Fixed / Changed: one firmware-string formatter** (`format_fortios_version`) replaces seven copies. An unknown patch no longer shows as `v7.6.-1`, a string `os_ver` like `"7.0"` uses its leading integer, and a garbage patch value no longer raises.
+- **Build:** `uv.lock` regenerated to match `pyproject.toml`.
+- Verified against FortiManager 8.0.2 with FortiOS 8.0.2; no application change was needed for the 8.0 API.
+
 ### Added
 - **Device Versions — Hardware Model charts:** bar charts under the firmware-version charts (global and per-ADOM) counting online physical units by model. HA clusters are expanded into individual members with Primary/Secondary badges; VM FortiGates group into "Virtual"; no model is "Unknown". New `/api/adoms/<adom>/units` endpoint; the global versions cache now stores `ip`, `serial`, `platform` and `ha_role` per unit.
 

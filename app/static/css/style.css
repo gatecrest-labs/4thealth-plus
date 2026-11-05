@@ -2726,6 +2726,8 @@ a:hover { text-decoration: underline; }
 }
 .badge-green { background: #d1fae5; color: #065f46; }
 .badge-red   { background: #fee2e2; color: #991b1b; }
+.badge-yellow { background: #fef3c7; color: #92400e; }
+.badge-gray   { background: #e5e7eb; color: #374151; }
 
 /* ── AI Assist (Rule Validation) ─────────────────────────────────────────── */
 .badge-beta {
