@@ -50,6 +50,9 @@ _SECRET_KEYS = frozenset(
 )
 
 _IPV4 = re.compile(r"(?<![\d.])(\d{1,3})(?:\.\d{1,3}){3}(?![\d.])")
+_UUID = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 # FortiGate / FortiManager style serials: FGT60FTK21091234, FMG-VM0A17001234
 _SERIAL = re.compile(
@@ -71,6 +74,7 @@ class Scrubber:
         self._ips: dict[str, str] = {}
         self._serials: dict[str, str] = {}
         self._emails: dict[str, str] = {}
+        self._uuids: dict[str, str] = {}
         self._admins: dict[str, str] = {}
 
     def scrub(self, obj):
@@ -107,6 +111,12 @@ class Scrubber:
                     self._map(self._admins, name, "admin-user-{n}")
         for name, repl in self._admins.items():
             s = s.replace(f'"{name}"', f'"{repl}"')
+        s = _UUID.sub(
+            lambda m: self._map(
+                self._uuids, m.group(0).lower(), "00000000-0000-4000-8000-{n:012d}"
+            ),
+            s,
+        )
         s = _EMAIL.sub(
             lambda m: self._map(self._emails, m.group(0), "user{n}@example.com"), s
         )
