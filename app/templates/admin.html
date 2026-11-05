@@ -64,6 +64,7 @@
   <button class="admin-tab" data-panel="backup">Backup</button>
   <button class="admin-tab" data-panel="zone-policy">Zone Policy</button>
   <button class="admin-tab" data-panel="naming-standards">Naming Standards</button>
+  <button class="admin-tab" data-panel="api-selftest">API Self-Test</button>
   <button class="admin-tab" data-panel="logs">Application Logs</button>
 </div>
 
@@ -252,6 +253,28 @@
 
   <div id="aiUsageSummary" class="ai-usage-summary"></div>
   <div id="aiUsageChart" class="ai-usage-chart"></div>
+</div>
+
+<!-- ══════════════════════  API SELF-TEST PANEL  ══════════════════════ -->
+<div class="admin-panel" id="panel-api-selftest">
+
+  <div class="admin-panel-header">
+    <div>
+      <h3>FortiManager API Self-Test</h3>
+      <p class="text-muted" style="font-size:.85rem;margin-top:.2rem">
+        Runs the read-only FortiManager calls this app depends on and reports
+        which work, which the API token is not permitted to make
+        (<code>denied</code>), and which fail for another reason such as a
+        changed response after an FMG upgrade (<code>error</code>). It never
+        stages a package or changes configuration. Takes a few seconds.
+      </p>
+    </div>
+    <button class="btn btn-primary" id="btnFmgSelftest">Run self-test</button>
+  </div>
+
+  <div id="fmgSelftestResult" class="text-muted" style="font-size:.9rem">
+    Not run yet.
+  </div>
 </div>
 
 <!-- ══════════════════════  LOG HYGIENE PANEL  ══════════════════════ -->
