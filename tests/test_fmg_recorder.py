@@ -250,3 +250,22 @@ def test_admin_account_names_inside_cli_text_are_replaced_consistently():
     assert 'edit "admin"' in out["a"]  # the stock account is not identifying
     assert 'edit "keepme"' in out["a"]  # only the admin block is touched
     assert out["b"].count("admin-user-1") == 1  # same mapping everywhere
+
+
+def test_uuids_are_replaced_consistently():
+    u = "fc8489b2-7a61-51f1-6bdf-371ea39998f2"
+    out = _roundtrip(
+        {
+            "mgmt_uuid": u,
+            "again": f"x {u}",
+            "other": "00000000-0000-0000-0000-000000000001",
+        }
+    )
+    assert u not in json.dumps(out)
+    assert out["again"] == f"x {out['mgmt_uuid']}"
+    assert out["other"] != out["mgmt_uuid"]
+
+
+def test_text_that_only_looks_a_little_like_a_uuid_is_untouched():
+    src = {"v": "1234-5678", "t": "v8.0.2-build0198"}
+    assert _roundtrip(src) == src

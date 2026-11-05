@@ -10,7 +10,7 @@
     ]
    },
    "response": {
-    "cid": 1784,
+    "cid": 1864,
     "id": 9,
     "result": [
      {
@@ -46,7 +46,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3e70d4-7965-51f1-5c6d-5eeee60278b5",
+        "uuid": "00000000-0000-4000-8000-000000000001",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -81,7 +81,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d422670-7965-51f1-aa81-ebe4c197a375",
+        "uuid": "00000000-0000-4000-8000-000000000002",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -116,7 +116,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3f658e-7965-51f1-e726-6ba2f2596153",
+        "uuid": "00000000-0000-4000-8000-000000000003",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -151,7 +151,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3d8386-7965-51f1-7031-20beb8ba537f",
+        "uuid": "00000000-0000-4000-8000-000000000004",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -186,7 +186,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3fd320-7965-51f1-db8a-c0e0a4249a1c",
+        "uuid": "00000000-0000-4000-8000-000000000005",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -221,7 +221,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d41a7ea-7965-51f1-bf29-fcd873a27dc3",
+        "uuid": "00000000-0000-4000-8000-000000000006",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -256,7 +256,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d43f702-7965-51f1-cad1-377e71838ccb",
+        "uuid": "00000000-0000-4000-8000-000000000007",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -291,7 +291,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d4382ae-7965-51f1-199c-e642e4aa0926",
+        "uuid": "00000000-0000-4000-8000-000000000008",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -326,7 +326,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d4472ae-7965-51f1-9737-a2e8597adda5",
+        "uuid": "00000000-0000-4000-8000-000000000009",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -361,7 +361,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3df9c4-7965-51f1-2246-997489e4ae02",
+        "uuid": "00000000-0000-4000-8000-000000000010",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -396,7 +396,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d40be98-7965-51f1-0236-e5f82c9fb017",
+        "uuid": "00000000-0000-4000-8000-000000000011",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -431,7 +431,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d429ad8-7965-51f1-f1f7-e09d93179c27",
+        "uuid": "00000000-0000-4000-8000-000000000012",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -466,7 +466,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d413080-7965-51f1-98a3-a9c40260655e",
+        "uuid": "00000000-0000-4000-8000-000000000013",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -501,7 +501,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3eebc2-7965-51f1-1cdb-53f1e3ddc69e",
+        "uuid": "00000000-0000-4000-8000-000000000014",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -536,7 +536,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d404c4c-7965-51f1-e79f-a383992051e7",
+        "uuid": "00000000-0000-4000-8000-000000000015",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -571,7 +571,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "6a94e7fe-d93e-51f1-05e9-6c693396f654",
+        "uuid": "00000000-0000-4000-8000-000000000016",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -606,7 +606,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3cd922-7965-51f1-ec12-6d7f904275d1",
+        "uuid": "00000000-0000-4000-8000-000000000017",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -641,7 +641,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "d3690d7a-d946-51f1-9553-346344a72c4c",
+        "uuid": "00000000-0000-4000-8000-000000000018",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -700,7 +700,7 @@
     ]
    },
    "response": {
-    "cid": 1785,
+    "cid": 1865,
     "id": 10,
     "result": [
      {
@@ -724,7 +724,7 @@
     ]
    },
    "response": {
-    "cid": 1786,
+    "cid": 1866,
     "id": 11,
     "result": [
      {
@@ -748,7 +748,7 @@
     ]
    },
    "response": {
-    "cid": 1787,
+    "cid": 1867,
     "id": 12,
     "result": [
      {
@@ -772,7 +772,7 @@
     ]
    },
    "response": {
-    "cid": 1788,
+    "cid": 1868,
     "id": 13,
     "result": [
      {
@@ -780,7 +780,7 @@
        {
         "adm_pass": [
          "ENC",
-         "SH2oWEAPy7rZJGtvemVIrQ8kWAQUInmvisClVs6qet1OAgzEGNy98dH5jzrwpE="
+         "SH2mJAqIW3GcJviJsTWv9O1J+20ZCVEo/Qnus5rxLFHZ7SdmO5CUJgraesqKhA="
         ],
         "adm_usr": "admin",
         "app_ver": "",
@@ -848,7 +848,7 @@
         "mgmt.__data[7]": 0,
         "mgmt_if": "FTG_Test",
         "mgmt_mode": 3,
-        "mgmt_uuid": "8da1895c-7965-51f1-b110-9b2e97641701",
+        "mgmt_uuid": "00000000-0000-4000-8000-000000000019",
         "mgt_vdom": "root",
         "module_sn": "",
         "mr": 0,
@@ -923,7 +923,7 @@
     ]
    },
    "response": {
-    "cid": 1789,
+    "cid": 1869,
     "id": 14,
     "result": [
      {
@@ -988,7 +988,7 @@
     ]
    },
    "response": {
-    "cid": 1790,
+    "cid": 1870,
     "id": 15,
     "result": [
      {
@@ -997,7 +997,7 @@
        "BIOS version": "04000002",
        "Branch Point": "0198",
        "Build": "0198",
-       "Current Time": "Thu Nov 05 12:17:15 PST 2026",
+       "Current Time": "Thu Nov 05 12:59:17 PST 2026",
        "Daylight Time Saving": "Yes",
        "FIPS Mode": "Disabled",
        "HA Mode": "Stand Alone",
@@ -1037,7 +1037,7 @@
     ]
    },
    "response": {
-    "cid": 1791,
+    "cid": 1871,
     "id": 16,
     "result": [
      {
@@ -1073,7 +1073,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3e70d4-7965-51f1-5c6d-5eeee60278b5",
+        "uuid": "00000000-0000-4000-8000-000000000001",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1108,7 +1108,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d422670-7965-51f1-aa81-ebe4c197a375",
+        "uuid": "00000000-0000-4000-8000-000000000002",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1143,7 +1143,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3f658e-7965-51f1-e726-6ba2f2596153",
+        "uuid": "00000000-0000-4000-8000-000000000003",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1178,7 +1178,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3d8386-7965-51f1-7031-20beb8ba537f",
+        "uuid": "00000000-0000-4000-8000-000000000004",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1213,7 +1213,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3fd320-7965-51f1-db8a-c0e0a4249a1c",
+        "uuid": "00000000-0000-4000-8000-000000000005",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1248,7 +1248,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d41a7ea-7965-51f1-bf29-fcd873a27dc3",
+        "uuid": "00000000-0000-4000-8000-000000000006",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1283,7 +1283,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d43f702-7965-51f1-cad1-377e71838ccb",
+        "uuid": "00000000-0000-4000-8000-000000000007",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1318,7 +1318,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d4382ae-7965-51f1-199c-e642e4aa0926",
+        "uuid": "00000000-0000-4000-8000-000000000008",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1353,7 +1353,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d4472ae-7965-51f1-9737-a2e8597adda5",
+        "uuid": "00000000-0000-4000-8000-000000000009",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1388,7 +1388,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3df9c4-7965-51f1-2246-997489e4ae02",
+        "uuid": "00000000-0000-4000-8000-000000000010",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1423,7 +1423,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d40be98-7965-51f1-0236-e5f82c9fb017",
+        "uuid": "00000000-0000-4000-8000-000000000011",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1458,7 +1458,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d429ad8-7965-51f1-f1f7-e09d93179c27",
+        "uuid": "00000000-0000-4000-8000-000000000012",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1493,7 +1493,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d413080-7965-51f1-98a3-a9c40260655e",
+        "uuid": "00000000-0000-4000-8000-000000000013",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1528,7 +1528,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3eebc2-7965-51f1-1cdb-53f1e3ddc69e",
+        "uuid": "00000000-0000-4000-8000-000000000014",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1563,7 +1563,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d404c4c-7965-51f1-e79f-a383992051e7",
+        "uuid": "00000000-0000-4000-8000-000000000015",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1598,7 +1598,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "6a94e7fe-d93e-51f1-05e9-6c693396f654",
+        "uuid": "00000000-0000-4000-8000-000000000016",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1633,7 +1633,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "7d3cd922-7965-51f1-ec12-6d7f904275d1",
+        "uuid": "00000000-0000-4000-8000-000000000017",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1668,7 +1668,7 @@
         "state": 1,
         "tab_status": "",
         "tz": -1,
-        "uuid": "d3690d7a-d946-51f1-9553-346344a72c4c",
+        "uuid": "00000000-0000-4000-8000-000000000018",
         "workflow_peradmin_install_others": 0,
         "workspace_mode": 0
        },
@@ -1727,7 +1727,7 @@
     ]
    },
    "response": {
-    "cid": 1792,
+    "cid": 1872,
     "id": 17,
     "result": [
      {
@@ -1750,7 +1750,7 @@
     ]
    },
    "response": {
-    "cid": 1793,
+    "cid": 1873,
     "id": 18,
     "result": [
      {
@@ -1772,7 +1772,7 @@
        [
         "timestamp",
         ">=",
-        1793823436
+        1793825957
        ]
       ],
       "range": [
@@ -1789,7 +1789,7 @@
     ]
    },
    "response": {
-    "cid": 1794,
+    "cid": 1874,
     "id": 19,
     "result": [
      {
@@ -1812,7 +1812,7 @@
     ]
    },
    "response": {
-    "cid": 1795,
+    "cid": 1875,
     "id": 20,
     "result": [
      {
@@ -1820,7 +1820,7 @@
        {
         "adm_pass": [
          "ENC",
-         "SH21gUPx9JJaSd+lFtZpr8yT3OGoURVF1LVFGhcQ+n+zZtghOjxCr9jzsEhn0w="
+         "SH2JNXEm1LI47bfYwmQoxfD0akgGSm5u7XfSXGYOso39V11FM+50yNJRli/AWc="
         ],
         "adm_usr": "admin",
         "app_ver": "",
@@ -1888,7 +1888,7 @@
         "mgmt.__data[7]": 0,
         "mgmt_if": "FTG_Test",
         "mgmt_mode": 3,
-        "mgmt_uuid": "8da1895c-7965-51f1-b110-9b2e97641701",
+        "mgmt_uuid": "00000000-0000-4000-8000-000000000019",
         "mgt_vdom": "root",
         "module_sn": "",
         "mr": 0,
@@ -1963,7 +1963,7 @@
     ]
    },
    "response": {
-    "cid": 1796,
+    "cid": 1876,
     "id": 21,
     "result": [
      {
@@ -1971,7 +1971,7 @@
        {
         "adm_pass": [
          "ENC",
-         "SH23EGpwvF/ObbuL9ydMX67ETimYtYcyyihkxVcFu+FfTo0KVThWOQubwJBa4g="
+         "SH2QDTRkH3i9B28UbJaS4OfO2+RXcdeL80bHboJDQm3sNCknn6BT19HtOCWHq0="
         ],
         "adm_usr": "admin",
         "app_ver": "",
@@ -2039,7 +2039,7 @@
         "mgmt.__data[7]": 0,
         "mgmt_if": "FTG_Test",
         "mgmt_mode": 3,
-        "mgmt_uuid": "8da1895c-7965-51f1-b110-9b2e97641701",
+        "mgmt_uuid": "00000000-0000-4000-8000-000000000019",
         "mgt_vdom": "root",
         "module_sn": "",
         "mr": 0,
@@ -2114,7 +2114,7 @@
     ]
    },
    "response": {
-    "cid": 1797,
+    "cid": 1877,
     "id": 22,
     "result": [
      {
@@ -2148,7 +2148,7 @@
     ]
    },
    "response": {
-    "cid": 1798,
+    "cid": 1878,
     "id": 23,
     "result": [
      {
@@ -2217,7 +2217,7 @@
     ]
    },
    "response": {
-    "cid": 1799,
+    "cid": 1879,
     "id": 24,
     "result": [
      {
@@ -2241,7 +2241,7 @@
     ]
    },
    "response": {
-    "cid": 1802,
+    "cid": 1882,
     "id": 27,
     "result": [
      {
@@ -2275,7 +2275,7 @@
         "udp-portrange": [
          "7000-7009"
         ],
-        "uuid": "6e384376-7965-51f1-8716-804da9845b03"
+        "uuid": "00000000-0000-4000-8000-000000000020"
        },
        {
         "app-category": [],
@@ -2295,7 +2295,7 @@
         "proxy": 0,
         "tcp-rst-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e08b052-7965-51f1-ee83-2fd1f6157cda"
+        "uuid": "00000000-0000-4000-8000-000000000021"
        },
        {
         "app-category": [],
@@ -2315,7 +2315,7 @@
         "proxy": 0,
         "tcp-rst-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e03d082-7965-51f1-2eaf-63f5b62c39b2"
+        "uuid": "00000000-0000-4000-8000-000000000022"
        },
        {
         "app-category": [],
@@ -2337,7 +2337,7 @@
         "unset attrs": [
          "icmptype"
         ],
-        "uuid": "6e061838-7965-51f1-0bf0-5b527de9f171"
+        "uuid": "00000000-0000-4000-8000-000000000023"
        },
        {
         "app-category": [],
@@ -2359,7 +2359,7 @@
         "unset attrs": [
          "icmptype"
         ],
-        "uuid": "6e06bbe4-7965-51f1-faed-110dbde3fd50"
+        "uuid": "00000000-0000-4000-8000-000000000024"
        },
        {
         "app-category": [],
@@ -2388,7 +2388,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e04c3de-7965-51f1-56a0-2028d8f872cc"
+        "uuid": "00000000-0000-4000-8000-000000000025"
        },
        {
         "app-category": [],
@@ -2417,7 +2417,7 @@
         "udp-portrange": [
          "1-65535"
         ],
-        "uuid": "6e057130-7965-51f1-9fa7-0edfbef081d5"
+        "uuid": "00000000-0000-4000-8000-000000000026"
        },
        {
         "app-category": [],
@@ -2444,7 +2444,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e09f868-7965-51f1-dda9-795279cc5313"
+        "uuid": "00000000-0000-4000-8000-000000000027"
        },
        {
         "app-category": [],
@@ -2473,7 +2473,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e0a9fc0-7965-51f1-79bc-c9d4c55a1b5a"
+        "uuid": "00000000-0000-4000-8000-000000000028"
        },
        {
         "app-category": [],
@@ -2502,7 +2502,7 @@
         "udp-portrange": [
          "2401"
         ],
-        "uuid": "6e3799ee-7965-51f1-cf0c-cd6197abcdb9"
+        "uuid": "00000000-0000-4000-8000-000000000029"
        },
        {
         "app-category": [],
@@ -2533,7 +2533,7 @@
         "udp-portrange": [
          "135"
         ],
-        "uuid": "6e1db506-7965-51f1-244c-c911b4b8ba4c"
+        "uuid": "00000000-0000-4000-8000-000000000030"
        },
        {
         "app-category": [],
@@ -2562,7 +2562,7 @@
         "udp-portrange": [
          "67-68"
         ],
-        "uuid": "6e0b49fc-7965-51f1-24e7-27ec72fb60c0"
+        "uuid": "00000000-0000-4000-8000-000000000031"
        },
        {
         "app-category": [],
@@ -2592,7 +2592,7 @@
          "546",
          "547"
         ],
-        "uuid": "6e33a7c6-7965-51f1-efde-f6507a9d510a"
+        "uuid": "00000000-0000-4000-8000-000000000032"
        },
        {
         "app-category": [],
@@ -2623,7 +2623,7 @@
         "udp-portrange": [
          "53"
         ],
-        "uuid": "6e0beef2-7965-51f1-f3ca-a8e9d7ca0496"
+        "uuid": "00000000-0000-4000-8000-000000000033"
        },
        {
         "app-category": [],
@@ -2643,7 +2643,7 @@
         "proxy": 0,
         "tcp-rst-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e0956b0-7965-51f1-5b8b-e41f38656c19"
+        "uuid": "00000000-0000-4000-8000-000000000034"
        },
        {
         "app-category": [],
@@ -2670,7 +2670,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e0c95dc-7965-51f1-f779-37f3460aef71"
+        "uuid": "00000000-0000-4000-8000-000000000035"
        },
        {
         "app-category": [],
@@ -2699,7 +2699,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e0d40ae-7965-51f1-a47c-4c729cc02e46"
+        "uuid": "00000000-0000-4000-8000-000000000036"
        },
        {
         "app-category": [],
@@ -2728,7 +2728,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e0dea18-7965-51f1-ead8-c20bde9991d7"
+        "uuid": "00000000-0000-4000-8000-000000000037"
        },
        {
         "app-category": [],
@@ -2757,7 +2757,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e0e8e14-7965-51f1-3b2f-82c3af2c896a"
+        "uuid": "00000000-0000-4000-8000-000000000038"
        },
        {
         "app-category": [],
@@ -2784,7 +2784,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e0f3184-7965-51f1-4ed0-207255fca651"
+        "uuid": "00000000-0000-4000-8000-000000000039"
        },
        {
         "app-category": [],
@@ -2804,7 +2804,7 @@
         "proxy": 0,
         "tcp-rst-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e075f04-7965-51f1-f653-9dd67954e450"
+        "uuid": "00000000-0000-4000-8000-000000000040"
        },
        {
         "app-category": [],
@@ -2833,7 +2833,7 @@
          "2152",
          "3386"
         ],
-        "uuid": "6e080cc4-7965-51f1-e090-968f6662857c"
+        "uuid": "00000000-0000-4000-8000-000000000041"
        },
        {
         "app-category": [],
@@ -2865,7 +2865,7 @@
         "udp-portrange": [
          "1719"
         ],
-        "uuid": "6e0fd7ba-7965-51f1-d84d-c53ab6ec4baf"
+        "uuid": "00000000-0000-4000-8000-000000000042"
        },
        {
         "app-category": [],
@@ -2894,7 +2894,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e107f26-7965-51f1-dbd7-ac23ccf31f71"
+        "uuid": "00000000-0000-4000-8000-000000000043"
        },
        {
         "app-category": [],
@@ -2923,7 +2923,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e11232c-7965-51f1-1699-d56319702d10"
+        "uuid": "00000000-0000-4000-8000-000000000044"
        },
        {
         "app-category": [],
@@ -2953,7 +2953,7 @@
          "500",
          "4500"
         ],
-        "uuid": "6e11de98-7965-51f1-f274-869caf538576"
+        "uuid": "00000000-0000-4000-8000-000000000045"
        },
        {
         "app-category": [],
@@ -2982,7 +2982,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e1283fc-7965-51f1-e958-c0afb7ad55ea"
+        "uuid": "00000000-0000-4000-8000-000000000046"
        },
        {
         "app-category": [],
@@ -3011,7 +3011,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e132a00-7965-51f1-2303-d9faf9cd63f2"
+        "uuid": "00000000-0000-4000-8000-000000000047"
        },
        {
         "app-category": [],
@@ -3032,7 +3032,7 @@
         "unset attrs": [
          "icmpcode"
         ],
-        "uuid": "6e1c565c-7965-51f1-408c-685729a67b2c"
+        "uuid": "00000000-0000-4000-8000-000000000048"
        },
        {
         "app-category": [],
@@ -3053,7 +3053,7 @@
         "unset attrs": [
          "icmpcode"
         ],
-        "uuid": "6e1bb184-7965-51f1-549b-cba03e6013b0"
+        "uuid": "00000000-0000-4000-8000-000000000049"
        },
        {
         "app-category": [],
@@ -3082,7 +3082,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e14754a-7965-51f1-4af8-74f9d8befba5"
+        "uuid": "00000000-0000-4000-8000-000000000050"
        },
        {
         "app-category": [],
@@ -3109,7 +3109,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e13cfd2-7965-51f1-d3b9-ee5987ba6b40"
+        "uuid": "00000000-0000-4000-8000-000000000051"
        },
        {
         "app-category": [],
@@ -3142,7 +3142,7 @@
          "88",
          "464"
         ],
-        "uuid": "6e3ae7f2-7965-51f1-67c5-e6365dba4401"
+        "uuid": "00000000-0000-4000-8000-000000000052"
        },
        {
         "app-category": [],
@@ -3173,7 +3173,7 @@
         "udp-portrange": [
          "1701"
         ],
-        "uuid": "6e151afe-7965-51f1-ddef-961a07626580"
+        "uuid": "00000000-0000-4000-8000-000000000053"
        },
        {
         "app-category": [],
@@ -3202,7 +3202,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e15c26a-7965-51f1-05c9-28ccf10f5553"
+        "uuid": "00000000-0000-4000-8000-000000000054"
        },
        {
         "app-category": [],
@@ -3231,7 +3231,7 @@
         "udp-portrange": [
          "389"
         ],
-        "uuid": "6e3b9058-7965-51f1-b45e-17d2463db164"
+        "uuid": "00000000-0000-4000-8000-000000000055"
        },
        {
         "app-category": [],
@@ -3263,7 +3263,7 @@
          "2427",
          "2727"
         ],
-        "uuid": "6e2c54e4-7965-51f1-fcc9-0c455065fbad"
+        "uuid": "00000000-0000-4000-8000-000000000056"
        },
        {
         "app-category": [],
@@ -3292,7 +3292,7 @@
         "udp-portrange": [
          "1024-5000"
         ],
-        "uuid": "6e3a3d98-7965-51f1-206e-9ecf93c3aae8"
+        "uuid": "00000000-0000-4000-8000-000000000057"
        },
        {
         "app-category": [],
@@ -3322,7 +3322,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e3105b6-7965-51f1-250e-85084a86910a"
+        "uuid": "00000000-0000-4000-8000-000000000058"
        },
        {
         "app-category": [],
@@ -3351,7 +3351,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e31ad4a-7965-51f1-0be1-551312a3c920"
+        "uuid": "00000000-0000-4000-8000-000000000059"
        },
        {
         "app-category": [],
@@ -3384,7 +3384,7 @@
          "111",
          "2049"
         ],
-        "uuid": "6e171912-7965-51f1-5175-73011a2cb654"
+        "uuid": "00000000-0000-4000-8000-000000000060"
        },
        {
         "app-category": [],
@@ -3411,7 +3411,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e17c0f6-7965-51f1-2911-1db346d56437"
+        "uuid": "00000000-0000-4000-8000-000000000061"
        },
        {
         "app-category": [],
@@ -3438,7 +3438,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e3ce2aa-7965-51f1-d6c2-1f513cf6c53a"
+        "uuid": "00000000-0000-4000-8000-000000000062"
        },
        {
         "app-category": [],
@@ -3469,7 +3469,7 @@
         "udp-portrange": [
          "123"
         ],
-        "uuid": "6e186bbe-7965-51f1-527a-30bc7035da94"
+        "uuid": "00000000-0000-4000-8000-000000000063"
        },
        {
         "app-category": [],
@@ -3496,7 +3496,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e166dbe-7965-51f1-447d-f326ad47bfa2"
+        "uuid": "00000000-0000-4000-8000-000000000064"
        },
        {
         "app-category": [],
@@ -3527,7 +3527,7 @@
         "udp-portrange": [
          "111"
         ],
-        "uuid": "6e1d05a2-7965-51f1-0511-05a7b4664c1c"
+        "uuid": "00000000-0000-4000-8000-000000000065"
        },
        {
         "app-category": [],
@@ -3547,7 +3547,7 @@
         "proxy": 0,
         "tcp-rst-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e191186-7965-51f1-ff9d-6999902b29ff"
+        "uuid": "00000000-0000-4000-8000-000000000066"
        },
        {
         "app-category": [],
@@ -3578,7 +3578,7 @@
         "udp-portrange": [
          "5632"
         ],
-        "uuid": "6e19b974-7965-51f1-29f3-e006d94e2ab9"
+        "uuid": "00000000-0000-4000-8000-000000000067"
        },
        {
         "app-category": [],
@@ -3601,7 +3601,7 @@
         "unset attrs": [
          "icmpcode"
         ],
-        "uuid": "6e1a5d20-7965-51f1-0b6b-315fea391561"
+        "uuid": "00000000-0000-4000-8000-000000000068"
        },
        {
         "app-category": [],
@@ -3622,7 +3622,7 @@
         "unset attrs": [
          "icmpcode"
         ],
-        "uuid": "6e3045a4-7965-51f1-8ec9-299621ce9c8d"
+        "uuid": "00000000-0000-4000-8000-000000000069"
        },
        {
         "app-category": [],
@@ -3651,7 +3651,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e1e603c-7965-51f1-46a0-425c0561defc"
+        "uuid": "00000000-0000-4000-8000-000000000070"
        },
        {
         "app-category": [],
@@ -3680,7 +3680,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e1f0762-7965-51f1-00c2-b48953657a3c"
+        "uuid": "00000000-0000-4000-8000-000000000071"
        },
        {
         "app-category": [],
@@ -3709,7 +3709,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e1fac8a-7965-51f1-5d48-a63c4117f7b3"
+        "uuid": "00000000-0000-4000-8000-000000000072"
        },
        {
         "app-category": [],
@@ -3739,7 +3739,7 @@
          "27910",
          "27960"
         ],
-        "uuid": "6e205806-7965-51f1-5c56-58ecacb3202f"
+        "uuid": "00000000-0000-4000-8000-000000000073"
        },
        {
         "app-category": [],
@@ -3769,7 +3769,7 @@
          "1812",
          "1813"
         ],
-        "uuid": "6e36492c-7965-51f1-ab02-9d38c9f447f2"
+        "uuid": "00000000-0000-4000-8000-000000000074"
        },
        {
         "app-category": [],
@@ -3797,7 +3797,7 @@
          "1645",
          "1646"
         ],
-        "uuid": "6e36f1f6-7965-51f1-9609-be1f7222d55e"
+        "uuid": "00000000-0000-4000-8000-000000000075"
        },
        {
         "app-category": [],
@@ -3824,7 +3824,7 @@
         "udp-portrange": [
          "7070"
         ],
-        "uuid": "6e20fdec-7965-51f1-b818-d81ee19b816c"
+        "uuid": "00000000-0000-4000-8000-000000000076"
        },
        {
         "app-category": [],
@@ -3853,7 +3853,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e32560a-7965-51f1-f0f7-99199d30c3c9"
+        "uuid": "00000000-0000-4000-8000-000000000077"
        },
        {
         "app-category": [],
@@ -3880,7 +3880,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e21b6a6-7965-51f1-73ed-6cb2c8107a52"
+        "uuid": "00000000-0000-4000-8000-000000000078"
        },
        {
         "app-category": [],
@@ -3909,7 +3909,7 @@
         "udp-portrange": [
          "520"
         ],
-        "uuid": "6e225f98-7965-51f1-738c-e41381c41fda"
+        "uuid": "00000000-0000-4000-8000-000000000079"
        },
        {
         "app-category": [],
@@ -3936,7 +3936,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e230664-7965-51f1-0605-91128c49b50f"
+        "uuid": "00000000-0000-4000-8000-000000000080"
        },
        {
         "app-category": [],
@@ -3963,7 +3963,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e23b320-7965-51f1-9842-bbced6007fc7"
+        "uuid": "00000000-0000-4000-8000-000000000081"
        },
        {
         "app-category": [],
@@ -3996,7 +3996,7 @@
         "udp-portrange": [
          "554"
         ],
-        "uuid": "6e3994c4-7965-51f1-a0b0-c9643577774c"
+        "uuid": "00000000-0000-4000-8000-000000000082"
        },
        {
         "app-category": [],
@@ -4025,7 +4025,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e265b48-7965-51f1-43d1-8e102c3bf123"
+        "uuid": "00000000-0000-4000-8000-000000000083"
        },
        {
         "app-category": [],
@@ -4054,7 +4054,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e245ec4-7965-51f1-1130-42ed002ae6ed"
+        "uuid": "00000000-0000-4000-8000-000000000084"
        },
        {
         "app-category": [],
@@ -4085,7 +4085,7 @@
         "udp-portrange": [
          "5060"
         ],
-        "uuid": "6e2506b2-7965-51f1-5f7d-1cf6010d820f"
+        "uuid": "00000000-0000-4000-8000-000000000085"
        },
        {
         "app-category": [],
@@ -4114,7 +4114,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e25b3aa-7965-51f1-3fd7-22aa44e7577a"
+        "uuid": "00000000-0000-4000-8000-000000000086"
        },
        {
         "app-category": [],
@@ -4143,7 +4143,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e3c3936-7965-51f1-5d95-202768c67226"
+        "uuid": "00000000-0000-4000-8000-000000000087"
        },
        {
         "app-category": [],
@@ -4172,7 +4172,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e270610-7965-51f1-5723-e019125a1953"
+        "uuid": "00000000-0000-4000-8000-000000000088"
        },
        {
         "app-category": [],
@@ -4201,7 +4201,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e27ae26-7965-51f1-cbcc-6d3039a87afc"
+        "uuid": "00000000-0000-4000-8000-000000000089"
        },
        {
         "app-category": [],
@@ -4232,7 +4232,7 @@
         "udp-portrange": [
          "161-162"
         ],
-        "uuid": "6e2858a8-7965-51f1-0a85-48c80e50588d"
+        "uuid": "00000000-0000-4000-8000-000000000090"
        },
        {
         "app-category": [],
@@ -4263,7 +4263,7 @@
         "udp-portrange": [
          "1080"
         ],
-        "uuid": "6e34f7d4-7965-51f1-ab85-e31bca773043"
+        "uuid": "00000000-0000-4000-8000-000000000091"
        },
        {
         "app-category": [],
@@ -4292,7 +4292,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e344f78-7965-51f1-a256-d02005b43329"
+        "uuid": "00000000-0000-4000-8000-000000000092"
        },
        {
         "app-category": [],
@@ -4321,7 +4321,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e290a96-7965-51f1-a0ec-daf63656d137"
+        "uuid": "00000000-0000-4000-8000-000000000093"
        },
        {
         "app-category": [],
@@ -4350,7 +4350,7 @@
         "udp-portrange": [
          "514"
         ],
-        "uuid": "6e29b572-7965-51f1-b19f-88d8f105aa02"
+        "uuid": "00000000-0000-4000-8000-000000000094"
        },
        {
         "app-category": [],
@@ -4377,7 +4377,7 @@
         "udp-portrange": [
          "517-518"
         ],
-        "uuid": "6e2a5b44-7965-51f1-6c2e-e1e3f6a603be"
+        "uuid": "00000000-0000-4000-8000-000000000095"
        },
        {
         "app-category": [],
@@ -4406,7 +4406,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e2b038c-7965-51f1-d9d0-a73951f5c3b8"
+        "uuid": "00000000-0000-4000-8000-000000000096"
        },
        {
         "app-category": [],
@@ -4435,7 +4435,7 @@
         "udp-portrange": [
          "69"
         ],
-        "uuid": "6e2baac6-7965-51f1-4513-7fd4a784bcdc"
+        "uuid": "00000000-0000-4000-8000-000000000097"
        },
        {
         "app-category": [],
@@ -4456,7 +4456,7 @@
         "unset attrs": [
          "icmpcode"
         ],
-        "uuid": "6e1b0b80-7965-51f1-8734-5740e2b9a0ef"
+        "uuid": "00000000-0000-4000-8000-000000000098"
        },
        {
         "app-category": [],
@@ -4485,7 +4485,7 @@
         "udp-portrange": [
          "33434-33535"
         ],
-        "uuid": "6e38eaba-7965-51f1-b523-f94557aff754"
+        "uuid": "00000000-0000-4000-8000-000000000099"
        },
        {
         "app-category": [],
@@ -4512,7 +4512,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e2cfc8c-7965-51f1-da25-6b53a9275076"
+        "uuid": "00000000-0000-4000-8000-000000000100"
        },
        {
         "app-category": [],
@@ -4539,7 +4539,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e2da36c-7965-51f1-ead5-4e39874fc4cd"
+        "uuid": "00000000-0000-4000-8000-000000000101"
        },
        {
         "app-category": [],
@@ -4568,7 +4568,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e32feac-7965-51f1-7a5a-0c3b9cb3471d"
+        "uuid": "00000000-0000-4000-8000-000000000102"
        },
        {
         "app-category": [],
@@ -4595,7 +4595,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e2e4a88-7965-51f1-e22d-f5bf9efc0109"
+        "uuid": "00000000-0000-4000-8000-000000000103"
        },
        {
         "app-category": [],
@@ -4623,7 +4623,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e2ef244-7965-51f1-4ef6-1c71a8d52466"
+        "uuid": "00000000-0000-4000-8000-000000000104"
        },
        {
         "app-category": [],
@@ -4654,7 +4654,7 @@
         "udp-portrange": [
          "1512"
         ],
-        "uuid": "6e35a0f8-7965-51f1-e371-130a95dc5d10"
+        "uuid": "00000000-0000-4000-8000-000000000105"
        },
        {
         "app-category": [],
@@ -4683,7 +4683,7 @@
         "tcp-timewait-timer": 0,
         "udp-idle-timer": 0,
         "udp-portrange": [],
-        "uuid": "6e2f9cc6-7965-51f1-35bf-2a7f1335c975"
+        "uuid": "00000000-0000-4000-8000-000000000106"
        },
        {
         "app-category": [],
@@ -4704,7 +4704,7 @@
          "0-65535:0-65535"
         ],
         "tcp-rst-timer": 0,
-        "uuid": "6e3d8c00-7965-51f1-d880-cc4470498801"
+        "uuid": "00000000-0000-4000-8000-000000000107"
        }
       ],
       "status": {
@@ -4733,7 +4733,7 @@
     ]
    },
    "response": {
-    "cid": 1805,
+    "cid": 1885,
     "id": 30,
     "result": [
      {
@@ -4789,7 +4789,7 @@
     ]
    },
    "response": {
-    "cid": 1806,
+    "cid": 1886,
     "id": 31,
     "result": [
      {
@@ -5284,7 +5284,7 @@
     ]
    },
    "response": {
-    "cid": 1807,
+    "cid": 1887,
     "id": 32,
     "result": [
      {
@@ -5616,7 +5616,7 @@
     ]
    },
    "response": {
-    "cid": 1808,
+    "cid": 1888,
     "id": 33,
     "result": [
      {
@@ -5790,13 +5790,13 @@
            "mac": "48:3a:02:9f:b7:92",
            "mask": 24,
            "name": "wan1",
-           "rx_bytes": 257001915,
+           "rx_bytes": 361623217,
            "rx_errors": 0,
-           "rx_packets": 310123,
+           "rx_packets": 432297,
            "speed": 1000.0,
-           "tx_bytes": 24748190,
+           "tx_bytes": 40557406,
            "tx_errors": 0,
-           "tx_packets": 79610
+           "tx_packets": 123520
           },
           "wan2": {
            "alias": "",
@@ -5824,16 +5824,16 @@
            "mac": "00:00:00:00:00:00",
            "mask": 24,
            "name": "FTG_Test",
-           "rx_bytes": 21903319,
+           "rx_bytes": 36211160,
            "rx_errors": 0,
-           "rx_packets": 81624,
+           "rx_packets": 121126,
            "speed": 0.0,
-           "tx_bytes": 225623958,
+           "tx_bytes": 319468196,
            "tx_errors": 0,
-           "tx_packets": 217534
+           "tx_packets": 310960
           }
          },
-         "revision": "1793909841.845962",
+         "revision": "1793912362.903212",
          "serial": "FGT0000000000001",
          "status": "success",
          "vdom": "root",
@@ -5865,7 +5865,7 @@
     ]
    },
    "response": {
-    "cid": 1809,
+    "cid": 1889,
     "id": 34,
     "result": [
      {
@@ -5905,7 +5905,7 @@
     ]
    },
    "response": {
-    "cid": 1810,
+    "cid": 1890,
     "id": 35,
     "result": [
      {
@@ -5950,12 +5950,12 @@
     ]
    },
    "response": {
-    "cid": 1811,
+    "cid": 1891,
     "id": 36,
     "result": [
      {
       "data": {
-       "task": 130
+       "task": 132
       },
       "status": {
        "code": 0,
@@ -5971,12 +5971,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    },
    "response": {
-    "cid": 1812,
+    "cid": 1892,
     "id": 37,
     "result": [
      {
@@ -5984,16 +5984,16 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 130,
+       "id": 132,
        "line": null,
        "num_done": 0,
        "num_err": 0,
        "num_lines": 0,
        "num_warn": 0,
        "percent": 0,
-       "pid": 11779,
+       "pid": 13291,
        "src": 1,
-       "start_tm": 1793909842,
+       "start_tm": 1793912363,
        "state": 0,
        "title": "Copy Package 'FortiWiFi-71G-New'",
        "tot_percent": 0,
@@ -6003,7 +6003,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    }
@@ -6013,12 +6013,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    },
    "response": {
-    "cid": 1813,
+    "cid": 1893,
     "id": 38,
     "result": [
      {
@@ -6026,7 +6026,7 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 130,
+       "id": 132,
        "line": [
         {
          "detail": "",
@@ -6038,7 +6038,7 @@
          "oid": 169,
          "percent": 0,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 0,
          "vdom": "root"
         },
@@ -6052,7 +6052,7 @@
          "oid": 0,
          "percent": 0,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 0,
          "vdom": ""
         }
@@ -6062,9 +6062,9 @@
        "num_lines": 2,
        "num_warn": 0,
        "percent": 0,
-       "pid": 11779,
+       "pid": 13291,
        "src": 1,
-       "start_tm": 1793909842,
+       "start_tm": 1793912363,
        "state": 0,
        "title": "Copy Package 'FortiWiFi-71G-New'",
        "tot_percent": 0,
@@ -6074,7 +6074,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    }
@@ -6084,12 +6084,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    },
    "response": {
-    "cid": 1814,
+    "cid": 1894,
     "id": 39,
     "result": [
      {
@@ -6097,7 +6097,7 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 130,
+       "id": 132,
        "line": [
         {
          "detail": "",
@@ -6109,7 +6109,7 @@
          "oid": 169,
          "percent": 0,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 0,
          "vdom": "root"
         },
@@ -6123,7 +6123,7 @@
          "oid": 0,
          "percent": 0,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 0,
          "vdom": ""
         }
@@ -6133,9 +6133,9 @@
        "num_lines": 2,
        "num_warn": 0,
        "percent": 0,
-       "pid": 11779,
+       "pid": 13291,
        "src": 1,
-       "start_tm": 1793909842,
+       "start_tm": 1793912363,
        "state": 0,
        "title": "Copy Package 'FortiWiFi-71G-New'",
        "tot_percent": 0,
@@ -6145,7 +6145,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    }
@@ -6155,12 +6155,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    },
    "response": {
-    "cid": 1815,
+    "cid": 1895,
     "id": 40,
     "result": [
      {
@@ -6168,20 +6168,28 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 130,
+       "id": 132,
        "line": [
         {
-         "detail": "",
-         "end_tm": 0,
+         "detail": "Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
+         "end_tm": 1793912370,
          "err": 0,
-         "history": null,
+         "history": [
+          {
+           "detail": "2026-11-05 12:59:30:Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
+           "name": "FortiWiFi-71G[copy]",
+           "percent": 1,
+           "state": 1,
+           "vdom": "root"
+          }
+         ],
          "ip": "10.250.0.1",
          "name": "FortiWiFi-71G[copy]",
          "oid": 169,
-         "percent": 0,
+         "percent": 1,
          "poid": 0,
-         "start_tm": 1793909844,
-         "state": 0,
+         "start_tm": 1793912365,
+         "state": 1,
          "vdom": "root"
         },
         {
@@ -6194,7 +6202,7 @@
          "oid": 0,
          "percent": 0,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 0,
          "vdom": ""
         }
@@ -6204,19 +6212,19 @@
        "num_lines": 2,
        "num_warn": 0,
        "percent": 0,
-       "pid": 11779,
+       "pid": 13291,
        "src": 1,
-       "start_tm": 1793909842,
-       "state": 0,
+       "start_tm": 1793912363,
+       "state": 1,
        "title": "Copy Package 'FortiWiFi-71G-New'",
-       "tot_percent": 0,
+       "tot_percent": 1,
        "user": "api-user"
       },
       "status": {
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    }
@@ -6226,12 +6234,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    },
    "response": {
-    "cid": 1816,
+    "cid": 1896,
     "id": 41,
     "result": [
      {
@@ -6239,15 +6247,15 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 130,
+       "id": 132,
        "line": [
         {
          "detail": "Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
-         "end_tm": 1793909849,
+         "end_tm": 1793912370,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:29:Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
+           "detail": "2026-11-05 12:59:30:Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
            "name": "FortiWiFi-71G[copy]",
            "percent": 1,
            "state": 1,
@@ -6259,7 +6267,7 @@
          "oid": 169,
          "percent": 1,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 1,
          "vdom": "root"
         },
@@ -6273,7 +6281,7 @@
          "oid": 0,
          "percent": 0,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 0,
          "vdom": ""
         }
@@ -6283,9 +6291,9 @@
        "num_lines": 2,
        "num_warn": 0,
        "percent": 0,
-       "pid": 11779,
+       "pid": 13291,
        "src": 1,
-       "start_tm": 1793909842,
+       "start_tm": 1793912363,
        "state": 1,
        "title": "Copy Package 'FortiWiFi-71G-New'",
        "tot_percent": 1,
@@ -6295,7 +6303,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    }
@@ -6305,12 +6313,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    },
    "response": {
-    "cid": 1817,
+    "cid": 1897,
     "id": 42,
     "result": [
      {
@@ -6318,15 +6326,15 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 130,
+       "id": 132,
        "line": [
         {
          "detail": "Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
-         "end_tm": 1793909849,
+         "end_tm": 1793912370,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:29:Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
+           "detail": "2026-11-05 12:59:30:Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
            "name": "FortiWiFi-71G[copy]",
            "percent": 1,
            "state": 1,
@@ -6338,7 +6346,7 @@
          "oid": 169,
          "percent": 1,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 1,
          "vdom": "root"
         },
@@ -6352,7 +6360,7 @@
          "oid": 0,
          "percent": 0,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 0,
          "vdom": ""
         }
@@ -6362,9 +6370,9 @@
        "num_lines": 2,
        "num_warn": 0,
        "percent": 0,
-       "pid": 11779,
+       "pid": 13291,
        "src": 1,
-       "start_tm": 1793909842,
+       "start_tm": 1793912363,
        "state": 1,
        "title": "Copy Package 'FortiWiFi-71G-New'",
        "tot_percent": 1,
@@ -6374,7 +6382,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    }
@@ -6384,12 +6392,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    },
    "response": {
-    "cid": 1818,
+    "cid": 1898,
     "id": 43,
     "result": [
      {
@@ -6397,15 +6405,15 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 130,
+       "id": 132,
        "line": [
         {
          "detail": "Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
-         "end_tm": 1793909849,
+         "end_tm": 1793912370,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:29:Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
+           "detail": "2026-11-05 12:59:30:Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
            "name": "FortiWiFi-71G[copy]",
            "percent": 1,
            "state": 1,
@@ -6417,7 +6425,7 @@
          "oid": 169,
          "percent": 1,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 1,
          "vdom": "root"
         },
@@ -6431,7 +6439,7 @@
          "oid": 0,
          "percent": 0,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 0,
          "vdom": ""
         }
@@ -6441,9 +6449,9 @@
        "num_lines": 2,
        "num_warn": 0,
        "percent": 0,
-       "pid": 11779,
+       "pid": 13291,
        "src": 1,
-       "start_tm": 1793909842,
+       "start_tm": 1793912363,
        "state": 1,
        "title": "Copy Package 'FortiWiFi-71G-New'",
        "tot_percent": 1,
@@ -6453,7 +6461,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    }
@@ -6463,35 +6471,35 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    },
    "response": {
-    "cid": 1819,
+    "cid": 1899,
     "id": 44,
     "result": [
      {
       "data": {
        "adom": 3,
-       "end_tm": 1793909856,
+       "end_tm": 1793912377,
        "flags": 0,
-       "id": 130,
+       "id": 132,
        "line": [
         {
          "detail": "Copy to device completed.",
-         "end_tm": 1793909856,
+         "end_tm": 1793912377,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:29:Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
+           "detail": "2026-11-05 12:59:30:Copying policy to device database for device 'FortiWiFi-71G', VDOM 'root'.",
            "name": "FortiWiFi-71G[copy]",
            "percent": 1,
            "state": 1,
            "vdom": "root"
           },
           {
-           "detail": "2026-11-05 12:17:36:Copy to device completed.",
+           "detail": "2026-11-05 12:59:37:Copy to device completed.",
            "name": "FortiWiFi-71G[copy]",
            "percent": 100,
            "state": 4,
@@ -6503,17 +6511,17 @@
          "oid": 169,
          "percent": 100,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 4,
          "vdom": "root"
         },
         {
          "detail": "Install summary file is ready.",
-         "end_tm": 1793909856,
+         "end_tm": 1793912377,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:36:Install summary file is ready.",
+           "detail": "2026-11-05 12:59:37:Install summary file is ready.",
            "name": "Write summary[preview]",
            "percent": 100,
            "state": 4,
@@ -6525,7 +6533,7 @@
          "oid": 0,
          "percent": 100,
          "poid": 0,
-         "start_tm": 1793909844,
+         "start_tm": 1793912365,
          "state": 4,
          "vdom": ""
         }
@@ -6535,9 +6543,9 @@
        "num_lines": 2,
        "num_warn": 0,
        "percent": 100,
-       "pid": 11779,
+       "pid": 13291,
        "src": 1,
-       "start_tm": 1793909842,
+       "start_tm": 1793912363,
        "state": 4,
        "title": "Copy Package 'FortiWiFi-71G-New'",
        "tot_percent": 200,
@@ -6547,7 +6555,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/130"
+      "url": "/task/task/132"
      }
     ]
    }
@@ -6562,7 +6570,7 @@
        "flags": [
         "none"
        ],
-       "preview_taskid": 130,
+       "preview_taskid": 132,
        "scope": [
         {
          "name": "FortiWiFi-71G",
@@ -6575,12 +6583,12 @@
     ]
    },
    "response": {
-    "cid": 1820,
+    "cid": 1900,
     "id": 45,
     "result": [
      {
       "data": {
-       "task": 131
+       "task": 133
       },
       "status": {
        "code": 0,
@@ -6596,12 +6604,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    },
    "response": {
-    "cid": 1821,
+    "cid": 1901,
     "id": 46,
     "result": [
      {
@@ -6609,16 +6617,16 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 131,
+       "id": 133,
        "line": null,
        "num_done": 0,
        "num_err": 0,
        "num_lines": 0,
        "num_warn": 0,
        "percent": 0,
-       "pid": 11823,
+       "pid": 13320,
        "src": 16,
-       "start_tm": 1793909858,
+       "start_tm": 1793912379,
        "state": 0,
        "title": "Install Preview",
        "tot_percent": 0,
@@ -6628,7 +6636,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    }
@@ -6638,12 +6646,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    },
    "response": {
-    "cid": 1822,
+    "cid": 1902,
     "id": 47,
     "result": [
      {
@@ -6651,15 +6659,15 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 131,
+       "id": 133,
        "line": [
         {
          "detail": "Starting install preview of device 'FortiWiFi-71G'.",
-         "end_tm": 1793909859,
+         "end_tm": 1793912380,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:39:Starting install preview of device 'FortiWiFi-71G'.",
+           "detail": "2026-11-05 12:59:40:Starting install preview of device 'FortiWiFi-71G'.",
            "name": "FortiWiFi-71G",
            "percent": 0,
            "state": 0,
@@ -6671,7 +6679,7 @@
          "oid": 169,
          "percent": 0,
          "poid": 0,
-         "start_tm": 1793909859,
+         "start_tm": 1793912380,
          "state": 0,
          "vdom": ""
         }
@@ -6681,9 +6689,9 @@
        "num_lines": 1,
        "num_warn": 0,
        "percent": 0,
-       "pid": 11823,
+       "pid": 13320,
        "src": 16,
-       "start_tm": 1793909858,
+       "start_tm": 1793912379,
        "state": 0,
        "title": "Install Preview",
        "tot_percent": 0,
@@ -6693,7 +6701,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    }
@@ -6703,12 +6711,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    },
    "response": {
-    "cid": 1823,
+    "cid": 1903,
     "id": 48,
     "result": [
      {
@@ -6716,22 +6724,22 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 131,
+       "id": 133,
        "line": [
         {
          "detail": "init state: start to get pre-checksum",
-         "end_tm": 1793909861,
+         "end_tm": 1793912382,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:39:Starting install preview of device 'FortiWiFi-71G'.",
+           "detail": "2026-11-05 12:59:40:Starting install preview of device 'FortiWiFi-71G'.",
            "name": "FortiWiFi-71G",
            "percent": 0,
            "state": 0,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:41:init state: start to get pre-checksum",
+           "detail": "2026-11-05 12:59:42:init state: start to get pre-checksum",
            "name": "FortiWiFi-71G",
            "percent": 15,
            "state": 1,
@@ -6743,7 +6751,7 @@
          "oid": 169,
          "percent": 15,
          "poid": 0,
-         "start_tm": 1793909859,
+         "start_tm": 1793912380,
          "state": 1,
          "vdom": ""
         }
@@ -6753,9 +6761,9 @@
        "num_lines": 1,
        "num_warn": 0,
        "percent": 15,
-       "pid": 11823,
+       "pid": 13320,
        "src": 16,
-       "start_tm": 1793909858,
+       "start_tm": 1793912379,
        "state": 1,
        "title": "Install Preview",
        "tot_percent": 15,
@@ -6765,7 +6773,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    }
@@ -6775,12 +6783,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    },
    "response": {
-    "cid": 1824,
+    "cid": 1904,
     "id": 49,
     "result": [
      {
@@ -6788,22 +6796,22 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 131,
+       "id": 133,
        "line": [
         {
          "detail": "init state: start to get pre-checksum",
-         "end_tm": 1793909861,
+         "end_tm": 1793912382,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:39:Starting install preview of device 'FortiWiFi-71G'.",
+           "detail": "2026-11-05 12:59:40:Starting install preview of device 'FortiWiFi-71G'.",
            "name": "FortiWiFi-71G",
            "percent": 0,
            "state": 0,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:41:init state: start to get pre-checksum",
+           "detail": "2026-11-05 12:59:42:init state: start to get pre-checksum",
            "name": "FortiWiFi-71G",
            "percent": 15,
            "state": 1,
@@ -6815,7 +6823,7 @@
          "oid": 169,
          "percent": 15,
          "poid": 0,
-         "start_tm": 1793909859,
+         "start_tm": 1793912380,
          "state": 1,
          "vdom": ""
         }
@@ -6825,9 +6833,9 @@
        "num_lines": 1,
        "num_warn": 0,
        "percent": 15,
-       "pid": 11823,
+       "pid": 13320,
        "src": 16,
-       "start_tm": 1793909858,
+       "start_tm": 1793912379,
        "state": 1,
        "title": "Install Preview",
        "tot_percent": 15,
@@ -6837,7 +6845,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    }
@@ -6847,12 +6855,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    },
    "response": {
-    "cid": 1825,
+    "cid": 1905,
     "id": 50,
     "result": [
      {
@@ -6860,24 +6868,31 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 131,
+       "id": 133,
        "line": [
         {
-         "detail": "init state: start to get pre-checksum",
-         "end_tm": 1793909861,
+         "detail": "get pre-checksum state: start get diff (chkout=0)",
+         "end_tm": 1793912387,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:39:Starting install preview of device 'FortiWiFi-71G'.",
+           "detail": "2026-11-05 12:59:40:Starting install preview of device 'FortiWiFi-71G'.",
            "name": "FortiWiFi-71G",
            "percent": 0,
            "state": 0,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:41:init state: start to get pre-checksum",
+           "detail": "2026-11-05 12:59:42:init state: start to get pre-checksum",
            "name": "FortiWiFi-71G",
            "percent": 15,
+           "state": 1,
+           "vdom": null
+          },
+          {
+           "detail": "2026-11-05 12:59:47:get pre-checksum state: start get diff (chkout=0)",
+           "name": "FortiWiFi-71G",
+           "percent": 25,
            "state": 1,
            "vdom": null
           }
@@ -6885,9 +6900,9 @@
          "ip": "",
          "name": "FortiWiFi-71G",
          "oid": 169,
-         "percent": 15,
+         "percent": 25,
          "poid": 0,
-         "start_tm": 1793909859,
+         "start_tm": 1793912380,
          "state": 1,
          "vdom": ""
         }
@@ -6896,20 +6911,20 @@
        "num_err": 0,
        "num_lines": 1,
        "num_warn": 0,
-       "percent": 15,
-       "pid": 11823,
+       "percent": 25,
+       "pid": 13320,
        "src": 16,
-       "start_tm": 1793909858,
+       "start_tm": 1793912379,
        "state": 1,
        "title": "Install Preview",
-       "tot_percent": 15,
+       "tot_percent": 25,
        "user": "api-user"
       },
       "status": {
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    }
@@ -6919,12 +6934,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    },
    "response": {
-    "cid": 1826,
+    "cid": 1906,
     "id": 51,
     "result": [
      {
@@ -6932,29 +6947,29 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 131,
+       "id": 133,
        "line": [
         {
          "detail": "get pre-checksum state: start get diff (chkout=0)",
-         "end_tm": 1793909868,
+         "end_tm": 1793912387,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:39:Starting install preview of device 'FortiWiFi-71G'.",
+           "detail": "2026-11-05 12:59:40:Starting install preview of device 'FortiWiFi-71G'.",
            "name": "FortiWiFi-71G",
            "percent": 0,
            "state": 0,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:41:init state: start to get pre-checksum",
+           "detail": "2026-11-05 12:59:42:init state: start to get pre-checksum",
            "name": "FortiWiFi-71G",
            "percent": 15,
            "state": 1,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:48:get pre-checksum state: start get diff (chkout=0)",
+           "detail": "2026-11-05 12:59:47:get pre-checksum state: start get diff (chkout=0)",
            "name": "FortiWiFi-71G",
            "percent": 25,
            "state": 1,
@@ -6966,7 +6981,7 @@
          "oid": 169,
          "percent": 25,
          "poid": 0,
-         "start_tm": 1793909859,
+         "start_tm": 1793912380,
          "state": 1,
          "vdom": ""
         }
@@ -6976,9 +6991,9 @@
        "num_lines": 1,
        "num_warn": 0,
        "percent": 25,
-       "pid": 11823,
+       "pid": 13320,
        "src": 16,
-       "start_tm": 1793909858,
+       "start_tm": 1793912379,
        "state": 1,
        "title": "Install Preview",
        "tot_percent": 25,
@@ -6988,7 +7003,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    }
@@ -6998,12 +7013,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    },
    "response": {
-    "cid": 1827,
+    "cid": 1907,
     "id": 52,
     "result": [
      {
@@ -7011,29 +7026,29 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 131,
+       "id": 133,
        "line": [
         {
          "detail": "get pre-checksum state: start get diff (chkout=0)",
-         "end_tm": 1793909868,
+         "end_tm": 1793912387,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:39:Starting install preview of device 'FortiWiFi-71G'.",
+           "detail": "2026-11-05 12:59:40:Starting install preview of device 'FortiWiFi-71G'.",
            "name": "FortiWiFi-71G",
            "percent": 0,
            "state": 0,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:41:init state: start to get pre-checksum",
+           "detail": "2026-11-05 12:59:42:init state: start to get pre-checksum",
            "name": "FortiWiFi-71G",
            "percent": 15,
            "state": 1,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:48:get pre-checksum state: start get diff (chkout=0)",
+           "detail": "2026-11-05 12:59:47:get pre-checksum state: start get diff (chkout=0)",
            "name": "FortiWiFi-71G",
            "percent": 25,
            "state": 1,
@@ -7045,7 +7060,7 @@
          "oid": 169,
          "percent": 25,
          "poid": 0,
-         "start_tm": 1793909859,
+         "start_tm": 1793912380,
          "state": 1,
          "vdom": ""
         }
@@ -7055,9 +7070,9 @@
        "num_lines": 1,
        "num_warn": 0,
        "percent": 25,
-       "pid": 11823,
+       "pid": 13320,
        "src": 16,
-       "start_tm": 1793909858,
+       "start_tm": 1793912379,
        "state": 1,
        "title": "Install Preview",
        "tot_percent": 25,
@@ -7067,7 +7082,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    }
@@ -7077,12 +7092,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    },
    "response": {
-    "cid": 1828,
+    "cid": 1908,
     "id": 53,
     "result": [
      {
@@ -7090,29 +7105,29 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 131,
+       "id": 133,
        "line": [
         {
          "detail": "get pre-checksum state: start get diff (chkout=0)",
-         "end_tm": 1793909868,
+         "end_tm": 1793912387,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:39:Starting install preview of device 'FortiWiFi-71G'.",
+           "detail": "2026-11-05 12:59:40:Starting install preview of device 'FortiWiFi-71G'.",
            "name": "FortiWiFi-71G",
            "percent": 0,
            "state": 0,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:41:init state: start to get pre-checksum",
+           "detail": "2026-11-05 12:59:42:init state: start to get pre-checksum",
            "name": "FortiWiFi-71G",
            "percent": 15,
            "state": 1,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:48:get pre-checksum state: start get diff (chkout=0)",
+           "detail": "2026-11-05 12:59:47:get pre-checksum state: start get diff (chkout=0)",
            "name": "FortiWiFi-71G",
            "percent": 25,
            "state": 1,
@@ -7124,7 +7139,7 @@
          "oid": 169,
          "percent": 25,
          "poid": 0,
-         "start_tm": 1793909859,
+         "start_tm": 1793912380,
          "state": 1,
          "vdom": ""
         }
@@ -7134,9 +7149,9 @@
        "num_lines": 1,
        "num_warn": 0,
        "percent": 25,
-       "pid": 11823,
+       "pid": 13320,
        "src": 16,
-       "start_tm": 1793909858,
+       "start_tm": 1793912379,
        "state": 1,
        "title": "Install Preview",
        "tot_percent": 25,
@@ -7146,7 +7161,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    }
@@ -7156,12 +7171,12 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    },
    "response": {
-    "cid": 1829,
+    "cid": 1909,
     "id": 54,
     "result": [
      {
@@ -7169,29 +7184,29 @@
        "adom": 3,
        "end_tm": 0,
        "flags": 0,
-       "id": 131,
+       "id": 133,
        "line": [
         {
          "detail": "get pre-checksum state: start get diff (chkout=0)",
-         "end_tm": 1793909868,
+         "end_tm": 1793912387,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:39:Starting install preview of device 'FortiWiFi-71G'.",
+           "detail": "2026-11-05 12:59:40:Starting install preview of device 'FortiWiFi-71G'.",
            "name": "FortiWiFi-71G",
            "percent": 0,
            "state": 0,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:41:init state: start to get pre-checksum",
+           "detail": "2026-11-05 12:59:42:init state: start to get pre-checksum",
            "name": "FortiWiFi-71G",
            "percent": 15,
            "state": 1,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:48:get pre-checksum state: start get diff (chkout=0)",
+           "detail": "2026-11-05 12:59:47:get pre-checksum state: start get diff (chkout=0)",
            "name": "FortiWiFi-71G",
            "percent": 25,
            "state": 1,
@@ -7203,7 +7218,7 @@
          "oid": 169,
          "percent": 25,
          "poid": 0,
-         "start_tm": 1793909859,
+         "start_tm": 1793912380,
          "state": 1,
          "vdom": ""
         }
@@ -7213,9 +7228,9 @@
        "num_lines": 1,
        "num_warn": 0,
        "percent": 25,
-       "pid": 11823,
+       "pid": 13320,
        "src": 16,
-       "start_tm": 1793909858,
+       "start_tm": 1793912379,
        "state": 1,
        "title": "Install Preview",
        "tot_percent": 25,
@@ -7225,7 +7240,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    }
@@ -7235,128 +7250,49 @@
     "method": "get",
     "params": [
      {
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    },
    "response": {
-    "cid": 1830,
+    "cid": 1910,
     "id": 55,
     "result": [
      {
       "data": {
        "adom": 3,
-       "end_tm": 0,
+       "end_tm": 1793912397,
        "flags": 0,
-       "id": 131,
-       "line": [
-        {
-         "detail": "get pre-checksum state: start get diff (chkout=0)",
-         "end_tm": 1793909868,
-         "err": 0,
-         "history": [
-          {
-           "detail": "2026-11-05 12:17:39:Starting install preview of device 'FortiWiFi-71G'.",
-           "name": "FortiWiFi-71G",
-           "percent": 0,
-           "state": 0,
-           "vdom": null
-          },
-          {
-           "detail": "2026-11-05 12:17:41:init state: start to get pre-checksum",
-           "name": "FortiWiFi-71G",
-           "percent": 15,
-           "state": 1,
-           "vdom": null
-          },
-          {
-           "detail": "2026-11-05 12:17:48:get pre-checksum state: start get diff (chkout=0)",
-           "name": "FortiWiFi-71G",
-           "percent": 25,
-           "state": 1,
-           "vdom": null
-          }
-         ],
-         "ip": "",
-         "name": "FortiWiFi-71G",
-         "oid": 169,
-         "percent": 25,
-         "poid": 0,
-         "start_tm": 1793909859,
-         "state": 1,
-         "vdom": ""
-        }
-       ],
-       "num_done": 0,
-       "num_err": 0,
-       "num_lines": 1,
-       "num_warn": 0,
-       "percent": 25,
-       "pid": 11823,
-       "src": 16,
-       "start_tm": 1793909858,
-       "state": 1,
-       "title": "Install Preview",
-       "tot_percent": 25,
-       "user": "api-user"
-      },
-      "status": {
-       "code": 0,
-       "message": "OK"
-      },
-      "url": "/task/task/131"
-     }
-    ]
-   }
-  },
-  {
-   "request": {
-    "method": "get",
-    "params": [
-     {
-      "url": "/task/task/131"
-     }
-    ]
-   },
-   "response": {
-    "cid": 1831,
-    "id": 56,
-    "result": [
-     {
-      "data": {
-       "adom": 3,
-       "end_tm": 1793909880,
-       "flags": 0,
-       "id": 131,
+       "id": 133,
        "line": [
         {
          "detail": "Install preview finish and status=OK",
-         "end_tm": 1793909880,
+         "end_tm": 1793912397,
          "err": 0,
          "history": [
           {
-           "detail": "2026-11-05 12:17:39:Starting install preview of device 'FortiWiFi-71G'.",
+           "detail": "2026-11-05 12:59:40:Starting install preview of device 'FortiWiFi-71G'.",
            "name": "FortiWiFi-71G",
            "percent": 0,
            "state": 0,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:41:init state: start to get pre-checksum",
+           "detail": "2026-11-05 12:59:42:init state: start to get pre-checksum",
            "name": "FortiWiFi-71G",
            "percent": 15,
            "state": 1,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:17:48:get pre-checksum state: start get diff (chkout=0)",
+           "detail": "2026-11-05 12:59:47:get pre-checksum state: start get diff (chkout=0)",
            "name": "FortiWiFi-71G",
            "percent": 25,
            "state": 1,
            "vdom": null
           },
           {
-           "detail": "2026-11-05 12:18:00:Install preview finish and status=OK",
+           "detail": "2026-11-05 12:59:57:Install preview finish and status=OK",
            "name": "FortiWiFi-71G",
            "percent": 100,
            "state": 4,
@@ -7368,7 +7304,7 @@
          "oid": 169,
          "percent": 100,
          "poid": 0,
-         "start_tm": 1793909859,
+         "start_tm": 1793912380,
          "state": 4,
          "vdom": ""
         }
@@ -7378,9 +7314,9 @@
        "num_lines": 1,
        "num_warn": 0,
        "percent": 100,
-       "pid": 11823,
+       "pid": 13320,
        "src": 16,
-       "start_tm": 1793909858,
+       "start_tm": 1793912379,
        "state": 4,
        "title": "Install Preview",
        "tot_percent": 100,
@@ -7390,7 +7326,7 @@
        "code": 0,
        "message": "OK"
       },
-      "url": "/task/task/131"
+      "url": "/task/task/133"
      }
     ]
    }
@@ -7402,7 +7338,7 @@
      {
       "data": {
        "adom": "root",
-       "preview_taskid": 131,
+       "preview_taskid": 133,
        "scope": [
         {
          "name": "FortiWiFi-71G",
@@ -7415,8 +7351,8 @@
     ]
    },
    "response": {
-    "cid": 1832,
-    "id": 57,
+    "cid": 1911,
+    "id": 56,
     "result": [
      {
       "data": {
@@ -7438,7 +7374,7 @@
      {
       "data": {
        "adom": "root",
-       "preview_taskid": 130,
+       "preview_taskid": 132,
        "scope": [
         {
          "name": "FortiWiFi-71G",
@@ -7451,8 +7387,8 @@
     ]
    },
    "response": {
-    "cid": 1833,
-    "id": 58,
+    "cid": 1912,
+    "id": 57,
     "result": [
      {
       "data": {
@@ -7486,8 +7422,8 @@
     ]
    },
    "response": {
-    "cid": 1834,
-    "id": 59,
+    "cid": 1913,
+    "id": 58,
     "result": [
      {
       "status": {
