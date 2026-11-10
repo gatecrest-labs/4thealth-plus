@@ -200,3 +200,31 @@ def test_freshness_marks_stale(fleet):
 def test_freshness_empty_when_flag_off(monkeypatch, fleet):
     monkeypatch.setattr(Config, "INVENTORY_CACHE", False)
     assert inventory.freshness() == []
+
+
+def test_pkg_status_lookup_matches_legacy_and_reads_store_once(monkeypatch, fleet):
+    real, adom = fleet
+    reads = []
+    real_read = inventory_store.read_pkg_status
+    monkeypatch.setattr(
+        inventory_store, "read_pkg_status", lambda a: reads.append(a) or real_read(a)
+    )
+    lookup = inventory.pkg_status_lookup(Spy(boom=True), adom)
+    for d in real.get_devices(adom):
+        vdoms = [v["name"] for v in d.get("vdom") or []] or ["root"]
+        assert lookup(d["name"], vdoms) == real.get_device_pkg_status(
+            adom, d["name"], vdoms
+        )
+    assert reads == [adom]
+
+
+def test_pkg_status_lookup_live_when_flag_off(monkeypatch, fleet):
+    real, adom = fleet
+    monkeypatch.setattr(Config, "INVENTORY_CACHE", False)
+    spy = Spy(real)
+    d = real.get_devices(adom)[0]
+    vd = [v["name"] for v in d.get("vdom") or []] or ["root"]
+    assert inventory.pkg_status_lookup(spy, adom)(
+        d["name"], vd
+    ) == real.get_device_pkg_status(adom, d["name"], vd)
+    assert spy.calls == ["get_device_pkg_status"]

@@ -123,6 +123,46 @@ def pkg_status(client, adom: str, device: str, vdom_names: list) -> str:
     return client.get_device_pkg_status(adom, device, vdom_names)
 
 
+def pkg_status_lookup(client, adom: str):
+    """A ``lookup(device, vdom_names) -> str`` for one ADOM, loading the rows once.
+
+    For sweeps that need every device's package status: the store is read a
+    single time and indexed by device (O(rows) instead of O(devices x rows)).
+    Falls back to per-device live calls when the cache is off, stale or has no
+    package rows yet.
+    """
+    live = lambda device, vdoms: client.get_device_pkg_status(adom, device, vdoms)
+    if not _enabled():
+        return live
+    try:
+        meta = inventory_store.read_meta(adom)
+        fresh = (
+            meta is not None
+            and meta["age_seconds"] is not None
+            and meta["age_seconds"] <= inventory_store.max_age_seconds()
+            and inventory_store.has_pkg_status(adom)
+        )
+        if fresh:
+            by_dev: dict[str, list] = {}
+            for row in inventory_store.read_pkg_status(adom):
+                by_dev.setdefault(row.get("dev", ""), []).append(row)
+
+            def cached(device, vdoms):
+                _bump("hits")
+                return pkg_status_for(by_dev.get(device, []), device, vdoms)
+
+            return cached
+    except inventory_store.InventoryStoreError as exc:
+        _bump("store_errors")
+        logger.warning("inventory: store unreadable, going live: %s", exc)
+
+    def fallback(device, vdoms):
+        _bump("fallbacks")
+        return live(device, vdoms)
+
+    return fallback
+
+
 def freshness() -> list[dict]:
     """Per-ADOM cache state for the UI; empty when the layer is off or unreadable."""
     if not _enabled():

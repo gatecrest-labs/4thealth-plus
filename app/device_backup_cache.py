@@ -33,6 +33,7 @@ import time as _time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app import inventory
 from app.atomic_io import atomic_write_json
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ def _classify_devices(
 def _list_target_adoms(client) -> list[str]:
     """Return non-forti* ADOM names — same convention as every other
     ADOM-enumerating sweep in this codebase (see CLAUDE.md)."""
-    adoms_raw = client.get_adoms()
+    adoms_raw = inventory.adoms(client)
     return [
         a.get("name", "")
         for a in adoms_raw
@@ -150,7 +151,7 @@ def _run_sweep(app) -> bool:
             adom_names = _list_target_adoms(client)
             for adom in adom_names:
                 try:
-                    devices_by_adom[adom] = client.get_devices(adom) or []
+                    devices_by_adom[adom] = inventory.devices(client, adom) or []
                 except Exception as exc:
                     logger.warning(
                         "device_backup_cache: get_devices(%s) failed: %s", adom, exc

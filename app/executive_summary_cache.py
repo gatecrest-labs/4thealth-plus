@@ -98,7 +98,7 @@ import threading
 import time as _time
 from datetime import UTC, datetime
 
-from app import collector_store
+from app import collector_store, inventory
 
 logger = logging.getLogger(__name__)
 
@@ -411,7 +411,7 @@ def _device_version(d: dict) -> str:
 
 def _list_target_adoms(client) -> list[str]:
     """Return non-forti* ADOM names from a live FMG client."""
-    adoms_raw = client.get_adoms()
+    adoms_raw = inventory.adoms(client)
     return [
         a.get("name", "")
         for a in adoms_raw
@@ -460,7 +460,7 @@ def _run_device_sweep(app) -> bool:
 
             for adom in adom_names:
                 try:
-                    raw = client.get_devices_with_sync_status(adom)
+                    raw = inventory.devices_with_sync_status(client, adom)
                 except Exception as exc:
                     logger.warning(
                         "executive_summary_cache: get_devices_with_sync_status(%s) "
