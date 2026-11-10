@@ -20,6 +20,8 @@ last written) — no history, just "the latest known-good value."
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sqlite3
 import threading
 from datetime import UTC, datetime
@@ -37,11 +39,37 @@ CREATE TABLE IF NOT EXISTS cache_snapshots (
 """
 
 _lock = threading.Lock()
+logger = logging.getLogger(__name__)
+_VALID_JOURNAL_MODES = ("WAL", "DELETE")
+
+
+def _db_path() -> Path:
+    """``COLLECTOR_DB_PATH`` if set, else the project-root default."""
+    override = os.environ.get("COLLECTOR_DB_PATH", "").strip()
+    return Path(override) if override else _DB_PATH
+
+
+def _journal_mode() -> str:
+    """``COLLECTOR_DB_JOURNAL`` (WAL or DELETE); anything else warns and uses WAL."""
+    raw = os.environ.get("COLLECTOR_DB_JOURNAL", "WAL").strip().upper() or "WAL"
+    if raw not in _VALID_JOURNAL_MODES:
+        logger.warning(
+            "COLLECTOR_DB_JOURNAL=%r is not one of %s; using WAL",
+            raw,
+            _VALID_JOURNAL_MODES,
+        )
+        return "WAL"
+    return raw
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(_DB_PATH, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
+    path = _db_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    is_new = not path.exists()
+    conn = sqlite3.connect(path, timeout=30)
+    if is_new:
+        path.chmod(0o600)
+    conn.execute(f"PRAGMA journal_mode={_journal_mode()}")
     conn.row_factory = sqlite3.Row
     return conn
 

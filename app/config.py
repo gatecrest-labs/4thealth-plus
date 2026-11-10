@@ -29,6 +29,9 @@ def _require_secret_key() -> str:
     return val
 
 
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
 class Config:
     SECRET_KEY = _require_secret_key()
     # Browser cookies are scoped by domain+path, not by port (RFC 6265).
@@ -99,6 +102,15 @@ class Config:
     # expects `python -m app.collector` to be running separately. See
     # app/collector.py and docker-compose.yml's `collector` service.
     RUN_SCHEDULERS = os.environ.get("RUN_SCHEDULERS", "off").lower()
+
+    # Scale layers (1,000+ FortiGate work, see
+    # docs/superpowers/specs/2026-11-10-scale-1000-fortigates-design.md).
+    # Each flag switches one layer from the legacy direct-FMG path to the
+    # cached path; all default off so behaviour is unchanged until enabled.
+    INVENTORY_CACHE = os.environ.get("INVENTORY_CACHE", "").lower() in _TRUTHY
+    POLICY_STORE = os.environ.get("POLICY_STORE", "").lower() in _TRUTHY
+    AUDIT_SNAPSHOTS = os.environ.get("AUDIT_SNAPSHOTS", "").lower() in _TRUTHY
+    JOB_QUEUE = os.environ.get("JOB_QUEUE", "").lower() in _TRUTHY
 
     # SNMP (FortiManager / FortiAnalyzer / FortiAuthenticator CPU & memory polling)
     SNMP_ENABLED = os.environ.get("SNMP_ENABLED", "false").lower() == "true"
