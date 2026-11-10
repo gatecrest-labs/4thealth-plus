@@ -29,6 +29,17 @@ def _isolated(tmp_path, monkeypatch):
             "/pm/config/device/{device}/global/system/ntp",
         ),
         ("/task/task/1234", "/task/task/{id}"),
+        ("/pm/pkg/adom/Ent-1", "/pm/pkg/adom/{adom}"),
+        ("/pm/pkg/adom/Ent-1/Pkg-0-001", "/pm/pkg/adom/{adom}/{pkg}"),
+        ("/pm/pkg/adom/Ent-1/Folder/Pkg-9", "/pm/pkg/adom/{adom}/{pkg}"),
+        (
+            "/pm/config/adom/Ent-1/_package/status/FW-1/root",
+            "/pm/config/adom/{adom}/_package/status/{device}/{vdom}",
+        ),
+        (
+            "/dvmdb/adom/Ent-1/device/FW-1/vdom",
+            "/dvmdb/adom/{adom}/device/{device}/vdom",
+        ),
         ("/sys/proxy/json", "/sys/proxy/json"),
     ],
 )

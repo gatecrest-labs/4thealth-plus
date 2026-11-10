@@ -28,6 +28,8 @@ services:
       - "8100:8100"
     env_file:
       - .env
+    environment:
+      - COLLECTOR_DB_PATH=/app/data/collector_state.db
     volumes:
       - ./users.json:/app/users.json:rw
       - ./groups.json:/app/groups.json:rw
@@ -39,7 +41,9 @@ services:
       - ./host_metrics.db:/app/host_metrics.db:rw
       - ./login_events.db:/app/login_events.db:rw
       - ./psirt.db:/app/psirt.db:rw
-      - ./collector_state.db:/app/collector_state.db:rw
+      # A DIRECTORY mount (not a single file) so SQLite's -wal/-shm sidecars are
+      # shared between the web and collector containers.
+      - ./data:/app/data:rw
       - ./app_settings.json:/app/app_settings.json:rw
       - ./api_tokens.json:/app/api_tokens.json:rw
       - ./smtp_config.json:/app/smtp_config.json:rw
@@ -84,6 +88,7 @@ services:
       # under `-m` invocation. Setting it here, before the interpreter
       # even starts, is what actually makes the schedulers start.
       - RUN_SCHEDULERS=inline
+      - COLLECTOR_DB_PATH=/app/data/collector_state.db
     volumes:
       - ./users.json:/app/users.json:rw
       - ./groups.json:/app/groups.json:rw
@@ -95,7 +100,9 @@ services:
       - ./host_metrics.db:/app/host_metrics.db:rw
       - ./login_events.db:/app/login_events.db:rw
       - ./psirt.db:/app/psirt.db:rw
-      - ./collector_state.db:/app/collector_state.db:rw
+      # A DIRECTORY mount (not a single file) so SQLite's -wal/-shm sidecars are
+      # shared between the web and collector containers.
+      - ./data:/app/data:rw
       - ./app_settings.json:/app/app_settings.json:rw
       - ./api_tokens.json:/app/api_tokens.json:rw
       - ./smtp_config.json:/app/smtp_config.json:rw

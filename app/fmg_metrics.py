@@ -34,20 +34,36 @@ _NAME_AFTER = {"adom": "{adom}", "pkg": "{pkg}", "vdom": "{vdom}", "device": "{d
 
 
 def normalize_url(url: str) -> str:
-    """Replace ADOM / package / device / VDOM names and task ids with placeholders."""
+    """Replace ADOM / package / device / VDOM names and task ids with placeholders.
+
+    Keeps the number of distinct keys bounded no matter how many ADOMs,
+    packages or devices exist (1,000 devices must still be one row).
+    """
     parts = url.split("/")
-    out = []
-    replace_next: str | None = None
-    for seg in parts:
-        if replace_next is not None and seg:
-            out.append(replace_next)
-            replace_next = None
+    # /pm/pkg/adom/<adom>[/<folder>.../<package>] -- here "pkg" is a namespace,
+    # not a name prefix, and everything after the ADOM is a package path.
+    if parts[:4] == ["", "pm", "pkg", "adom"]:
+        out = parts[:4]
+        if len(parts) > 4:
+            out.append("{adom}")
+        if len(parts) > 5:
+            out.append("{pkg}")
+        return "/".join(out)
+
+    out: list[str] = []
+    pending: list[str] = []  # placeholders for the next segments
+    for i, seg in enumerate(parts):
+        if pending and seg:
+            out.append(pending.pop(0))
             continue
         if seg.isdigit():
             out.append("{id}")
             continue
         out.append(seg)
-        replace_next = _NAME_AFTER.get(seg)
+        if seg == "status" and i > 0 and parts[i - 1] == "_package":
+            pending = ["{device}", "{vdom}"]
+        elif seg in _NAME_AFTER and not (seg == "pkg" and parts[i - 1] == "pm"):
+            pending = [_NAME_AFTER[seg]]
     return "/".join(out)
 
 

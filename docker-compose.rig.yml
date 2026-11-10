@@ -1,0 +1,50 @@
+# Mac/Docker TEST RIG ONLY — never used in production (production is two
+# systemd units on RHEL, see docs/deployment.md).
+#
+# Runs the real web and collector against a synthetic 1,000-device
+# FortiManager so load behaviour can be watched without a big FMG:
+#
+#   mkdir -p data
+#   docker compose -f docker-compose.yml -f docker-compose.rig.yml up -d --build
+#   curl -sk https://localhost:8100/api/health
+#   curl -sk https://localhost:8443/_calls      # (publish the port below)
+#
+# It overrides only the FMG connection; .env is not modified.
+services:
+  synthetic-fmg:
+    image: 4thealth-plus:latest
+    container_name: 4thealth-plus-synthetic-fmg
+    restart: unless-stopped
+    command: ["python", "scripts/synthetic_fmg_server.py"]
+    environment:
+      # importing the app package requires a SECRET_KEY; this container serves no sessions
+      - SECRET_KEY=rig-only-not-a-real-secret-0123456789abcdef
+      - SYNTH_DEVICES=1000
+      - SYNTH_ADOMS=5
+      - SYNTH_LATENCY_MS_MIN=0
+      - SYNTH_LATENCY_MS_MAX=0
+      - SYNTH_ERROR_RATE=0
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./certs:/app/certs:ro
+
+  web:
+    depends_on:
+      - synthetic-fmg
+    environment:
+      - COLLECTOR_DB_PATH=/app/data/collector_state.db
+      - FMG_PRIMARY_HOST=synthetic-fmg:8443
+      - FMG_API_TOKEN=synthetic
+      - FMG_VERIFY_SSL=false
+
+  collector:
+    depends_on:
+      - synthetic-fmg
+    environment:
+      - RUN_SCHEDULERS=inline
+      - COLLECTOR_DB_PATH=/app/data/collector_state.db
+      - FMG_PRIMARY_HOST=synthetic-fmg:8443
+      - FMG_API_TOKEN=synthetic
+      - FMG_VERIFY_SSL=false
