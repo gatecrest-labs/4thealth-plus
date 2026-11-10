@@ -291,6 +291,15 @@ def request_refresh(min_interval_s: float) -> bool:
         return True
 
 
+def refresh_request_age_seconds() -> float | None:
+    """Seconds since a refresh was last requested, or None if never."""
+    with _Conn() as conn:
+        last = conn.execute(
+            "SELECT value FROM inventory_state WHERE key=?", (_REFRESH_LAST,)
+        ).fetchone()
+    return _age(last[0]) if last else None
+
+
 def pop_refresh_request() -> bool:
     """True (once) if a refresh was requested since the last pop."""
     with _Conn() as conn:

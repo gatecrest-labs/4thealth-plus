@@ -7,7 +7,12 @@ from flask import Blueprint, Response, jsonify, request, session, stream_with_co
 
 from app import inventory
 from app.config import Config
-from app.decorators import admin_required, check_adom_access, tab_required
+from app.decorators import (
+    admin_required,
+    check_adom_access,
+    login_required,
+    tab_required,
+)
 from app.fmg_client import PROXY_ENDPOINTS, FMGClient, FMGError
 from app.fmg_helpers import expand_ha_members
 from app.fmg_helpers import make_client as _make_client
@@ -998,3 +1003,58 @@ def search():
         return jsonify(matches)
     except Exception as exc:
         return internal_api_error("api", exc)
+
+
+# ── Inventory freshness (F8) ─────────────────────────────────────────────────
+
+_REFRESH_MIN_INTERVAL_S = 60
+
+
+@bp.route("/inventory/status")
+@login_required
+def inventory_status():
+    """Per-ADOM age/state of the cached inventory, filtered to the user's ADOMs."""
+    from app import inventory, inventory_store
+
+    body = {
+        "enabled": bool(Config.INVENTORY_CACHE),
+        "refresh_seconds": Config.INVENTORY_REFRESH_SECS,
+        "max_age_seconds": inventory_store.max_age_seconds(),
+        "adoms": [],
+    }
+    if not Config.INVENTORY_CACHE:
+        return jsonify(body)
+    rows = inventory.freshness()
+    if session.get("role") != "admin":
+        from app.groups import get_allowed_adoms
+
+        allowed = get_allowed_adoms(
+            session.get("user", ""), ad_groups=session.get("ad_groups", [])
+        )
+        if allowed is not None:
+            rows = [r for r in rows if r["adom"] in allowed]
+    body["adoms"] = rows
+    return jsonify(body)
+
+
+@bp.route("/inventory/refresh", methods=["POST"])
+@admin_required
+def inventory_refresh():
+    """Ask the collector for an immediate inventory refresh (throttled)."""
+    import math
+
+    from app import inventory_store
+
+    if not Config.INVENTORY_CACHE:
+        return jsonify({"error": "Inventory cache is not enabled"}), 503
+    try:
+        accepted = inventory_store.request_refresh(_REFRESH_MIN_INTERVAL_S)
+        if accepted:
+            return jsonify({"requested": True}), 202
+        age = inventory_store.refresh_request_age_seconds() or 0.0
+    except inventory_store.InventoryStoreError as exc:
+        return internal_api_error("api", exc)
+    wait = max(1, math.ceil(_REFRESH_MIN_INTERVAL_S - age))
+    resp = jsonify({"error": "Refresh requested too recently", "retry_after": wait})
+    resp.headers["Retry-After"] = str(wait)
+    return resp, 429

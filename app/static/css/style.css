@@ -3082,3 +3082,11 @@ a:hover { text-decoration: underline; }
 }
 
 .rl-via { font-size: .7rem; color: var(--text-muted); margin: 0 0 .2rem .5rem; }
+
+/* ── Inventory freshness badge (F8) ──────────────────────────────────── */
+.inv-freshness { font-size: .8rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: .25rem; }
+.inv-freshness::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: var(--status-green); display: inline-block; }
+.inv-freshness.stale::before { background: var(--status-yellow); }
+.inv-freshness.degraded::before { background: var(--status-red); }
+.inv-freshness-warn { color: var(--text-muted); }
+.inv-freshness-btn { padding: 0 .35rem; }
