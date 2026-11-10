@@ -142,3 +142,23 @@ def is_retryable(method: str, exc: BaseException | None, status: int | None) -> 
     if status is not None:
         return status >= 500
     return isinstance(exc, requests.ConnectionError | requests.Timeout)
+
+
+_LAYER_FLAGS = ("INVENTORY_CACHE", "POLICY_STORE", "AUDIT_SNAPSHOTS", "JOB_QUEUE")
+
+
+def warn_if_password_auth(logger) -> bool:
+    """Warn once when username/password auth is used with a scale layer on.
+
+    Password auth opens a real FortiManager admin session per client and FMG
+    caps those; an API token has no session. Returns True when it warned.
+    """
+    if Config.FMG_API_TOKEN or not Config.FMG_USERNAME:
+        return False
+    if not any(getattr(Config, flag, False) for flag in _LAYER_FLAGS):
+        return False
+    logger.warning(
+        "FMG username/password auth is in use with a scale layer enabled; "
+        "FortiManager caps admin sessions. Set FMG_API_TOKEN instead."
+    )
+    return True

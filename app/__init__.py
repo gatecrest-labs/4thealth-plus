@@ -326,6 +326,12 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     groups.KNOWN_TABS = registry.known_tabs()
 
+    import logging as _logging
+
+    from app import fmg_access
+
+    fmg_access.warn_if_password_auth(_logging.getLogger("app.fmg_access"))
+
     # Start background jobs — guard against re-registration on Flask debug reload.
     if _schedulers_enabled(app.config):
         start_all_schedulers(app)
