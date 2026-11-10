@@ -14,11 +14,11 @@ def test_fmg_client_uses_requests_session():
     assert isinstance(client._http, req_mod.Session)
 
 
-def test_fmg_client_http_session_closed_on_exit():
-    """Exiting the context manager must close the underlying requests.Session."""
+def test_fmg_client_http_session_not_closed_on_exit():
+    """The session is the process-wide pool (app.fmg_access); other threads still use it."""
     from app.fmg_client import FMGClient
     client = FMGClient(host="fmg.example.com", token="tok")
     mock_session = MagicMock()
     client._http = mock_session
     client.__exit__(None, None, None)
-    mock_session.close.assert_called_once()
+    mock_session.close.assert_not_called()

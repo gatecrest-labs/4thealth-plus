@@ -9,6 +9,7 @@ never hold a slot.
 from __future__ import annotations
 
 import contextlib
+import random
 import threading
 import time
 from collections.abc import Iterator
@@ -19,6 +20,10 @@ from requests.adapters import HTTPAdapter
 from app import fmg_metrics
 from app.config import Config
 
+sleep = time.sleep  # seam: tests replace this so backoff does not wait
+
+_BACKOFF_BASE = 0.5
+_BACKOFF_MAX = 8.0
 _COLLECTOR_CAP = 8
 _WEB_CAP = 4
 
@@ -105,3 +110,35 @@ def reset() -> None:
         for session in _sessions.values():
             session.close()
         _sessions.clear()
+
+
+def backoff_delay(attempt: int) -> float:
+    """Seconds to wait after failed attempt *attempt* (1-based): doubling, capped, jittered."""
+    ceiling = min(_BACKOFF_MAX, _BACKOFF_BASE * (2 ** (attempt - 1)))
+    return random.uniform(0.5 * ceiling, ceiling)
+
+
+def _refused_before_send(exc: BaseException) -> bool:
+    """True when the failure happened while connecting, so FMG never saw the request."""
+    if isinstance(exc, requests.ConnectTimeout):
+        return True
+    text = f"{exc!r} {exc}"
+    return (
+        "NewConnectionError" in text or "Failed to establish a new connection" in text
+    )
+
+
+def is_retryable(method: str, exc: BaseException | None, status: int | None) -> bool:
+    """Whether a failed ``_post`` may be sent again without risking a duplicate.
+
+    A request that provably never reached FMG (connection refused/timeout while
+    connecting) is always safe. Anything that may have been processed (5xx,
+    read timeout, connection dropped mid-flight) is replayed only for ``get``.
+    """
+    if exc is not None and _refused_before_send(exc):
+        return True
+    if str(method).lower() != "get":
+        return False
+    if status is not None:
+        return status >= 500
+    return isinstance(exc, requests.ConnectionError | requests.Timeout)

@@ -11,10 +11,10 @@ import threading
 import time
 import warnings
 
-import requests
 import urllib3
 
-from app import fmg_metrics
+from app import fmg_access, fmg_metrics
+from app.config import Config
 
 try:  # POSIX only; the app runs on Linux/macOS
     import fcntl
@@ -452,7 +452,7 @@ class FMGClient:
         self.timeout = timeout
         self.session = None
         self._req_id = 0
-        self._http = requests.Session()
+        self._http = fmg_access.get_session(verify_ssl)
         self._version: FMGVersion | None = None
         # op name -> {url, code, message} for failures a method swallowed.
         self.degraded: dict[str, dict] = {}
@@ -488,23 +488,41 @@ class FMGClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
+        method = str(body.get("method", ""))
+        retries = max(0, Config.FMG_RETRIES or 0)
         started = time.monotonic()
         ok = False
+        attempt = 0
         try:
-            resp = self._http.post(
-                self.base_url,
-                json=body,
-                verify=self.verify_ssl,
-                timeout=timeout if timeout is not None else self.timeout,
-                headers=headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            ok = _rpc_ok(data)
+            while True:
+                attempt += 1
+                try:
+                    with fmg_access.slot():
+                        resp = self._http.post(
+                            self.base_url,
+                            json=body,
+                            verify=self.verify_ssl,
+                            timeout=timeout if timeout is not None else self.timeout,
+                            headers=headers,
+                        )
+                        resp.raise_for_status()
+                    data = resp.json()
+                    ok = _rpc_ok(data)
+                    break
+                except Exception as exc:
+                    status = getattr(
+                        getattr(exc, "response", None), "status_code", None
+                    )
+                    if attempt <= retries and fmg_access.is_retryable(
+                        method, exc, status
+                    ):
+                        fmg_access.sleep(fmg_access.backoff_delay(attempt))
+                        continue
+                    raise
         finally:
             first = (body.get("params") or [{}])[0]
             fmg_metrics.record(
-                str(body.get("method", "")),
+                method,
                 first.get("url", "") if isinstance(first, dict) else "",
                 time.monotonic() - started,
                 ok,
@@ -559,7 +577,6 @@ class FMGClient:
 
     def __exit__(self, *_):
         self.logout()
-        self._http.close()
 
     def _get(self, url: str) -> dict:
         body = {
