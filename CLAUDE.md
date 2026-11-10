@@ -1024,6 +1024,15 @@ as SFTP; default port 22, same field set as SFTP (host/port/username/
 password/remote dir) — no new form fields. The FTP-plaintext warning banner
 only shows for `protocol === 'ftp'`.
 
+## Scale foundations (1,000+ FortiGates)
+
+Design: `docs/superpowers/specs/2026-11-10-scale-1000-fortigates-design.md`; Phase 0 results: `docs/superpowers/measurements/`. Production is two systemd units (web + `app.collector`) on one RHEL host; Docker is only the Mac test rig (`docker-compose.rig.yml`).
+
+- **Layer flags** (`Config.INVENTORY_CACHE`, `POLICY_STORE`, `AUDIT_SNAPSHOTS`, `JOB_QUEUE`; env of the same name, default off) select cached vs. legacy FMG paths one layer at a time. Parsing is `app.config._env_flag()`; never `importlib.reload(app.config)` in a test (it replaces the `Config` class other tests patch).
+- **Shared store** (`app/collector_store.py`): path `COLLECTOR_DB_PATH`, journal `COLLECTOR_DB_JOURNAL` (`WAL`|`DELETE`); transient `database is locked` on first use is retried. `tests/conftest.py` points it at a per-test temp file. `scripts/verify_shared_store.py` is the crash/two-process proof.
+- **FMG metrics** (`app/fmg_metrics.py`): every `FMGClient._post` is timed under a normalized URL key and flushed (~30 s) to the store as `fmg_metrics:<role>`; `GET /admin/api/fmg-metrics` shows web + collector. All FMG traffic must go through `_post` (`_get_paged` does, with `timeout=120`); a method that calls `_http.post` directly is invisible to metrics, the recorder and test transports.
+- **Synthetic FMG** (`app/synthetic_fmg.py`): drop-in `_post` replacement generating a deterministic fleet; `scripts/measure_fmg_baseline.py` runs each background sweep once against it, `scripts/synthetic_fmg_server.py` serves it over HTTPS for the Docker rig, `scripts/fmg_spike.py` is the read-only lab-FMG probe (needs a token that can read dvmdb).
+
 ## Dependency management
 
 This project uses `uv`. `uv.lock` is committed; `pyproject.toml` should be too. Do not use `pip install` directly — use `uv add <package>` to keep the lockfile in sync.

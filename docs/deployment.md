@@ -323,6 +323,32 @@ sudo journalctl -u 4thealth -f
 > unit entirely — the one web process then runs every scheduler itself, as
 > it always did before this split (the old single-process behaviour).
 
+#### Scale settings (1,000+ FortiGates)
+
+These apply to **both** units (set them in `/opt/4thealth/.env`, which both read):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `COLLECTOR_DB_PATH` | `/opt/4thealth/collector_state.db` | Shared SQLite store the collector writes and web reads. Must be on **local disk** (not NFS) and writable by the `4thealth` user. |
+| `COLLECTOR_DB_JOURNAL` | `WAL` | `WAL` or `DELETE`. Use `DELETE` only if the proof below reports `UNSAFE` for WAL on your filesystem. |
+| `INVENTORY_CACHE`, `POLICY_STORE`, `AUDIT_SNAPSHOTS`, `JOB_QUEUE` | off | Layer flags for the scale work; later phases switch each layer from direct FMG calls to the cached path. Leave off until a phase says otherwise. |
+
+Use an **FMG API token** (`FMG_API_TOKEN`), not username/password, at this scale: password auth opens a real FortiManager admin session per client and FortiManager caps them.
+
+Verify the shared store on the real server once, as the app user:
+
+```bash
+sudo -u 4thealth /opt/4thealth/.venv/bin/python /opt/4thealth/scripts/verify_shared_store.py \
+    --db /opt/4thealth/proof.db --seconds 10
+```
+
+Expect two `SAFE` lines (WAL and DELETE). FMG call counts, errors and latency for both units are shown in **Admin -> API Self-Test -> FMG Call Metrics**.
+
+> **Mac/Docker test rig (not production):** `docker-compose.rig.yml` runs the
+> web and collector containers against a synthetic 1,000-device FortiManager
+> (`mkdir -p data && docker compose -f docker-compose.yml -f docker-compose.rig.yml up -d --build`).
+> Production uses the two systemd units above, not containers.
+
 ### 2.7 Smoke Test (before Nginx)
 
 ```bash

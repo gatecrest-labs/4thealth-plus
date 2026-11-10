@@ -104,3 +104,6 @@ Table schemas and migrations, exact default intervals/caps (to be set from Phase
 
 ## 8. Parity with web/4thealth (separate, small; NOT part of this plan)
 Re-diffed 2026-11-10 against `09e7941`: no functional gaps. Pending owner decision: port missing `help.js` text, review `docs/backup.md`/`docs/deployment.md` changes, and the new header logo. Skipping the "Device Review" tab rename (collides with Audit Review) and upstream's simplified `_vip_addr_and_detail`.
+
+## 9. Phase 0 results (2026-11-10)
+Full write-up: `docs/superpowers/measurements/2026-11-phase0-results.md`. Summary: baseline is 3,887.8 background FMG calls/hour at 1,000 synthetic devices (target <= ~389/h); the shared SQLite store is proven safe between processes on macOS and across Docker containers (RHEL run pending, owner action) and gained a retry for transient first-use lock errors; `_get_paged` now goes through `_post`. Lab spikes are blocked by an API token without dvmdb read permission (FMG -11); all gates take their safe fallbacks (hash + TTL, rolling window, Phase 2 for call-count reduction) so Phase 1 is not blocked.
