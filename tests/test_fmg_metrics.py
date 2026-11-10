@@ -127,3 +127,28 @@ def test_post_records_error_and_reraises():
         c._post({"id": 1, "method": "get", "params": [{"url": "/dvmdb/adom"}]})
     entry = fmg_metrics.snapshot()["by_url"]["get /dvmdb/adom"]
     assert entry["errors"] == 1
+
+
+def test_get_paged_goes_through_post_with_long_timeout():
+    """_get_paged must use _post so catalogs are metered/recorded, and keep its 120 s timeout."""
+    from app import fmg_metrics
+
+    class Page:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"result": [{"status": {"code": 0}, "data": [{"name": "a"}]}]}
+
+    calls = []
+    c = _client()
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs)
+        return Page()
+
+    c._http.post = fake_post
+    assert c._get_paged("/pm/config/adom/E/obj/firewall/address") == [{"name": "a"}]
+    assert calls[0]["timeout"] == 120
+    key = "get /pm/config/adom/{adom}/obj/firewall/address"
+    assert fmg_metrics.snapshot()["by_url"][key]["count"] == 1

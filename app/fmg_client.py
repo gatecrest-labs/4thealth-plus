@@ -474,7 +474,7 @@ class FMGClient:
         self._req_id += 1
         return self._req_id
 
-    def _post(self, body: dict) -> dict:
+    def _post(self, body: dict, timeout: int | None = None) -> dict:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
@@ -485,7 +485,7 @@ class FMGClient:
                 self.base_url,
                 json=body,
                 verify=self.verify_ssl,
-                timeout=self.timeout,
+                timeout=timeout if timeout is not None else self.timeout,
                 headers=headers,
             )
             resp.raise_for_status()
@@ -1591,18 +1591,7 @@ class FMGClient:
             }
             if self.session:
                 body["session"] = self.session
-            headers = {"Content-Type": "application/json", "Accept": "application/json"}
-            if self.token:
-                headers["Authorization"] = f"Bearer {self.token}"
-            resp = self._http.post(
-                self.base_url,
-                json=body,
-                verify=self.verify_ssl,
-                timeout=120,
-                headers=headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+            data = self._post(body, timeout=120)
             result = data.get("result", [{}])[0]
             if result.get("status", {}).get("code", -1) != 0:
                 raise FMGError(f"FMG error on {url}: {result.get('status')}")
