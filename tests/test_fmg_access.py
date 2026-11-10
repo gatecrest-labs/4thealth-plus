@@ -62,3 +62,83 @@ def test_env_int_parsing(monkeypatch):
     assert _env_int("X_KNOB", 5) == 5
     monkeypatch.setenv("X_KNOB", "")
     assert _env_int("X_KNOB", 5) == 5
+
+
+# ---- Task 2: in-flight cap ----
+import time
+
+from app.config import Config
+
+
+def test_cap_defaults_by_role(monkeypatch):
+    monkeypatch.setattr(Config, "FMG_MAX_INFLIGHT", None)
+    monkeypatch.setattr(fmg_access.fmg_metrics, "role", lambda: "collector")
+    assert fmg_access.inflight_cap() == 8
+    monkeypatch.setattr(fmg_access.fmg_metrics, "role", lambda: "web")
+    assert fmg_access.inflight_cap() == 4
+
+
+def test_explicit_cap_overrides_role(monkeypatch):
+    monkeypatch.setattr(Config, "FMG_MAX_INFLIGHT", 3)
+    monkeypatch.setattr(fmg_access.fmg_metrics, "role", lambda: "collector")
+    assert fmg_access.inflight_cap() == 3
+
+
+def test_zero_means_unlimited_and_slot_does_not_block(monkeypatch):
+    monkeypatch.setattr(Config, "FMG_MAX_INFLIGHT", 0)
+    assert fmg_access.inflight_cap() == 0
+    with fmg_access.slot(), fmg_access.slot(), fmg_access.slot():
+        pass
+
+
+def test_peak_never_exceeds_cap_under_100_threads(monkeypatch):
+    monkeypatch.setattr(Config, "FMG_MAX_INFLIGHT", 3)
+
+    def worker():
+        with fmg_access.slot():
+            time.sleep(0.005)
+
+    threads = [threading.Thread(target=worker) for _ in range(100)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert fmg_access.peak_inflight() == 3
+
+
+def test_slot_released_after_exception(monkeypatch):
+    monkeypatch.setattr(Config, "FMG_MAX_INFLIGHT", 1)
+    for _ in range(10):
+        with pytest.raises(RuntimeError), fmg_access.slot():
+            raise RuntimeError("boom")
+    done = threading.Event()
+
+    def worker():
+        with fmg_access.slot():
+            done.set()
+
+    threading.Thread(target=worker, daemon=True).start()
+    assert done.wait(1.0)
+
+
+def test_slot_yields_wait_seconds(monkeypatch):
+    monkeypatch.setattr(Config, "FMG_MAX_INFLIGHT", 1)
+    waits = []
+    holding = threading.Event()
+
+    def first():
+        with fmg_access.slot():
+            holding.set()
+            time.sleep(0.1)
+
+    def second():
+        holding.wait()
+        with fmg_access.slot() as waited:
+            waits.append(waited)
+
+    a, b = threading.Thread(target=first), threading.Thread(target=second)
+    a.start()
+    b.start()
+    a.join()
+    b.join()
+    assert waits[0] > 0.02
