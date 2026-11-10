@@ -16,6 +16,8 @@ import threading
 
 from flask import Flask
 
+from app import inventory
+
 logger = logging.getLogger(__name__)
 
 _lock = threading.RLock()
@@ -70,7 +72,7 @@ def _run_refresh(app: Flask) -> None:
             from app.fmg_helpers import make_client
 
             with make_client() as client:
-                raw = client.get_adoms()
+                raw = inventory.adoms(client)
             names = sorted(
                 a.get("name", a.get("adom", ""))
                 for a in raw

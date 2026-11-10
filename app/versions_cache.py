@@ -20,6 +20,8 @@ import threading
 import time as _time
 from datetime import UTC, datetime
 
+from app import inventory
+
 logger = logging.getLogger(__name__)
 
 _store: dict = {
@@ -78,7 +80,7 @@ def _run_job(app):
 
         result = []
         with make_client() as client:
-            adoms_raw = client.get_adoms()
+            adoms_raw = inventory.adoms(client)
             adom_names = [
                 a.get("name", "")
                 for a in adoms_raw
@@ -90,7 +92,7 @@ def _run_job(app):
 
             for adom in adom_names:
                 try:
-                    raw = client.get_devices(adom)
+                    raw = inventory.devices(client, adom)
                     for d in raw:
                         if not isinstance(d, dict):
                             continue

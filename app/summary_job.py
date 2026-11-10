@@ -15,6 +15,8 @@ import threading
 import time as _time
 from datetime import UTC, datetime
 
+from app import inventory
+
 logger = logging.getLogger(__name__)
 
 # ── Shared state ──────────────────────────────────────────────────────────────
@@ -95,7 +97,7 @@ def _run_job(app):
 
         with make_client() as client:
             # ── Step 1: enumerate ADOMs ───────────────────────────────────
-            adoms_raw = client.get_adoms()
+            adoms_raw = inventory.adoms(client)
             adom_names = [
                 a.get("name", "")
                 for a in adoms_raw
@@ -109,7 +111,7 @@ def _run_job(app):
             adoms_with_devices = []
             for adom in adom_names:
                 try:
-                    devices = client.get_devices(adom)
+                    devices = inventory.devices(client, adom)
                     count = len(devices) if isinstance(devices, list) else 0
                     if isinstance(devices, list):
                         for d in devices:
