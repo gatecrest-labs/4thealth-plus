@@ -149,3 +149,12 @@ def test_unreadable_store_raises_store_error_not_empty(monkeypatch):
         inv.read_devices("A")
     with pytest.raises(inv.InventoryStoreError):
         inv.read_meta()
+
+
+def test_has_pkg_status_distinguishes_never_collected_from_empty():
+    inv.replace_adom("A", _devs("a", 1), None, _now())
+    assert inv.has_pkg_status("A") is False
+    inv.replace_adom("A", _devs("a", 1), [], _now())  # collected, nothing assigned
+    assert inv.has_pkg_status("A") is True
+    inv.delete_missing_adoms(set())
+    assert inv.has_pkg_status("A") is False

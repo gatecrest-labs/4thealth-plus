@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS inventory_state (key TEXT PRIMARY KEY, value TEXT);
 _ADOM_LIST_AT = "adom_list_collected_at"
 _REFRESH_LAST = "refresh_last_requested"
 _REFRESH_PENDING = "refresh_pending"
+_PKG_OK = "pkg_ok:"
 
 
 def max_age_seconds() -> float:
@@ -126,6 +127,12 @@ def replace_adom(
                     if isinstance(r, dict)
                 ),
             )
+        if pkg_rows is not None:
+            conn.execute(
+                "INSERT INTO inventory_state (key, value) VALUES (?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (_PKG_OK + adom, collected_at),
+            )
         conn.execute(
             "INSERT INTO inventory_meta (adom, collected_at, device_count, status, error) "
             "VALUES (?,?,?,'ok',NULL) ON CONFLICT(adom) DO UPDATE SET "
@@ -183,6 +190,7 @@ def delete_missing_adoms(keep: set[str]) -> None:
         for adom in gone:
             for t in ("inventory_device", "inventory_pkg", "inventory_meta"):
                 conn.execute(f"DELETE FROM {t} WHERE adom=?", (adom,))
+            conn.execute("DELETE FROM inventory_state WHERE key=?", (_PKG_OK + adom,))
         conn.commit()
 
 
@@ -225,6 +233,17 @@ def read_pkg_status(adom: str) -> list[dict]:
             "SELECT json FROM inventory_pkg WHERE adom=? ORDER BY rowid", (adom,)
         ).fetchall()
     return [json.loads(r[0]) for r in rows]
+
+
+def has_pkg_status(adom: str) -> bool:
+    """True once the ADOM's package status has been collected (even if empty)."""
+    with _Conn() as conn:
+        return (
+            conn.execute(
+                "SELECT 1 FROM inventory_state WHERE key=?", (_PKG_OK + adom,)
+            ).fetchone()
+            is not None
+        )
 
 
 def _meta_row(r) -> dict:
