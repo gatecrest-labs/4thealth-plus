@@ -189,6 +189,57 @@ _CONF_STATUS_MAP = {0: "unknown", 1: "insync", 2: "outofsync"}
 # db_status: whether FMG DB has been modified since the last install
 _DB_STATUS_MAP = {0: "unknown", 1: "nomod", 2: "modified"}
 
+
+def _status_int(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def normalize_sync_status(devices: list) -> list:
+    """Copies of *devices* with ``conf_status``/``db_status`` as strings.
+
+    Pure: the input (e.g. rows held by the inventory store) is never mutated.
+    Non-dict entries are skipped, unknown values become ``"unknown"``.
+    """
+    result = []
+    for d in devices:
+        if not isinstance(d, dict):
+            continue
+        out = dict(d)
+        out["conf_status"] = _CONF_STATUS_MAP.get(
+            _status_int(d.get("conf_status", 0)), "unknown"
+        )
+        out["db_status"] = _DB_STATUS_MAP.get(
+            _status_int(d.get("db_status", 0)), "unknown"
+        )
+        result.append(out)
+    return result
+
+
+def pkg_status_for(rows: list, device: str, vdom_names: list) -> str:
+    """Package status for one device from ADOM-wide ``_package/status`` rows.
+
+    Same answer as ``FMGClient.get_device_pkg_status``: ``"modified"`` if any
+    listed VDOM is modified/conflict, ``"nomod"`` if any is installed, else
+    ``""`` (unassigned, missing or unknown).
+    """
+    wanted = set(vdom_names)
+    found_nomod = False
+    for row in rows:
+        if not isinstance(row, dict) or row.get("dev") != device:
+            continue
+        if row.get("vdom") not in wanted:
+            continue
+        status = row.get("status", "")
+        if status in ("modified", "conflict"):
+            return "modified"
+        if status == "installed":
+            found_nomod = True
+    return "nomod" if found_nomod else ""
+
+
 _SUMMARY_KEYWORDS = [
     (["firewall policy", "firewall policy6"], "firewall_policy"),
     (
@@ -645,25 +696,17 @@ class FMGClient:
 
     def get_devices_with_sync_status(self, adom: str) -> list:
         """Return devices in an ADOM with normalized conf_status and db_status strings."""
-        raw = self._get(f"/dvmdb/adom/{adom}/device") or []
-        result = []
-        for d in raw:
-            if not isinstance(d, dict):
-                continue
-            cs_int = d.get("conf_status", 0)
-            try:
-                cs_int = int(cs_int)
-            except (TypeError, ValueError):
-                cs_int = 0
-            d["conf_status"] = _CONF_STATUS_MAP.get(cs_int, "unknown")
-            db_int = d.get("db_status", 0)
-            try:
-                db_int = int(db_int)
-            except (TypeError, ValueError):
-                db_int = 0
-            d["db_status"] = _DB_STATUS_MAP.get(db_int, "unknown")
-            result.append(d)
-        return result
+        return normalize_sync_status(self._get(f"/dvmdb/adom/{adom}/device") or [])
+
+    def get_adom_package_status(self, adom: str) -> list:
+        """Package install status for every device/VDOM in an ADOM, in one call.
+
+        GET /pm/config/adom/<adom>/_package/status returns
+        ``[{dev, vdom, pkg, status, ...}]`` (confirmed on FMG 8.0.2); the per-device
+        URL it replaces cost one call per device per VDOM.
+        """
+        data = self._get(f"/pm/config/adom/{adom}/_package/status")
+        return data if isinstance(data, list) else []
 
     def get_install_preview(self, adom: str, device: str) -> str:
         """Trigger FMG install preview for device, poll until done, return raw CLI diff text.

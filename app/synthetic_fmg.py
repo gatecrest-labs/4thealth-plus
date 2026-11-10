@@ -23,6 +23,7 @@ import copy
 import random
 import threading
 import time
+import zlib
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
@@ -305,6 +306,45 @@ class SyntheticFMG:
             return _err(body, url, -3, "Object does not exist")
         return copy.deepcopy(resp)
 
+    def _pkg_status_entry(self, adom: str, dev: dict, vdom: str) -> dict | None:
+        pkg = self._pkg_for_device(adom, dev["name"])
+        if not pkg:
+            return None
+        if dev["db_status"]:
+            status = "modified"
+        elif zlib.crc32(f"{dev['name']}/{vdom}".encode()) % 23 == 0:
+            status = "conflict"
+        else:
+            status = "installed"
+        return {
+            "dev": dev["name"],
+            "vdom": vdom,
+            "pkg": pkg,
+            "status": status,
+            "flags": 0,
+            "stype": 0,
+            "type": 1,
+        }
+
+    def _package_status(self, body: dict, url: str, adom: str, parts: list):
+        """ADOM-wide, per-device or per-device/VDOM ``_package/status``."""
+        devs = self._adoms[adom]
+        if len(parts) >= 7:
+            devs = [d for d in devs if d["name"] == parts[6]]
+            if not devs:
+                return None
+        rows = []
+        for dev in devs:
+            for v in dev["vdom"]:
+                if len(parts) == 8 and v["name"] != parts[7]:
+                    continue
+                entry = self._pkg_status_entry(adom, dev, v["name"])
+                if entry is not None:
+                    rows.append(entry)
+        if len(parts) == 8:
+            return _ok(body, url, rows[0] if rows else {"status": "unassigned"})
+        return _ok(body, url, rows)
+
     def _page(self, first: dict, items: list):
         rng = first.get("range")
         if isinstance(rng, list) and len(rng) == 2:
@@ -400,20 +440,8 @@ class SyntheticFMG:
                 if pkg not in self._pkg_names(adom):
                     return None
                 return _ok(body, url, self._page(first, self._policies(adom, pkg)))
-            if parts[4] == "_package" and len(parts) == 8 and parts[5] == "status":
-                device = parts[6]
-                pkg = self._pkg_for_device(adom, device)
-                if not pkg:
-                    return _ok(body, url, {"status": "unassigned"})
-                dev = next(d for d in self._adoms[adom] if d["name"] == device)
-                return _ok(
-                    body,
-                    url,
-                    {
-                        "pkg": pkg,
-                        "status": "modified" if dev["db_status"] else "installed",
-                    },
-                )
+            if parts[4:6] == ["_package", "status"] and len(parts) in (6, 7, 8):
+                return self._package_status(body, url, adom, parts)
             if parts[4:7] == ["obj", "firewall", "address"] and len(parts) == 7:
                 return _ok(body, url, self._page(first, self._objects("address", adom)))
             if parts[4:6] == ["obj", "firewall"] and len(parts) >= 7:
