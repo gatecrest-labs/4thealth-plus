@@ -20,7 +20,7 @@ import threading
 import time as _time
 from datetime import UTC, datetime
 
-from app import inventory
+from app import boot_warmup, inventory
 
 logger = logging.getLogger(__name__)
 
@@ -174,9 +174,6 @@ def init_scheduler(app):
     logger.info("versions_cache: scheduler started — every %d minutes", interval_min)
 
     # Warm the cache immediately at startup
-    t = threading.Thread(
-        target=_run_job, args=[app], name="versions_cache_startup", daemon=True
-    )
-    t.start()
+    boot_warmup.defer("versions_cache", lambda: _run_job(app), 1)
 
     return scheduler

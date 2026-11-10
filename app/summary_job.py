@@ -15,7 +15,7 @@ import threading
 import time as _time
 from datetime import UTC, datetime
 
-from app import inventory
+from app import boot_warmup, inventory
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +261,6 @@ def init_scheduler(app):
             _time.sleep(15)
             _run_job(app)
 
-    t = threading.Thread(target=_startup, name="summary_job_startup", daemon=True)
-    t.start()
+    boot_warmup.defer("summary_job", _startup, 1)
 
     return scheduler

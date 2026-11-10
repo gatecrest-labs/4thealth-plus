@@ -129,10 +129,19 @@ def poll_refresh_request() -> None:
         logger.exception("inventory_cache: refresh-request poll failed")
 
 
+def _first_refresh(app) -> None:
+    try:
+        _run_refresh(app)
+    finally:
+        from app import boot_warmup
+
+        boot_warmup.mark_inventory_ready()
+
+
 def _start_first_refresh(app) -> None:
-    threading.Thread(
-        target=_run_refresh, args=[app], name="inventory_first_refresh", daemon=True
-    ).start()
+    from app import boot_warmup
+
+    boot_warmup.defer("inventory", lambda: _first_refresh(app), priority=0)
 
 
 def init_scheduler(app) -> bool:

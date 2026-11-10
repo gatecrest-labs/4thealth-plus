@@ -44,7 +44,7 @@ import time as _time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from app import inventory
+from app import boot_warmup, inventory
 from app.atomic_io import atomic_write_json
 from app.license_status import parse_license_payload
 
@@ -409,11 +409,6 @@ def init_scheduler(app):
             "license_status_cache: skipping startup sweep — last sweep is still fresh"
         )
     else:
-        threading.Thread(
-            target=_run_sweep,
-            args=[app],
-            name="license_status_cache_startup",
-            daemon=True,
-        ).start()
+        boot_warmup.defer("license_status_cache", lambda: _run_sweep(app), 3)
 
     return scheduler

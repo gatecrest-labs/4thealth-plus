@@ -33,7 +33,7 @@ import time as _time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app import inventory
+from app import boot_warmup, inventory
 from app.atomic_io import atomic_write_json
 
 logger = logging.getLogger(__name__)
@@ -227,11 +227,6 @@ def init_scheduler(app):
         refresh_minute,
     )
 
-    threading.Thread(
-        target=_run_sweep,
-        args=[app],
-        name="device_backup_cache_startup",
-        daemon=True,
-    ).start()
+    boot_warmup.defer("device_backup_cache", lambda: _run_sweep(app), 3)
 
     return scheduler

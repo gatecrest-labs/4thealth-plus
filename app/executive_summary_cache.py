@@ -98,7 +98,7 @@ import threading
 import time as _time
 from datetime import UTC, datetime
 
-from app import collector_store, inventory
+from app import boot_warmup, collector_store, inventory
 
 logger = logging.getLogger(__name__)
 
@@ -913,15 +913,7 @@ def init_scheduler(app):
             _time.sleep(15)
             _run_hygiene_sweep(app)
 
-    threading.Thread(
-        target=_startup_device,
-        name="executive_summary_cache_device_startup",
-        daemon=True,
-    ).start()
-    threading.Thread(
-        target=_startup_hygiene,
-        name="executive_summary_cache_hygiene_startup",
-        daemon=True,
-    ).start()
+    boot_warmup.defer("executive_summary_device", _startup_device, 2)
+    boot_warmup.defer("executive_summary_hygiene", _startup_hygiene, 3)
 
     return scheduler

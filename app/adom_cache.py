@@ -16,7 +16,7 @@ import threading
 
 from flask import Flask
 
-from app import inventory
+from app import boot_warmup, inventory
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ def init_scheduler(app: Flask) -> None:
     """Register a recurring APScheduler job and run the first fetch immediately."""
     from apscheduler.schedulers.background import BackgroundScheduler
 
-    refresh_now(app)  # initial load at startup
+    boot_warmup.defer("adom_cache", lambda: _run_refresh(app), 1)  # initial load
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(
