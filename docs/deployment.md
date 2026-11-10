@@ -329,8 +329,9 @@ These apply to **both** units (set them in `/opt/4thealth/.env`, which both read
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `COLLECTOR_DB_PATH` | `/opt/4thealth/collector_state.db` | Shared SQLite store the collector writes and web reads. Must be on **local disk** (not NFS) and writable by the `4thealth` user. |
+| `COLLECTOR_DB_PATH` | `/opt/4thealth/collector_state.db` | Shared SQLite store the collector writes and web reads. Web workers also write a small FMG-metrics snapshot (about every 30 s, off the request path). Must be on **local disk** (not NFS) and writable by the `4thealth` user. |
 | `COLLECTOR_DB_JOURNAL` | `WAL` | `WAL` or `DELETE`. Use `DELETE` only if the proof below reports `UNSAFE` for WAL on your filesystem. |
+| `FMG_METRICS` | `on` | Set `off` to disable FMG call metrics entirely (no counters, no snapshot writes). |
 | `INVENTORY_CACHE`, `POLICY_STORE`, `AUDIT_SNAPSHOTS`, `JOB_QUEUE` | off | Layer flags for the scale work; later phases switch each layer from direct FMG calls to the cached path. Leave off until a phase says otherwise. |
 
 Use an **FMG API token** (`FMG_API_TOKEN`), not username/password, at this scale: password auth opens a real FortiManager admin session per client and FortiManager caps them.

@@ -171,3 +171,45 @@ def read_snapshot_meta(cache_key: str) -> dict | None:
         "collected_at": row["collected_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def read_snapshots_by_prefix(prefix: str) -> list[dict]:
+    """All snapshots whose key starts with *prefix*, as
+    ``{key, payload, collected_at, updated_at}`` dicts."""
+    with _lock:
+        _init_db()
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT cache_key, payload, collected_at, updated_at FROM cache_snapshots "
+                "WHERE substr(cache_key, 1, ?) = ?",
+                (len(prefix), prefix),
+            ).fetchall()
+        finally:
+            conn.close()
+    return [
+        {
+            "key": r["cache_key"],
+            "payload": json.loads(r["payload"]),
+            "collected_at": r["collected_at"],
+            "updated_at": r["updated_at"],
+        }
+        for r in rows
+    ]
+
+
+def delete_stale_snapshots(prefix: str, max_age_seconds: float) -> int:
+    """Delete snapshots under *prefix* not updated for *max_age_seconds*; returns the count."""
+    cutoff = datetime.fromtimestamp(time.time() - max_age_seconds, UTC).isoformat()
+    with _lock:
+        _init_db()
+        conn = _connect()
+        try:
+            cur = conn.execute(
+                "DELETE FROM cache_snapshots WHERE substr(cache_key, 1, ?) = ? AND updated_at < ?",
+                (len(prefix), prefix, cutoff),
+            )
+            conn.commit()
+            return cur.rowcount
+        finally:
+            conn.close()

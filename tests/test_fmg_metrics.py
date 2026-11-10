@@ -98,7 +98,7 @@ def test_flush_writes_role_keyed_snapshot():
 
     fmg_metrics.record("get", "/sys/status", 0.01, True)
     fmg_metrics.flush(force=True)
-    stored = collector_store.read_snapshot(f"fmg_metrics:{fmg_metrics.role()}")
+    stored = collector_store.read_snapshot(fmg_metrics.snapshot_key())
     assert stored["total"] == 1
 
 
@@ -163,3 +163,179 @@ def test_get_paged_goes_through_post_with_long_timeout():
     assert calls[0]["timeout"] == 120
     key = "get /pm/config/adom/{adom}/obj/firewall/address"
     assert fmg_metrics.snapshot()["by_url"][key]["count"] == 1
+
+
+# ---- review fix pass -------------------------------------------------------
+
+
+def _ok_post(c):
+    c._http.post = lambda *a, **k: _Resp()
+    return lambda: c._post(
+        {"id": 1, "method": "get", "params": [{"url": "/dvmdb/adom"}]}
+    )
+
+
+def test_post_does_not_wait_for_slow_store(monkeypatch):
+    """I1: the metrics write must not run on the FMG call path."""
+    import time
+
+    from app import collector_store, fmg_metrics
+
+    monkeypatch.setattr(fmg_metrics, "_flush_async", True)
+    started, release = threading.Event(), threading.Event()
+
+    def slow(*a, **k):
+        started.set()
+        release.wait(5)
+
+    monkeypatch.setattr(collector_store, "write_snapshot", slow)
+    call = _ok_post(_client_obj := _client())
+    t0 = time.monotonic()
+    call()
+    assert time.monotonic() - t0 < 1.0
+    assert started.wait(2), "the snapshot is still written, in the background"
+    release.set()
+    for (
+        t
+    ) in threading.enumerate():  # don't leak the in-flight writer into the next test
+        if t.name == "fmg-metrics-flush":
+            t.join(5)
+
+
+def test_flush_is_single_flight(monkeypatch):
+    """I1: many threads reaching flush() at once produce one write."""
+    from app import collector_store, fmg_metrics
+
+    monkeypatch.setattr(fmg_metrics, "_flush_async", True)
+    calls, gate = [], threading.Event()
+
+    def slow(*a, **k):
+        calls.append(1)
+        gate.wait(2)
+
+    monkeypatch.setattr(collector_store, "write_snapshot", slow)
+    fmg_metrics.record("get", "/sys/status", 0.01, True)
+    threads = [threading.Thread(target=fmg_metrics.flush) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    import time
+
+    deadline = time.monotonic() + 2
+    while not calls and time.monotonic() < deadline:
+        time.sleep(0.01)  # the single background write starts shortly after
+    time.sleep(0.1)  # a second writer (the bug) would have started by now
+    gate.set()
+    for t in threading.enumerate():
+        if t.name == "fmg-metrics-flush":
+            t.join(5)
+    assert len(calls) == 1
+
+
+def test_web_snapshot_key_includes_pid_and_collector_does_not(monkeypatch):
+    """I2: two gunicorn workers must not overwrite each other's key."""
+    import os
+
+    from app import fmg_metrics
+
+    monkeypatch.setattr(fmg_metrics, "role", lambda: "web")
+    assert fmg_metrics.snapshot_key() == f"fmg_metrics:web:{os.getpid()}"
+    monkeypatch.setattr(fmg_metrics, "role", lambda: "collector")
+    assert fmg_metrics.snapshot_key() == "fmg_metrics:collector"
+
+
+def test_merge_sums_counts_and_keeps_worst_p95():
+    from app import fmg_metrics
+
+    def snap(count, errors, p95):
+        return {
+            "role": "web",
+            "since": "x",
+            "total": count,
+            "errors": errors,
+            "by_url": {
+                "get /sys/status": {
+                    "count": count,
+                    "errors": errors,
+                    "total_s": count * 0.1,
+                    "p50_s": 0.1,
+                    "p95_s": p95,
+                }
+            },
+        }
+
+    merged = fmg_metrics.merge([snap(3, 1, 0.2), snap(5, 0, 0.9)])
+    assert merged["total"] == 8 and merged["errors"] == 1 and merged["workers"] == 2
+    e = merged["by_url"]["get /sys/status"]
+    assert e["count"] == 8 and e["errors"] == 1
+    assert e["p95_s"] == 0.9
+    assert e["p50_s"] == pytest.approx(0.1)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            "/pm/config/adom/E/pkg/Folder/Pkg/firewall/policy",
+            "/pm/config/adom/{adom}/pkg/{pkg}/firewall/policy",
+        ),
+        (
+            "/pm/config/adom/E/pblock/BLK-9/firewall/policy",
+            "/pm/config/adom/{adom}/pblock/{pblock}/firewall/policy",
+        ),
+        ("/dvmdb/adom/E/group/GRP-1", "/dvmdb/adom/{adom}/group/{group}"),
+        (
+            "/pm/config/adom/E/obj/firewall/address/host-1",
+            "/pm/config/adom/{adom}/obj/firewall/address/{name}",
+        ),
+        (
+            "/pm/config/adom/E/obj/firewall/service/custom/https2",
+            "/pm/config/adom/{adom}/obj/firewall/service/custom/{name}",
+        ),
+        (
+            "/pm/config/adom/E/obj/firewall/address",
+            "/pm/config/adom/{adom}/obj/firewall/address",
+        ),
+    ],
+)
+def test_normalize_url_collapses_remaining_name_families(raw, expected):
+    from app.fmg_metrics import normalize_url
+
+    assert normalize_url(raw) == expected
+
+
+def test_distinct_keys_are_capped():
+    from app import fmg_metrics
+
+    for i in range(fmg_metrics._MAX_KEYS + 100):
+        fmg_metrics.record("get", f"/odd/family{i}/x", 0.01, True)
+    snap = fmg_metrics.snapshot()
+    assert len(snap["by_url"]) <= fmg_metrics._MAX_KEYS + 1
+    assert snap["by_url"]["get <other>"]["count"] == 100
+    assert snap["total"] == fmg_metrics._MAX_KEYS + 100
+
+
+def test_metrics_can_be_switched_off(monkeypatch):
+    """I4: an off switch so the layer is inert if wanted."""
+    from app import collector_store, fmg_metrics
+
+    monkeypatch.setenv("FMG_METRICS", "off")
+    fmg_metrics.record("get", "/sys/status", 0.01, True)
+    fmg_metrics.flush(force=True)
+    assert fmg_metrics.snapshot()["total"] == 0
+    assert collector_store.read_snapshot(fmg_metrics.snapshot_key()) is None
+
+
+def test_fmg_level_error_counts_as_error_without_raising():
+    """M1: a -11 inside an HTTP 200 body is an error, not a success."""
+    from app import fmg_metrics
+
+    class Denied(_Resp):
+        def json(self):
+            return {"result": [{"status": {"code": -11, "message": "No permission"}}]}
+
+    c = _client()
+    c._http.post = lambda *a, **k: Denied()
+    c._post({"id": 1, "method": "get", "params": [{"url": "/dvmdb/adom"}]})
+    assert fmg_metrics.snapshot()["by_url"]["get /dvmdb/adom"]["errors"] == 1

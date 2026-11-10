@@ -88,3 +88,39 @@ def test_admin_page_has_metrics_panel(app):
         html = _client(app, "admin").get("/admin/").get_data(as_text=True)
     assert 'id="btnFmgMetrics"' in html
     assert 'id="fmgMetricsResult"' in html
+
+
+def test_web_view_merges_other_workers_and_ignores_stale_ones(app):
+    """I2: with several gunicorn workers the web view sums them."""
+    import os
+
+    from app import collector_store, fmg_metrics
+
+    fmg_metrics.reset()
+    fmg_metrics.record("get", "/sys/status", 0.01, True)
+    now = datetime.now(UTC).isoformat()
+    old = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
+    other = _snap("web", 5)
+    other["by_url"] = {
+        "get /sys/status": {
+            "count": 5,
+            "errors": 0,
+            "total_s": 0.5,
+            "p50_s": 0.1,
+            "p95_s": 0.2,
+        }
+    }
+    collector_store.write_snapshot(
+        f"fmg_metrics:web:{os.getpid() + 1}", other, collected_at=now
+    )
+    collector_store.write_snapshot(
+        f"fmg_metrics:web:{os.getpid() + 2}", _snap("web", 99), collected_at=old
+    )
+    collector_store.write_snapshot(
+        f"fmg_metrics:web:{os.getpid()}", _snap("web", 77), collected_at=now
+    )
+    body = _get(app).get_json()
+    assert (
+        body["web"]["total"] == 6
+    )  # live own (1) + fresh other worker (5); stale + own stored row ignored
+    assert body["web"]["workers"] == 2

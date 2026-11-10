@@ -37,3 +37,14 @@ def test_sigkill_writer_leaves_store_consistent(tmp_path, journal):
 def test_main_exit_code_zero_when_safe(tmp_path):
     vss = _load()
     assert vss.main(["--db", str(tmp_path / "p.db"), "--seconds", "1"]) == 0
+
+
+def test_stale_sidecar_files_from_a_previous_run_do_not_break_the_proof(tmp_path):
+    """M4: leftover -wal/-shm from a SIGKILLed run must be cleared before the next run."""
+    vss = _load()
+    db = tmp_path / "proof.db"
+    (tmp_path / "proof.db-wal").write_bytes(b"garbage-from-previous-killed-run" * 100)
+    (tmp_path / "proof.db-shm").write_bytes(b"\x00" * 32768)
+    result = vss.run_proof(db, seconds=1.0, journal="WAL")
+    assert result["integrity"] == "ok"
+    assert result["reader_errors"] == []

@@ -124,3 +124,32 @@ def test_persistent_lock_still_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(collector_store.time, "sleep", lambda s: None)
     with pytest.raises(sqlite3.OperationalError):
         collector_store.write_snapshot("k", {"a": 1})
+
+
+def test_read_snapshots_by_prefix_and_delete_stale(tmp_path, monkeypatch):
+    import time
+
+    from app import collector_store
+
+    path = tmp_path / "p.db"
+    monkeypatch.setenv("COLLECTOR_DB_PATH", str(path))
+    collector_store.write_snapshot("fmg_metrics:web:1", {"n": 1})
+    collector_store.write_snapshot("fmg_metrics:web:2", {"n": 2})
+    collector_store.write_snapshot("fmg_metrics:collector", {"n": 3})
+    rows = collector_store.read_snapshots_by_prefix("fmg_metrics:web:")
+    assert sorted(r["payload"]["n"] for r in rows) == [1, 2]
+    assert {r["key"] for r in rows} == {"fmg_metrics:web:1", "fmg_metrics:web:2"}
+
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "UPDATE cache_snapshots SET updated_at='2000-01-01T00:00:00+00:00' WHERE cache_key='fmg_metrics:web:1'"
+    )
+    conn.commit()
+    conn.close()
+    deleted = collector_store.delete_stale_snapshots(
+        "fmg_metrics:web:", max_age_seconds=86400
+    )
+    assert deleted == 1
+    left = {r["key"] for r in collector_store.read_snapshots_by_prefix("fmg_metrics:")}
+    assert left == {"fmg_metrics:web:2", "fmg_metrics:collector"}
+    assert time  # silence unused-import linters if the helper is trimmed

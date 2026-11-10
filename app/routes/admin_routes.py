@@ -469,6 +469,23 @@ def api_fmg_metrics():
     from app import collector_store, fmg_metrics
 
     web = fmg_metrics.snapshot()
+    try:
+        own_key = fmg_metrics.snapshot_key()
+        now = dt.datetime.now(dt.UTC)
+        others = []
+        for row in collector_store.read_snapshots_by_prefix("fmg_metrics:web:"):
+            if row["key"] == own_key:
+                continue  # replaced by this worker's live counters
+            try:
+                age = now - dt.datetime.fromisoformat(row["collected_at"])
+            except (TypeError, ValueError):
+                continue
+            if age <= _METRICS_STALE_AFTER:
+                others.append(row["payload"])
+        if others:
+            web = fmg_metrics.merge([web, *others])
+    except Exception:  # other workers' data is best-effort
+        pass
     collector = None
     note = None
     try:

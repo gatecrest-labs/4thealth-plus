@@ -26,6 +26,11 @@ def _isolate_collector_db(tmp_path, monkeypatch):
     """FMG metrics flush to the shared collector store from FMGClient._post, so
     no test may touch the project-root collector_state.db."""
     monkeypatch.setenv("COLLECTOR_DB_PATH", str(tmp_path / "collector_state_test.db"))
+    # Synchronous flushes: a background writer thread could outlive the test and
+    # write after the per-test DB path is gone. Tests of async behavior opt in.
+    from app import fmg_metrics
+
+    monkeypatch.setattr(fmg_metrics, "_flush_async", False)
 
 
 @pytest.fixture

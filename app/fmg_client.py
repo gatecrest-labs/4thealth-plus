@@ -424,6 +424,16 @@ class FMGError(Exception):
         self.code = code
 
 
+def _rpc_ok(data) -> bool:
+    """True unless any ``result[].status.code`` in an FMG JSON-RPC reply is non-zero."""
+    try:
+        return all(
+            (r.get("status") or {}).get("code", 0) == 0 for r in data.get("result", [])
+        )
+    except Exception:
+        return True
+
+
 class FMGClient:
     def __init__(
         self,
@@ -490,7 +500,7 @@ class FMGClient:
             )
             resp.raise_for_status()
             data = resp.json()
-            ok = True
+            ok = _rpc_ok(data)
         finally:
             first = (body.get("params") or [{}])[0]
             fmg_metrics.record(
