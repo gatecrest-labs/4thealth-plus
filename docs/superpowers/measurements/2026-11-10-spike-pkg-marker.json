@@ -1,0 +1,38 @@
+{
+  "audit_log_entry_keys": [],
+  "candidate_marker_fields": [
+    "package_entry.oid",
+    "package_object.oid",
+    "revision_entry.created_by",
+    "revision_entry.created_time",
+    "revision_entry.oid",
+    "revision_entry.version"
+  ],
+  "device_sample": 1,
+  "fmg_version": "FMGVersion(8.0.2, build=198)",
+  "package_count": 2,
+  "package_entry_keys": [
+    "name",
+    "obj ver",
+    "oid",
+    "package settings",
+    "path",
+    "type"
+  ],
+  "package_object_keys": [
+    "name",
+    "obj ver",
+    "oid",
+    "package settings",
+    "type"
+  ],
+  "revision_entry_keys": [
+    "created_by",
+    "created_time",
+    "desc",
+    "locked",
+    "name",
+    "oid",
+    "version"
+  ]
+}

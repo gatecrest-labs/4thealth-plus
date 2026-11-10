@@ -27,22 +27,28 @@ Owner action on the RHEL VM (as the app user, on the real filesystem):
 Expect two `SAFE` lines. If WAL reports `UNSAFE`, set `COLLECTOR_DB_JOURNAL=DELETE`
 in `/opt/4thealth/.env` (both units read it) and re-run.
 
-## 3. Lab FMG spikes: BLOCKED
-`scripts/fmg_spike.py` is built and tested, but the lab FMG answered the API
-token in `.env` with FMG code `-11` ("No permission for the resource") on
-`GET /dvmdb/adom`, so no spike could run. Needed from the owner: a lab API
-token whose admin profile can read dvmdb and policy packages, then run
-`devices-fields`, `proxy-multi`, `pkg-marker` and `latency` and commit the
-reports after reading them for sensitive data.
+## 3. Lab FMG spikes (run 2026-11-10, FMG 8.0.2, one device)
+Reports: `2026-11-10-spike-*.json` (read for sensitive data; none found).
+- **devices-fields**: `fields` alone is ~5% of the full device payload and keeps
+  `vdom`; `fields`+`loadsub=0` is 14% but drops `vdom`. One device only, so the
+  1,000-device saving is extrapolated.
+- **pkg-marker**: no single "package modified" marker (only `oid`, `obj ver`,
+  revision `created_time`).
+- **proxy-multi**: one target works; an unknown second target is silently
+  dropped. Real multi-device batching is NOT proven (lab has one device).
+- **latency** (`/api/v2/monitor/system/status`): sequential p50 0.16 s / p95
+  0.36 s; 4 workers p50 0.52 s / p95 0.80 s, 30 calls in 4.0 s. FMG serializes
+  much proxy work, so extra workers help little. A 1,000-device sweep is
+  roughly 3-5 minutes whatever the worker count.
 
 ## 4. Gates applied (spec 7a), with the safe fallbacks
 | Question | Status | Decision for later phases |
 |---|---|---|
 | WAL across the two units | Proven on macOS/Docker; RHEL pending | Phase 1+ may proceed; `COLLECTOR_DB_JOURNAL=DELETE` is the fallback |
-| `fields`/`loadsub` payload savings | Unknown (blocked) | Phase 2 ships for call-count reduction regardless; add trimming when measured |
-| Package change marker | Unknown (blocked) | Phase 4 uses hash + TTL (6 h forced refetch) only; add a marker if one is found |
-| Multi-target proxy | Unknown (blocked) | Phase 5 uses the rolling window only; add batching if proven |
-| Proxy/FMG latency | Unknown (blocked) | Re-tune interval defaults after measuring |
+| `fields`/`loadsub` payload savings | Measured: `fields` ~5% on one device | Use `fields` (keeps `vdom`) for inventory; re-measure at scale |
+| Package change marker | None exists | Phase 4 uses hash + TTL (6 h forced refetch) only |
+| Multi-target proxy | Unproven (1 device) | Phase 5 uses the rolling window only |
+| Proxy/FMG latency | Measured | Concurrency cap is a ceiling, not a speed-up; spread audit work over a window |
 
 No gate blocks Phase 1: every fallback is safe (more FMG reads or smaller
 batches, never stale or incorrect data).
