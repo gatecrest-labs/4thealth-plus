@@ -55,6 +55,13 @@ def start_all_schedulers(app: Flask) -> None:
     Flask's debug-mode reloader), since the "should this process run
     schedulers at all" decision is made once, by the caller.
     """
+    # Inventory first: every other cache reads from it when INVENTORY_CACHE is on.
+    if not app.config.get("_INVENTORY_CACHE_STARTED"):
+        app.config["_INVENTORY_CACHE_STARTED"] = True
+        from app.inventory_cache import init_scheduler as init_inventory_scheduler
+
+        init_inventory_scheduler(app)
+
     if not app.config.get("_SUMMARY_STARTED"):
         app.config["_SUMMARY_STARTED"] = True
         from app.summary_job import init_scheduler

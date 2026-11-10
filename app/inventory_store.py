@@ -36,6 +36,16 @@ _REFRESH_LAST = "refresh_last_requested"
 _REFRESH_PENDING = "refresh_pending"
 
 
+def max_age_seconds() -> float:
+    """Age beyond which cached inventory is not served (default 3 x refresh)."""
+    from app.config import Config
+
+    configured = Config.INVENTORY_MAX_AGE_SECS
+    if configured and configured > 0:
+        return float(configured)
+    return 3.0 * float(Config.INVENTORY_REFRESH_SECS)
+
+
 class InventoryStoreError(Exception):
     """The inventory store could not be read or written."""
 

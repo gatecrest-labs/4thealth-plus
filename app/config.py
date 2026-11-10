@@ -128,6 +128,12 @@ class Config:
     # Each flag switches one layer from the legacy direct-FMG path to the
     # cached path; all default off so behaviour is unchanged until enabled.
     INVENTORY_CACHE = _env_flag("INVENTORY_CACHE")
+    # Inventory cache (F2): collector refresh period, the age beyond which a
+    # reader falls back to a live FMG call (0/unset = 3 x refresh), and how many
+    # ADOMs the collector fetches in parallel.
+    INVENTORY_REFRESH_SECS = _env_int("INVENTORY_REFRESH_SECS", 300)
+    INVENTORY_MAX_AGE_SECS = _env_int("INVENTORY_MAX_AGE_SECS", 0)
+    INVENTORY_PARALLEL_ADOMS = _env_int("INVENTORY_PARALLEL_ADOMS", 4)
     POLICY_STORE = _env_flag("POLICY_STORE")
     AUDIT_SNAPSHOTS = _env_flag("AUDIT_SNAPSHOTS")
     JOB_QUEUE = _env_flag("JOB_QUEUE")
