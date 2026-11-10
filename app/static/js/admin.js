@@ -3275,7 +3275,11 @@ function renderFmgMetricsTable(title, snap) {
       <td>${(m.p50_s * 1000).toFixed(0)} ms</td>
       <td>${(m.p95_s * 1000).toFixed(0)} ms</td>
     </tr>`).join('');
+  const a = snap.access || {};
+  const avgWaitMs = a.calls_waited ? (a.wait_seconds / a.calls_waited) * 1000 : 0;
+  const accessLine = `<p class="text-muted" style="margin:.25rem 0">Retries: ${a.retries || 0} · calls that waited for a slot: ${a.calls_waited || 0} (avg ${avgWaitMs.toFixed(0)} ms) · peak in-flight: ${a.peak_inflight || 0}</p>`;
   return `<h4>${escH(title)} <span class="text-muted" style="font-weight:normal">— ${snap.total} calls, ${snap.errors} errors since ${escH(snap.since || '')}</span></h4>
+    ${accessLine}
     <div class="table-wrapper"><table class="data-table">
       <thead><tr><th>Call</th><th>Count</th><th>Errors</th><th>p50</th><th>p95</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="5" class="text-muted">No calls recorded.</td></tr>'}</tbody>

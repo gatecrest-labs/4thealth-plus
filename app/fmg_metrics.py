@@ -37,6 +37,13 @@ _stats: dict[str, dict] = {}
 _since = datetime.now(UTC).isoformat()
 _last_flush = 0.0
 
+
+def _empty_access() -> dict:
+    return {"retries": 0, "wait_seconds": 0.0, "calls_waited": 0, "peak_inflight": 0}
+
+
+_access: dict = _empty_access()
+
 # Path segments whose *next* segment is a name worth collapsing.
 _NAME_AFTER = {
     "adom": "{adom}",
@@ -129,6 +136,7 @@ def reset() -> None:
     global _since, _last_flush
     with _lock:
         _stats.clear()
+        _access.update(_empty_access())
         _since = datetime.now(UTC).isoformat()
         _last_flush = 0.0
 
@@ -158,6 +166,21 @@ def record(method: str, url: str, seconds: float, ok: bool) -> None:
                 entry["errors"] += 1
     except Exception:
         logger.debug("fmg_metrics.record failed", exc_info=True)
+
+
+def record_access(retries: int, wait_seconds: float, peak_inflight: int) -> None:
+    """Accumulate F1 access-layer counters for one ``_post`` call. Never raises."""
+    if not _enabled():
+        return
+    try:
+        with _lock:
+            _access["retries"] += retries
+            _access["wait_seconds"] += wait_seconds
+            if wait_seconds > 0:
+                _access["calls_waited"] += 1
+            _access["peak_inflight"] = max(_access["peak_inflight"], peak_inflight)
+    except Exception:  # metrics must never affect an FMG call
+        logger.debug("record_access failed", exc_info=True)
 
 
 def _percentile(sorted_samples: list[float], q: float) -> float:
@@ -196,6 +219,7 @@ def snapshot() -> dict:
             "total": total,
             "errors": errors,
             "by_url": by_url,
+            "access": dict(_access),
         }
 
 
@@ -208,7 +232,15 @@ def merge(snapshots: list[dict]) -> dict:
     merged: dict[str, dict] = {}
     total = errors = 0
     since = min((s.get("since", "") for s in snapshots), default="")
+    access = _empty_access()
     for snap in snapshots:
+        a = snap.get("access") or {}
+        access["retries"] += a.get("retries", 0)
+        access["wait_seconds"] += a.get("wait_seconds", 0.0)
+        access["calls_waited"] += a.get("calls_waited", 0)
+        access["peak_inflight"] = max(
+            access["peak_inflight"], a.get("peak_inflight", 0)
+        )
         total += snap.get("total", 0)
         errors += snap.get("errors", 0)
         for key, e in snap.get("by_url", {}).items():
@@ -237,6 +269,7 @@ def merge(snapshots: list[dict]) -> dict:
         "total": total,
         "errors": errors,
         "by_url": by_url,
+        "access": access,
     }
 
 

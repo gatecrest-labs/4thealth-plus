@@ -124,3 +124,18 @@ def test_web_view_merges_other_workers_and_ignores_stale_ones(app):
         body["web"]["total"] == 6
     )  # live own (1) + fresh other worker (5); stale + own stored row ignored
     assert body["web"]["workers"] == 2
+
+
+def test_endpoint_returns_access_block_for_web_and_collector(app):
+    from app import collector_store, fmg_metrics
+
+    fmg_metrics.reset()
+    fmg_metrics.record_access(retries=2, wait_seconds=0.4, peak_inflight=3)
+    coll = _snap("collector", 5)
+    coll["access"] = {"retries": 7, "wait_seconds": 1.0, "calls_waited": 4, "peak_inflight": 8}
+    collector_store.write_snapshot(
+        "fmg_metrics:collector", coll, collected_at=datetime.now(UTC).isoformat()
+    )
+    body = _get(app).get_json()
+    assert body["web"]["access"]["retries"] == 2
+    assert body["collector"]["access"]["peak_inflight"] == 8

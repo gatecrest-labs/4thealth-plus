@@ -493,11 +493,13 @@ class FMGClient:
         started = time.monotonic()
         ok = False
         attempt = 0
+        waited_total = 0.0
         try:
             while True:
                 attempt += 1
                 try:
-                    with fmg_access.slot():
+                    with fmg_access.slot() as waited:
+                        waited_total += waited
                         resp = self._http.post(
                             self.base_url,
                             json=body,
@@ -526,6 +528,9 @@ class FMGClient:
                 first.get("url", "") if isinstance(first, dict) else "",
                 time.monotonic() - started,
                 ok,
+            )
+            fmg_metrics.record_access(
+                max(0, attempt - 1), waited_total, fmg_access.peak_inflight()
             )
             fmg_metrics.flush()
         if self._recorder is not None:

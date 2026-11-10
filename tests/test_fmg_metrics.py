@@ -339,3 +339,85 @@ def test_fmg_level_error_counts_as_error_without_raising():
     c._http.post = lambda *a, **k: Denied()
     c._post({"id": 1, "method": "get", "params": [{"url": "/dvmdb/adom"}]})
     assert fmg_metrics.snapshot()["by_url"]["get /dvmdb/adom"]["errors"] == 1
+
+
+# ---- F1 access counters ----
+def test_record_access_accumulates():
+    from app import fmg_metrics
+
+    fmg_metrics.reset()
+    fmg_metrics.record_access(retries=1, wait_seconds=0.5, peak_inflight=3)
+    fmg_metrics.record_access(retries=0, wait_seconds=0.0, peak_inflight=2)
+    fmg_metrics.record_access(retries=2, wait_seconds=0.25, peak_inflight=4)
+    acc = fmg_metrics.snapshot()["access"]
+    assert acc == {
+        "retries": 3,
+        "wait_seconds": 0.75,
+        "calls_waited": 2,
+        "peak_inflight": 4,
+    }
+
+
+def test_merge_sums_and_maxes_access():
+    from app import fmg_metrics
+
+    def snap(r, w, cw, p):
+        return {
+            "role": "web", "since": "x", "total": 0, "errors": 0, "by_url": {},
+            "access": {"retries": r, "wait_seconds": w, "calls_waited": cw, "peak_inflight": p},
+        }
+
+    merged = fmg_metrics.merge([snap(1, 0.5, 2, 3), snap(2, 1.0, 1, 4), {"role": "web", "since": "x", "total": 0, "errors": 0, "by_url": {}}])
+    assert merged["access"] == {
+        "retries": 3, "wait_seconds": 1.5, "calls_waited": 3, "peak_inflight": 4,
+    }
+
+
+def test_snapshot_contains_access_and_reset_clears_it():
+    from app import fmg_metrics
+
+    fmg_metrics.reset()
+    fmg_metrics.record_access(retries=1, wait_seconds=0.1, peak_inflight=2)
+    assert fmg_metrics.snapshot()["access"]["retries"] == 1
+    fmg_metrics.reset()
+    assert fmg_metrics.snapshot()["access"] == {
+        "retries": 0, "wait_seconds": 0.0, "calls_waited": 0, "peak_inflight": 0,
+    }
+
+
+def test_post_records_access_counters(monkeypatch):
+    import requests
+
+    from app import fmg_access, fmg_metrics
+    from app.config import Config
+    from app.fmg_client import FMGClient
+
+    class R:
+        def __init__(self, status):
+            self.status_code = status
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError("x", response=self)
+
+        def json(self):
+            return {"result": [{"status": {"code": 0}}]}
+
+    class S:
+        def __init__(self):
+            self.q = [R(503), R(200)]
+
+        def post(self, *a, **k):
+            return self.q.pop(0)
+
+    fmg_access.reset()
+    fmg_metrics.reset()
+    monkeypatch.setattr(Config, "FMG_RETRIES", 2)
+    monkeypatch.setattr(Config, "FMG_MAX_INFLIGHT", 4)
+    monkeypatch.setattr(fmg_access, "sleep", lambda s: None)
+    c = FMGClient(host="h", token="t")
+    c._http = S()
+    c._post({"id": 1, "method": "get", "params": [{"url": "/sys/status"}]})
+    acc = fmg_metrics.snapshot()["access"]
+    assert acc["retries"] == 1
+    assert acc["peak_inflight"] >= 1
