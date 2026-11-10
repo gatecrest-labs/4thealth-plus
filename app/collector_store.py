@@ -148,3 +148,26 @@ def read_snapshot(cache_key: str) -> dict | None:
     if row is None:
         return None
     return json.loads(row["payload"])
+
+
+def read_snapshot_meta(cache_key: str) -> dict | None:
+    """Like :func:`read_snapshot` but returns ``{payload, collected_at, updated_at}``
+    so callers can judge how fresh the stored value is."""
+    with _lock:
+        _init_db()
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT payload, collected_at, updated_at FROM cache_snapshots "
+                "WHERE cache_key = ?",
+                (cache_key,),
+            ).fetchone()
+        finally:
+            conn.close()
+    if row is None:
+        return None
+    return {
+        "payload": json.loads(row["payload"]),
+        "collected_at": row["collected_at"],
+        "updated_at": row["updated_at"],
+    }

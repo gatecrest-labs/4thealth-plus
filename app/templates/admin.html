@@ -275,6 +275,21 @@
   <div id="fmgSelftestResult" class="text-muted" style="font-size:.9rem">
     Not run yet.
   </div>
+
+  <div class="admin-panel-header" style="margin-top:1.5rem">
+    <div>
+      <h3>FMG Call Metrics</h3>
+      <p class="text-muted" style="font-size:.85rem;margin-top:.2rem">
+        How many calls this app has made to FortiManager since each process
+        started, per call type (names collapsed), with errors and latency.
+        The collector publishes every ~30 seconds.
+      </p>
+    </div>
+    <button class="btn btn-secondary" id="btnFmgMetrics">Refresh</button>
+  </div>
+  <div id="fmgMetricsResult" class="text-muted" style="font-size:.9rem">
+    Not loaded yet.
+  </div>
 </div>
 
 <!-- ══════════════════════  LOG HYGIENE PANEL  ══════════════════════ -->

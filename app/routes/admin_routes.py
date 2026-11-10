@@ -33,6 +33,7 @@ App settings (JSON):
   GET    /admin/api/ai-usage         bucketed AI Assist call/cost history (?range= or ?start=&end=)
   GET    /admin/api/host-metrics     bucketed host CPU/mem/disk history (?range=1h|4h|12h|1d|7d|14d)
   GET    /admin/api/login-metrics    bucketed login success/failure history (?range=1h|4h|12h|1d|7d|14d)
+  GET    /admin/api/fmg-metrics      FMG call counts/errors/latency per URL for the web process and the collector
   POST   /admin/api/fmg-selftest     read-only FortiManager API self-test: per-call ok/denied/error/skipped + FMG version
 
 External API tokens (JSON):
@@ -53,6 +54,7 @@ Log Hygiene: 4tlog connection (JSON):
   POST   /admin/api/log-source/test   reachability/auth probe against 4tlog
 """
 
+import datetime as dt
 import os
 import re
 
@@ -451,6 +453,48 @@ def api_host_metrics():
     from app.host_metrics import get_metrics
 
     return jsonify(get_metrics(request.args.get("range", "1h")))
+
+
+_METRICS_STALE_AFTER = dt.timedelta(minutes=5)
+
+
+@bp.route("/api/fmg-metrics", methods=["GET"])
+@_admin_required
+def api_fmg_metrics():
+    """FMG call metrics for this web process and the collector's last snapshot.
+
+    The collector publishes to the shared store every ~30 s; a missing or old
+    snapshot is explained in ``note`` rather than failing the request.
+    """
+    from app import collector_store, fmg_metrics
+
+    web = fmg_metrics.snapshot()
+    collector = None
+    note = None
+    try:
+        meta = collector_store.read_snapshot_meta("fmg_metrics:collector")
+    except Exception as exc:  # unreadable store must not 500 the admin page
+        meta = None
+        note = f"Could not read the collector's metrics: {exc}"
+    if meta is None:
+        note = note or (
+            "No collector metrics yet: the collector process has not published "
+            "any (is the collector running, and has it made FMG calls?)."
+        )
+    else:
+        collector = meta["payload"]
+        try:
+            age = dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(
+                meta["collected_at"]
+            )
+            if age > _METRICS_STALE_AFTER:
+                note = (
+                    f"Collector metrics are stale (last published "
+                    f"{int(age.total_seconds() // 60)} min ago)."
+                )
+        except (TypeError, ValueError):
+            note = "Collector metrics have no valid timestamp."
+    return jsonify({"web": web, "collector": collector, "note": note})
 
 
 @bp.route("/api/fmg-selftest", methods=["POST"])
