@@ -248,3 +248,133 @@ def test_backup_and_license_keep_their_own_calls(monkeypatch, stores, small_flee
     guard.forwarded.clear()
     runner_l()
     assert any(u == "/sys/proxy/json" for u in guard.forwarded)
+
+
+# ---- Task 7: request-path lists ----
+import time as _time
+from unittest.mock import patch
+
+_USERS = {"admin": {"password_hash": "$2b$12$placeholder", "role": "admin"}}
+
+_CLIENT_FACTORIES = (
+    "app.routes.api_routes._make_client",
+    "app.routes.rule_review_routes.make_client",
+    "app.routes.audit_review_routes.make_client",
+)
+
+
+def _http(app):
+    c = app.test_client()
+    with c.session_transaction() as sess:
+        sess["user"] = "admin"
+        sess["role"] = "admin"
+        sess["_csrf_token"] = "t"
+        sess["login_at"] = int(_time.time())
+    return c
+
+
+def _get_json(monkeypatch, client_obj, url):
+    for target in _CLIENT_FACTORIES:
+        monkeypatch.setattr(target, lambda c=client_obj: c)
+    with patch("app.auth._load_users", return_value=_USERS):
+        resp = _http(_app()).get(url)
+    assert resp.status_code == 200, (
+        url,
+        resp.status_code,
+        resp.get_data(as_text=True)[:200],
+    )
+    return resp.get_json()
+
+
+def _adom_names(real):
+    return [
+        a["name"] for a in real.get_adoms() if not a["name"].lower().startswith("forti")
+    ]
+
+
+def _route_urls(real):
+    adom = _adom_names(real)[0]
+    first_device = real.get_devices(adom)[0]["name"]
+    return [
+        "/api/adoms",
+        f"/api/adoms/{adom}/devices",
+        f"/api/adoms/{adom}/units",
+        f"/api/search?q={first_device[:4].lower()}",
+        "/api/rule-review/adoms",
+        "/api/rule-review/devices",
+        f"/api/audit-review/adoms/{adom}/devices",
+    ]
+
+
+def test_request_path_lists_same_json_from_store_with_zero_inventory_calls(
+    monkeypatch, fleet
+):
+    synth, real = fleet
+    for url in _route_urls(real):
+        monkeypatch.setattr(Config, "INVENTORY_CACHE", False)
+        legacy = _get_json(monkeypatch, real, url)
+        guard = _NoDvmdb(synth)
+        monkeypatch.setattr(Config, "INVENTORY_CACHE", True)
+        cached = _get_json(monkeypatch, guard, url)
+        assert guard.attempts == [], url
+        assert cached == legacy, url
+    assert legacy is not None
+
+
+def test_restricted_user_still_gets_403_for_other_adom_with_cache_on(
+    monkeypatch, fleet
+):
+    synth, real = fleet
+    names = _adom_names(real)
+    denied = names[1]
+    monkeypatch.setattr(Config, "INVENTORY_CACHE", True)
+    guard = _NoDvmdb(synth)
+    monkeypatch.setattr(
+        "app.routes.api_routes.check_adom_access",
+        lambda a: ({"error": "not permitted"}, 403) if a == denied else None,
+    )
+    for target in _CLIENT_FACTORIES:
+        monkeypatch.setattr(target, lambda: guard)
+    with patch("app.auth._load_users", return_value=_USERS):
+        c = _http(_app())
+        assert c.get(f"/api/adoms/{denied}/devices").status_code == 403
+        assert c.get(f"/api/adoms/{names[0]}/devices").status_code == 200
+    assert guard.attempts == []
+
+
+def test_adom_list_still_filters_forti_and_inaccessible_adoms_with_cache_on(
+    monkeypatch, fleet
+):
+    synth, real = fleet
+    names = _adom_names(real)
+    monkeypatch.setattr(Config, "INVENTORY_CACHE", True)
+    guard = _NoDvmdb(synth)
+    for target in _CLIENT_FACTORIES:
+        monkeypatch.setattr(target, lambda: guard)
+    with (
+        patch("app.auth._load_users", return_value=_USERS),
+        patch("app.groups.get_allowed_adoms", return_value={names[0]}),
+    ):
+        c = _http(_app())
+        body = c.get("/api/rule-review/adoms").get_json()
+    assert body == [names[0]] or body == {"adoms": [names[0]]} or names[0] in str(body)
+    assert all(
+        not str(n).lower().startswith("forti")
+        for n in (body if isinstance(body, list) else [])
+    )
+    assert names[1] not in str(body)
+
+
+def test_nat_report_device_list_from_store(monkeypatch, fleet):
+    synth, real = fleet
+    from app import nat_report_scheduler
+
+    adom = _adom_names(real)[0]
+    monkeypatch.setattr(Config, "INVENTORY_CACHE", True)
+    guard = _NoDvmdb(synth)
+    monkeypatch.setattr(nat_report_scheduler, "_make_client", lambda: guard)
+    nat_report_scheduler.collect_nat_data(adom, max_workers=2)
+    assert guard.attempts == []
+    assert any(
+        "/pm/" in u for u in guard.forwarded
+    )  # package/object reads stay live (Phase 4)

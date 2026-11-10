@@ -228,3 +228,24 @@ def test_pkg_status_lookup_live_when_flag_off(monkeypatch, fleet):
         d["name"], vd
     ) == real.get_device_pkg_status(adom, d["name"], vd)
     assert spy.calls == ["get_device_pkg_status"]
+
+
+def test_system_adoms_are_not_inventoried_so_never_fall_back_live(fleet):
+    spy = Spy(boom=True)
+    assert inventory.devices(spy, "FortiAnalyzer") == []
+    assert inventory.devices(spy, "fortimanager_managed_devices") == []
+    assert inventory.devices_with_sync_status(spy, "FortiCarrier") == []
+    assert inventory.pkg_status(spy, "FortiCache", "d", ["root"]) == ""
+    assert inventory.pkg_status_lookup(spy, "FortiCache")("d", ["root"]) == ""
+    assert spy.calls == []
+    assert inventory.counters()["fallbacks"] == 0
+
+
+def test_system_adoms_still_live_when_flag_off(monkeypatch, fleet):
+    monkeypatch.setattr(Config, "INVENTORY_CACHE", False)
+
+    class OnlyDevices:
+        def get_devices(self, adom):
+            return [{"name": "carrier-fw"}]
+
+    assert inventory.devices(OnlyDevices(), "FortiCarrier") == [{"name": "carrier-fw"}]

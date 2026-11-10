@@ -42,6 +42,11 @@ def _enabled() -> bool:
     return bool(Config.INVENTORY_CACHE)
 
 
+def _is_system_adom(adom: str) -> bool:
+    """``forti*`` ADOMs are FortiManager system ADOMs the collector never inventories."""
+    return adom.lower().startswith("forti")
+
+
 def _cached_devices(adom: str) -> list[dict] | None:
     """Fresh cached devices for *adom*, or None (never collected / stale / store error)."""
     try:
@@ -80,6 +85,8 @@ def adoms(client) -> list[dict]:
 def devices(client, adom: str) -> list[dict]:
     if not _enabled():
         return client.get_devices(adom)
+    if _is_system_adom(adom):
+        return []
     cached = _cached_devices(adom)
     if cached is not None:
         _bump("hits")
@@ -91,6 +98,8 @@ def devices(client, adom: str) -> list[dict]:
 def devices_with_sync_status(client, adom: str) -> list[dict]:
     if not _enabled():
         return client.get_devices_with_sync_status(adom)
+    if _is_system_adom(adom):
+        return []
     cached = _cached_devices(adom)
     if cached is not None:
         _bump("hits")
@@ -103,6 +112,8 @@ def pkg_status(client, adom: str, device: str, vdom_names: list) -> str:
     """``"modified"`` / ``"nomod"`` / ``""`` like ``FMGClient.get_device_pkg_status``."""
     if not _enabled():
         return client.get_device_pkg_status(adom, device, vdom_names)
+    if _is_system_adom(adom):
+        return ""
     try:
         meta = inventory_store.read_meta(adom)
         fresh = (
@@ -134,6 +145,8 @@ def pkg_status_lookup(client, adom: str):
     live = lambda device, vdoms: client.get_device_pkg_status(adom, device, vdoms)
     if not _enabled():
         return live
+    if _is_system_adom(adom):
+        return lambda device, vdoms: ""
     try:
         meta = inventory_store.read_meta(adom)
         fresh = (

@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from app import inventory
 from app.app_logger import app_log
 from app.atomic_io import atomic_write_json
 
@@ -367,7 +368,7 @@ def collect_nat_data(adom: str, max_workers: int = 4) -> dict:
         packages = client.get_policy_packages(adom) or []
         shared_vips = client.get_vip_objects(adom) or []
         pools = client.get_ippool_objects(adom) or []
-        devices = client.get_devices(adom) or []
+        devices = inventory.devices(client, adom) or []
 
     dev_names = [
         d.get("name", "") for d in devices if isinstance(d, dict) and d.get("name")

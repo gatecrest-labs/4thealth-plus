@@ -38,7 +38,7 @@ import datetime
 
 from flask import Blueprint, jsonify, render_template, request, session
 
-from app import registry
+from app import inventory, registry
 from app.app_logger import app_log
 from app.decorators import check_adom_access, tab_required
 from app.device_review import _CHECKS_BY_KEY, CHECKS_META, run_checks
@@ -76,7 +76,7 @@ def device_review_devices(adom: str):
         return err
     try:
         with make_client() as client:
-            raw = client.get_devices(adom)
+            raw = inventory.devices(client, adom)
         seen: set[str] = set()
         devices = []
         for d in raw:
@@ -269,7 +269,7 @@ def bulk_device_review_adom(
 
     try:
         with make_client() as client:
-            all_devices = client.get_devices(adom)
+            all_devices = inventory.devices(client, adom)
     except Exception as exc:
         app_log(
             "ERROR",
@@ -333,7 +333,7 @@ def device_review_run():
 
     try:
         with make_client() as client:
-            all_devices = client.get_devices(adom)
+            all_devices = inventory.devices(client, adom)
     except FMGError as exc:
         return upstream_api_error("audit_review", exc)
     except Exception as exc:

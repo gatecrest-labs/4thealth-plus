@@ -5,6 +5,7 @@ import re
 
 from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 
+from app import inventory
 from app.config import Config
 from app.decorators import admin_required, check_adom_access, tab_required
 from app.fmg_client import PROXY_ENDPOINTS, FMGClient, FMGError
@@ -492,7 +493,7 @@ def adom_license(adom: str):
 def adoms():
     try:
         with _make_client() as client:
-            raw = client.get_adoms()
+            raw = inventory.adoms(client)
         items = [
             {"name": a.get("name", a.get("adom", "")), "desc": a.get("desc", "")}
             for a in raw
@@ -528,7 +529,7 @@ def devices(adom: str):
         return err
     try:
         with _make_client() as client:
-            raw = client.get_devices(adom)
+            raw = inventory.devices(client, adom)
         result = []
         for d in raw:
             if not isinstance(d, dict):
@@ -593,7 +594,7 @@ def adom_units(adom: str):
         return err
     try:
         with _make_client() as client:
-            raw = client.get_devices(adom)
+            raw = inventory.devices(client, adom)
         result = []
         for d in raw:
             if not isinstance(d, dict):
@@ -960,7 +961,7 @@ def search():
             session.get("user", ""), ad_groups=session.get("ad_groups", [])
         )
         with _make_client() as client:
-            adoms_raw = client.get_adoms()
+            adoms_raw = inventory.adoms(client)
             adom_names = [
                 a.get("name", "")
                 for a in adoms_raw
@@ -971,7 +972,7 @@ def search():
                 adom_names = [a for a in adom_names if a in allowed]
             matches = []
             for adom in adom_names:
-                devices_raw = client.get_devices(adom)
+                devices_raw = inventory.devices(client, adom)
                 for d in devices_raw:
                     if not isinstance(d, dict):
                         continue
