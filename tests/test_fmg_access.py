@@ -142,3 +142,32 @@ def test_slot_yields_wait_seconds(monkeypatch):
     a.join()
     b.join()
     assert waits[0] > 0.02
+
+
+def test_slot_wait_is_bounded_and_does_not_leak(monkeypatch):
+    monkeypatch.setattr(Config, "FMG_MAX_INFLIGHT", 1)
+    monkeypatch.setattr(Config, "FMG_SLOT_WAIT_SECS", 0.05)
+    holding, release = threading.Event(), threading.Event()
+
+    def holder():
+        with fmg_access.slot():
+            holding.set()
+            release.wait(2)
+
+    t = threading.Thread(target=holder)
+    t.start()
+    holding.wait()
+    with pytest.raises(fmg_access.SlotTimeout), fmg_access.slot():
+        pass
+    release.set()
+    t.join()
+    with fmg_access.slot():  # the timed-out waiter must not have leaked a slot
+        pass
+    assert fmg_access.peak_inflight() == 1
+
+
+def test_slot_wait_zero_means_unbounded(monkeypatch):
+    monkeypatch.setattr(Config, "FMG_MAX_INFLIGHT", 1)
+    monkeypatch.setattr(Config, "FMG_SLOT_WAIT_SECS", 0)
+    with fmg_access.slot():
+        pass

@@ -174,3 +174,16 @@ def test_inflight_zero_restores_unlimited_behaviour(monkeypatch):
     monkeypatch.setattr(Config, "FMG_MAX_INFLIGHT", 0)
     c = client([Resp(200)])
     assert c._post(GET) == OK_BODY
+
+
+def test_recorded_latency_excludes_backoff_and_slot_wait(monkeypatch):
+    import time
+
+    from app import fmg_metrics
+
+    fmg_metrics.reset()
+    monkeypatch.setattr(fmg_access, "sleep", lambda s: time.sleep(0.2))
+    c = client([Resp(503), Resp(200)])
+    c._post(GET)
+    p95 = fmg_metrics.snapshot()["by_url"]["get /sys/status"]["p95_s"]
+    assert p95 < 0.1

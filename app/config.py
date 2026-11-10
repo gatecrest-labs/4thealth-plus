@@ -90,6 +90,8 @@ class Config:
     # web worker 4), 0 = unlimited. FMG_RETRIES: extra attempts, 0 = off.
     FMG_MAX_INFLIGHT = _env_int("FMG_MAX_INFLIGHT", None)
     FMG_RETRIES = _env_int("FMG_RETRIES", 2)
+    # Seconds a call may wait for an in-flight slot before failing (0 = no bound).
+    FMG_SLOT_WAIT_SECS = _env_int("FMG_SLOT_WAIT_SECS", 60)
 
     # Health thresholds (yellow / red)
     CPU_WARN = int(os.environ.get("CPU_WARN", "70"))

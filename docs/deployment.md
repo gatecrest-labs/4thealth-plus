@@ -333,6 +333,7 @@ These apply to **both** units (set them in `/opt/4thealth/.env`, which both read
 | `COLLECTOR_DB_JOURNAL` | `WAL` | `WAL` or `DELETE`. Use `DELETE` only if the proof below reports `UNSAFE` for WAL on your filesystem. |
 | `FMG_METRICS` | `on` | Set `off` to disable FMG call metrics entirely (no counters, no snapshot writes). |
 | `FMG_MAX_INFLIGHT` | collector 8, web worker 4 | Per-process cap on concurrent FortiManager requests (total <= 16 with two web workers). `0` = unlimited. FMG handles a few concurrent proxy calls well; more does not make sweeps faster (lab: 4 workers gave ~1.3x). |
+| `FMG_SLOT_WAIT_SECS` | `60` | Seconds a call waits for a free in-flight slot before failing with a clear timeout error (`0` = wait forever). |
 | `FMG_RETRIES` | `2` | Extra attempts with jittered backoff on connection failures, 5xx and timeouts for read (`get`) calls only; write-like `exec` calls are retried only when the connection was never established. `0` disables. |
 | `INVENTORY_CACHE`, `POLICY_STORE`, `AUDIT_SNAPSHOTS`, `JOB_QUEUE` | off | Layer flags for the scale work; later phases switch each layer from direct FMG calls to the cached path. Leave off until a phase says otherwise. |
 

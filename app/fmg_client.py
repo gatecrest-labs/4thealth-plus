@@ -490,7 +490,7 @@ class FMGClient:
             headers["Authorization"] = f"Bearer {self.token}"
         method = str(body.get("method", ""))
         retries = max(0, Config.FMG_RETRIES or 0)
-        started = time.monotonic()
+        call_seconds = 0.0  # last HTTP attempt only: no slot wait, no backoff
         ok = False
         attempt = 0
         waited_total = 0.0
@@ -500,13 +500,19 @@ class FMGClient:
                 try:
                     with fmg_access.slot() as waited:
                         waited_total += waited
-                        resp = self._http.post(
-                            self.base_url,
-                            json=body,
-                            verify=self.verify_ssl,
-                            timeout=timeout if timeout is not None else self.timeout,
-                            headers=headers,
-                        )
+                        attempt_started = time.monotonic()
+                        try:
+                            resp = self._http.post(
+                                self.base_url,
+                                json=body,
+                                verify=self.verify_ssl,
+                                timeout=timeout
+                                if timeout is not None
+                                else self.timeout,
+                                headers=headers,
+                            )
+                        finally:
+                            call_seconds = time.monotonic() - attempt_started
                         resp.raise_for_status()
                     data = resp.json()
                     ok = _rpc_ok(data)
@@ -526,7 +532,7 @@ class FMGClient:
             fmg_metrics.record(
                 method,
                 first.get("url", "") if isinstance(first, dict) else "",
-                time.monotonic() - started,
+                call_seconds,
                 ok,
             )
             fmg_metrics.record_access(

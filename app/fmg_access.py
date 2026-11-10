@@ -73,6 +73,10 @@ def _get_semaphore(cap: int) -> threading.BoundedSemaphore:
         return _semaphore
 
 
+class SlotTimeout(TimeoutError):
+    """No in-flight slot became free within ``FMG_SLOT_WAIT_SECS``."""
+
+
 @contextlib.contextmanager
 def slot() -> Iterator[float]:
     """Hold one in-flight slot for one round trip; yields seconds spent waiting."""
@@ -81,7 +85,11 @@ def slot() -> Iterator[float]:
     sem = _get_semaphore(cap) if cap > 0 else None
     started = time.monotonic()
     if sem is not None:
-        sem.acquire()
+        bound = Config.FMG_SLOT_WAIT_SECS
+        if not sem.acquire(timeout=bound if bound and bound > 0 else None):
+            raise SlotTimeout(
+                f"waited {bound}s for one of {cap} FortiManager request slots"
+            )
     waited = time.monotonic() - started
     with _slot_lock:
         _inflight += 1
