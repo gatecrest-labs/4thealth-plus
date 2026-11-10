@@ -32,6 +32,11 @@ def _require_secret_key() -> str:
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 
+def _env_flag(name: str) -> bool:
+    """True when env var *name* is one of 1/true/yes/on (case-insensitive)."""
+    return os.environ.get(name, "").strip().lower() in _TRUTHY
+
+
 class Config:
     SECRET_KEY = _require_secret_key()
     # Browser cookies are scoped by domain+path, not by port (RFC 6265).
@@ -107,10 +112,10 @@ class Config:
     # docs/superpowers/specs/2026-11-10-scale-1000-fortigates-design.md).
     # Each flag switches one layer from the legacy direct-FMG path to the
     # cached path; all default off so behaviour is unchanged until enabled.
-    INVENTORY_CACHE = os.environ.get("INVENTORY_CACHE", "").lower() in _TRUTHY
-    POLICY_STORE = os.environ.get("POLICY_STORE", "").lower() in _TRUTHY
-    AUDIT_SNAPSHOTS = os.environ.get("AUDIT_SNAPSHOTS", "").lower() in _TRUTHY
-    JOB_QUEUE = os.environ.get("JOB_QUEUE", "").lower() in _TRUTHY
+    INVENTORY_CACHE = _env_flag("INVENTORY_CACHE")
+    POLICY_STORE = _env_flag("POLICY_STORE")
+    AUDIT_SNAPSHOTS = _env_flag("AUDIT_SNAPSHOTS")
+    JOB_QUEUE = _env_flag("JOB_QUEUE")
 
     # SNMP (FortiManager / FortiAnalyzer / FortiAuthenticator CPU & memory polling)
     SNMP_ENABLED = os.environ.get("SNMP_ENABLED", "false").lower() == "true"

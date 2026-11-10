@@ -1,34 +1,27 @@
-"""Layer flags for the 1,000-device scale work (all default off)."""
+"""Layer flags for the 1,000-device scale work (all default off).
 
-import importlib
+Parsing is tested through ``_env_flag`` rather than by reloading
+``app.config``: a reload replaces the ``Config`` class and breaks every other
+test that patches ``app.config.Config``.
+"""
 
 import pytest
 
 FLAGS = ("INVENTORY_CACHE", "POLICY_STORE", "AUDIT_SNAPSHOTS", "JOB_QUEUE")
 
 
-def _reload_config(monkeypatch, **env):
+def test_flags_exist_as_bool_on_config():
+    from app.config import Config
+
     for name in FLAGS:
-        monkeypatch.delenv(name, raising=False)
-    for k, v in env.items():
-        monkeypatch.setenv(k, v)
-    import app.config as cfg
-
-    return importlib.reload(cfg).Config
+        assert isinstance(getattr(Config, name), bool)
 
 
-@pytest.fixture(autouse=True)
-def _restore_config():
-    yield
-    import app.config as cfg
+def test_flag_unset_is_off(monkeypatch):
+    from app.config import _env_flag
 
-    importlib.reload(cfg)
-
-
-def test_flags_default_off(monkeypatch):
-    config = _reload_config(monkeypatch)
-    for name in FLAGS:
-        assert getattr(config, name) is False
+    monkeypatch.delenv("INVENTORY_CACHE", raising=False)
+    assert _env_flag("INVENTORY_CACHE") is False
 
 
 @pytest.mark.parametrize(
@@ -44,5 +37,7 @@ def test_flags_default_off(monkeypatch):
     ],
 )
 def test_flags_parse_truthy_values(monkeypatch, raw, expected):
-    config = _reload_config(monkeypatch, INVENTORY_CACHE=raw)
-    assert config.INVENTORY_CACHE is expected
+    from app.config import _env_flag
+
+    monkeypatch.setenv("INVENTORY_CACHE", raw)
+    assert _env_flag("INVENTORY_CACHE") is expected

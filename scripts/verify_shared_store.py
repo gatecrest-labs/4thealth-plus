@@ -58,10 +58,21 @@ print(json.dumps({"errors": errors, "seen": seen, "monotonic": mono}))
 """
 
 
-def _wait_for_first_commit(db: Path, timeout: float) -> None:
-    """Block until the writer has committed at least one snapshot."""
+def _wait_for_first_commit(
+    db: Path, timeout: float, proc: subprocess.Popen | None = None
+) -> None:
+    """Block until the writer has committed at least one snapshot.
+
+    If *proc* exits first, raise with its stderr so a crashed writer is
+    diagnosable instead of looking like a hang.
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
+        if proc is not None and proc.poll() is not None:
+            err = proc.stderr.read() if proc.stderr else ""
+            raise RuntimeError(
+                f"writer exited early (rc={proc.returncode}): {err[-800:]}"
+            )
         if db.exists():
             try:
                 conn = sqlite3.connect(db, timeout=5)
@@ -101,9 +112,15 @@ def run_proof(db: Path, seconds: float = 5.0, journal: str = "WAL") -> dict:
         cwd=ROOT,
         env=env,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
     )
-    _wait_for_first_commit(db, timeout=60.0)  # interpreter start-up can be slow
+    try:
+        # interpreter start-up can be slow
+        _wait_for_first_commit(db, timeout=60.0, proc=writer)
+    except Exception:
+        writer.kill()
+        raise
     time.sleep(seconds)
     writer.send_signal(signal.SIGKILL)
     writer.wait()

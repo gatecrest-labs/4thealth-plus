@@ -14,6 +14,8 @@ import warnings
 import requests
 import urllib3
 
+from app import fmg_metrics
+
 try:  # POSIX only; the app runs on Linux/macOS
     import fcntl
 except ImportError:  # pragma: no cover
@@ -476,15 +478,28 @@ class FMGClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-        resp = self._http.post(
-            self.base_url,
-            json=body,
-            verify=self.verify_ssl,
-            timeout=self.timeout,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        started = time.monotonic()
+        ok = False
+        try:
+            resp = self._http.post(
+                self.base_url,
+                json=body,
+                verify=self.verify_ssl,
+                timeout=self.timeout,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            ok = True
+        finally:
+            first = (body.get("params") or [{}])[0]
+            fmg_metrics.record(
+                str(body.get("method", "")),
+                first.get("url", "") if isinstance(first, dict) else "",
+                time.monotonic() - started,
+                ok,
+            )
+            fmg_metrics.flush()
         if self._recorder is not None:
             self._recorder.record(body, data)
         return data

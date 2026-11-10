@@ -21,6 +21,13 @@ def _isolate_tsuite_revocation_env(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_collector_db(tmp_path, monkeypatch):
+    """FMG metrics flush to the shared collector store from FMGClient._post, so
+    no test may touch the project-root collector_state.db."""
+    monkeypatch.setenv("COLLECTOR_DB_PATH", str(tmp_path / "collector_state_test.db"))
+
+
 @pytest.fixture
 def app_ctx():
     from app import create_app

@@ -24,6 +24,7 @@ import logging
 import os
 import sqlite3
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -41,6 +42,27 @@ CREATE TABLE IF NOT EXISTS cache_snapshots (
 _lock = threading.Lock()
 logger = logging.getLogger(__name__)
 _VALID_JOURNAL_MODES = ("WAL", "DELETE")
+
+
+_LOCK_RETRIES = 8
+
+
+def _retry_locked(fn):
+    """Run *fn*, retrying a transient ``database is locked`` with short backoff.
+
+    SQLite does not apply the busy timeout to the first journal-mode switch or
+    schema creation on a brand-new file, so two processes (web and collector)
+    starting at once can see a spurious lock error. Anything else, or a lock
+    that persists, is raised unchanged.
+    """
+    for attempt in range(_LOCK_RETRIES):
+        try:
+            return fn()
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() or attempt == _LOCK_RETRIES - 1:
+                raise
+            time.sleep(0.05 * (2**attempt))
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _db_path() -> Path:
@@ -69,7 +91,7 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(path, timeout=30)
     if is_new:
         path.chmod(0o600)
-    conn.execute(f"PRAGMA journal_mode={_journal_mode()}")
+    _retry_locked(lambda: conn.execute(f"PRAGMA journal_mode={_journal_mode()}"))
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -77,7 +99,7 @@ def _connect() -> sqlite3.Connection:
 def _init_db() -> None:
     conn = _connect()
     try:
-        conn.executescript(_SCHEMA)
+        _retry_locked(lambda: conn.executescript(_SCHEMA))
         conn.commit()
     finally:
         conn.close()
