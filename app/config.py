@@ -37,6 +37,15 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in _TRUTHY
 
 
+def _env_int(name: str, default: int | None) -> int | None:
+    """Integer env var *name*; unset, blank or non-numeric gives *default*."""
+    raw = os.environ.get(name, "").strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 class Config:
     SECRET_KEY = _require_secret_key()
     # Browser cookies are scoped by domain+path, not by port (RFC 6265).
@@ -77,6 +86,10 @@ class Config:
 
     FMG_VERIFY_SSL = os.environ.get("FMG_VERIFY_SSL", "true").lower() == "true"
     FMG_TIMEOUT = int(os.environ.get("FMG_TIMEOUT", "30"))
+    # F1 access layer. FMG_MAX_INFLIGHT: unset = role default (collector 8,
+    # web worker 4), 0 = unlimited. FMG_RETRIES: extra attempts, 0 = off.
+    FMG_MAX_INFLIGHT = _env_int("FMG_MAX_INFLIGHT", None)
+    FMG_RETRIES = _env_int("FMG_RETRIES", 2)
 
     # Health thresholds (yellow / red)
     CPU_WARN = int(os.environ.get("CPU_WARN", "70"))
