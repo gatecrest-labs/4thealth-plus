@@ -3135,6 +3135,7 @@ function pcaOpenNewModal() {
   document.getElementById('pca-format').value = 'html';
   document.getElementById('pca-email').value = '';
   document.getElementById('pca-enabled').checked = true;
+  document.getElementById('pca-ai-summary').checked = true;
   document.getElementById('pca-modal-error').style.display = 'none';
   _pcaPopulateAdomDropdown('');
   document.getElementById('pca-modal').classList.remove('hidden');
@@ -3151,6 +3152,7 @@ async function pcaEditRule(ruleId) {
   document.getElementById('pca-format').value = rule.format || 'html';
   document.getElementById('pca-email').value = rule.email || '';
   document.getElementById('pca-enabled').checked = !!rule.enabled;
+  document.getElementById('pca-ai-summary').checked = rule.ai_summary_enabled !== false;
   document.getElementById('pca-modal-error').style.display = 'none';
   document.getElementById('pca-modal').classList.remove('hidden');
   await _pcaPopulateAdomDropdown(rule.adom);
@@ -3171,6 +3173,7 @@ function _pcaCollectFormData() {
     format: document.getElementById('pca-format').value,
     email: document.getElementById('pca-email').value.trim(),
     enabled: document.getElementById('pca-enabled').checked,
+    ai_summary_enabled: document.getElementById('pca-ai-summary').checked,
   };
 }
 

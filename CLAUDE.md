@@ -894,6 +894,8 @@ Rules persist in `package_change_alerts.json` (gitignored; copy `package_change_
 
 The rules file is read by the collector (which runs Config-Delta jobs) and written by the web admin UI, so `docker-compose.yml` bind-mounts it into **both** services.
 
+**AI Summary:** when `ai_assist_enabled` is on AND the rule's `ai_summary_enabled` (default `true`) is on, each alert email includes an AI summary (`_ai_summary_html`, reusing `pending_changes_ai.build_diff_narrative` with `feature="package_alert_summary"`). Computed after the dedupe hash and never part of it; failure never blocks the send and is recorded as `ai_narrative_error` on the run (status stays `ok`).
+
 Admin endpoints (all `admin_required`): `GET/POST /admin/api/package-alerts/rules`, `PUT/DELETE /admin/api/package-alerts/rules/<id>`, `POST /admin/api/package-alerts/rules/<id>/test` (sample email; no FMG calls, no dedupe state). UI: Admin → Scheduled → Package Change Alerts (`admin.html` / `admin.js`, `pca*` functions).
 
 ### External API

@@ -680,3 +680,109 @@ def test_one_rule_failing_does_not_stop_the_others(harness, rules_path, monkeypa
     assert rules["broken"]["runs"][0]["status"] == "error"
     assert "disk full" in rules["broken"]["runs"][0]["errors"][0]
     assert len(sent) == 1  # the second rule still alerted
+
+
+# ── AI summary ────────────────────────────────────────────────────────────────
+
+
+def _ai(monkeypatch, enabled=True, text="X", exc=None):
+    import app.app_settings as aps
+    import app.pending_changes_ai as pai
+
+    monkeypatch.setattr(
+        aps, "get_setting", lambda k, d=None: enabled if k == "ai_assist_enabled" else d
+    )
+    calls = []
+
+    def fake(adom, devices, user=None, **kw):
+        calls.append((adom, devices, kw))
+        if exc:
+            raise exc
+        return text
+
+    monkeypatch.setattr(pai, "build_diff_narrative", fake)
+    return calls
+
+
+def test_email_includes_ai_section_when_enabled(harness, rules_path, monkeypatch):
+    sent, _ = harness
+    calls = _ai(monkeypatch, text="Adds policy 5")
+    pca.create_rule(_rule_data())
+    pca.evaluate_alerts("Corp", _results(a=True))
+    assert len(sent) == 1
+    assert len(calls) == 1
+    assert calls[0][2].get("feature") == "package_alert_summary"
+    assert calls[0][1][0]["device"] == "FW1"
+    assert calls[0][1][0]["vdoms"][0]["changes"]
+
+
+def _body(monkeypatch):
+    bodies = []
+    monkeypatch.setattr(
+        pca, "_send_email", lambda to, s, body, a: bodies.append(body)
+    )
+    return bodies
+
+
+def test_ai_section_in_body(harness, rules_path, monkeypatch):
+    bodies = _body(monkeypatch)
+    _ai(monkeypatch, text="Adds policy 5")
+    pca.create_rule(_rule_data())
+    pca.evaluate_alerts("Corp", _results(a=True))
+    assert "AI Summary" in bodies[0] and "Adds policy 5" in bodies[0]
+
+
+def test_ai_section_omitted_when_flag_off(harness, rules_path, monkeypatch):
+    bodies = _body(monkeypatch)
+    calls = _ai(monkeypatch, enabled=False)
+    pca.create_rule(_rule_data())
+    pca.evaluate_alerts("Corp", _results(a=True))
+    assert "AI Summary" not in bodies[0] and not calls
+
+
+def test_ai_section_omitted_when_rule_opts_out(harness, rules_path, monkeypatch):
+    bodies = _body(monkeypatch)
+    calls = _ai(monkeypatch)
+    pca.create_rule(_rule_data(ai_summary_enabled=False))
+    pca.evaluate_alerts("Corp", _results(a=True))
+    assert "AI Summary" not in bodies[0] and not calls
+
+
+def test_ai_summary_default_true_and_persisted(rules_path):
+    r = pca.create_rule(_rule_data())
+    assert r["ai_summary_enabled"] is True
+    u = pca.update_rule(r["id"], _rule_data(ai_summary_enabled=False))
+    assert u["ai_summary_enabled"] is False
+
+
+def test_narration_failure_still_sends_and_records_error(
+    harness, rules_path, monkeypatch
+):
+    sent, _ = harness
+    _ai(monkeypatch, exc=RuntimeError("llm down"))
+    rule = pca.create_rule(_rule_data())
+    pca.evaluate_alerts("Corp", _results(a=True))
+    assert len(sent) == 1
+    run = pca.get_all_rules()[0]["runs"][0]
+    assert run["status"] == "ok"
+    assert "llm down" in run["ai_narrative_error"]
+
+
+def test_narrative_html_is_escaped(monkeypatch):
+    _ai(monkeypatch, text="<script>alert(1)</script>")
+    html_, err = pca._ai_summary_html(
+        "Corp", "Pkg", {"FW1": {"root": POLICY_BLOCK}}, True
+    )
+    assert "<script>" not in html_ and "&lt;script&gt;" in html_ and err is None
+
+
+def test_dedupe_hash_unchanged_by_ai(harness, rules_path, monkeypatch):
+    sent, _ = harness
+    _ai(monkeypatch, text="one")
+    pca.create_rule(_rule_data())
+    pca.evaluate_alerts("Corp", _results(a=True))
+    h1 = pca.get_all_rules()[0]["sent"]["Pkg-A"]
+    assert h1 == pca.diff_hash({"FW1": {"root": POLICY_BLOCK}})
+    _ai(monkeypatch, text="two")
+    pca.evaluate_alerts("Corp", _results(a=True))
+    assert len(sent) == 1  # deduped despite different narrative
