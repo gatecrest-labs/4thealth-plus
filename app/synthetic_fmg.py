@@ -126,7 +126,8 @@ class SyntheticFMG:
             "patch": rng.choice((3, 4, 6, 7)),
             "conn_status": 1 if rng.random() < 0.97 else 0,
             "conf_status": 1 if rng.random() < 0.9 else 2,
-            "db_status": 0 if rng.random() < 0.9 else 1,
+            # FMG encoding: 0 unknown, 1 nomod, 2 modified (confirmed on a lab FMG 8.0.2)
+            "db_status": 1 if rng.random() < 0.9 else 2,
             "ha_mode": 1 if ha else 0,
             "mgt_vdom": "root",
             "vdom": vdoms,
@@ -310,7 +311,7 @@ class SyntheticFMG:
         pkg = self._pkg_for_device(adom, dev["name"])
         if not pkg:
             return None
-        if dev["db_status"]:
+        if dev["db_status"] == 2:
             status = "modified"
         elif zlib.crc32(f"{dev['name']}/{vdom}".encode()) % 23 == 0:
             status = "conflict"

@@ -17,6 +17,7 @@ from typing import Any
 
 from app.app_logger import app_log
 from app.atomic_io import atomic_write_json
+from app.config import Config
 
 _JOBS_PATH = Path(__file__).parent.parent / "config_diff_jobs.json"
 _lock = threading.Lock()
@@ -260,6 +261,7 @@ def _execute_job(job_id: str) -> None:
             "status": "ok",
             "devices_total": len(results),
             "devices_with_changes": ok_count,
+            **_gate_counts(results),
         }
 
         ai_narrative_html, ai_narrative_error = _build_ai_narrative_html(
@@ -355,6 +357,22 @@ def _build_ai_narrative_html(
         )
         return "", str(exc)
     return f"<h3>AI Summary</h3><p style='white-space:pre-wrap'>{_esc(text)}</p>", None
+
+
+def _gate_counts(results) -> dict:
+    """How a (possibly gated) run was made up, for the run record and digest."""
+    budget = sum(
+        1
+        for r in results
+        if r.get("status") == "error" and "time budget" in str(r.get("error", ""))
+    )
+    gated = sum(1 for r in results if r.get("gated"))
+    return {
+        "devices_previewed": len(results) - gated - budget,
+        "devices_gated": gated,
+        "devices_budget_skipped": budget,
+        "full_sweep": bool(getattr(results, "full_sweep", False)),
+    }
 
 
 def _build_summary_html(
@@ -499,6 +517,14 @@ def _build_pdf_html(
 
     ts_display = generated_at.replace("T", " ").rstrip("Z") + " UTC"
 
+    gated_count = sum(1 for r in results if r.get("gated"))
+    gated_row = (
+        f"<tr><td style='padding:2px 12px 2px 0;color:#6b7280'>Not re-previewed</td>"
+        f"<td>{gated_count} (in sync per the inventory cache; a full sweep runs "
+        f"every {Config.CONFIG_DELTA_FULL_SWEEP_HOURS} h)</td></tr>"
+        if gated_count > 0
+        else ""
+    )
     pkg_pending_row = (
         f"<tr><td style='padding:2px 12px 2px 0;color:#6b7280'>Package pending (no diff)</td>"
         f"<td>{pkg_pending_count}</td></tr>"
@@ -521,6 +547,7 @@ def _build_pdf_html(
         f'<td style="color:#166534;font-weight:600">{ok_count}</td></tr>'
         f'<tr><td style="padding:2px 12px 2px 0;color:#6b7280">In sync</td>'
         f"<td>{no_changes_count}</td></tr>"
+        f"{gated_row}"
         f"{pkg_pending_row}"
         f'<tr><td style="padding:2px 12px 2px 0;color:#6b7280">Errors</td>'
         f'<td style="color:{"#b91c1c" if err_count > 0 else "inherit"}">{err_count}</td></tr>'
