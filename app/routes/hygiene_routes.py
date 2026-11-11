@@ -789,7 +789,11 @@ def hygiene_rule_lookup_explain(adom: str):
     rows = data.get("rows")
     if not isinstance(searched, dict):
         return jsonify({"error": "searched must be an object"}), 400
-    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+    if not isinstance(rows, list):
+        return jsonify({"error": "rows must be a list of objects"}), 400
+    rows_len = len(rows)
+    rows = rows[:25]  # slice before validating so a huge post stays cheap
+    if not all(isinstance(r, dict) for r in rows):
         return jsonify({"error": "rows must be a list of objects"}), 400
     out = {}
     for key in ("skipped_count", "total"):
@@ -797,6 +801,7 @@ def hygiene_rule_lookup_explain(adom: str):
         if isinstance(val, bool) or not isinstance(val, int) or val < 0:
             return jsonify({"error": f"{key} must be a non-negative integer"}), 400
         out[key] = val
+    out["total"] = max(out["total"], rows_len)
     searched = {
         k: str(searched.get(k) or "")[:200] for k in ("src", "dst", "port")
     }

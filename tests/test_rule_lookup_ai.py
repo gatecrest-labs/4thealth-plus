@@ -46,3 +46,11 @@ def test_includes_skipped_count():
 def test_comments_not_sent():
     _, seen = _capture(_rows(2))
     assert "comment" not in json.dumps(seen["payload"])
+
+
+def test_match_is_slimmed_and_malformed_fields_tolerated():
+    row = {"policyid": 1, "srcaddr": {"x": 1}, "match": {"src": {"names": {"a": "exact", "b": {"z": 1}}, "via": {"a": ["g"]}}, "port": 3}}
+    _, seen = _capture([row])
+    r = seen["payload"]["rows"][0]
+    assert r["srcaddr"] == []
+    assert r["match"] == {"src": {"a": "exact"}}

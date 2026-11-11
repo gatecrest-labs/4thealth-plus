@@ -41,7 +41,7 @@ def test_status_reflects_setting(client):
 
 def test_route_503_when_disabled(client):
     with patch("app.app_settings.get_setting", return_value=False), \
-         patch("app.decorators.check_adom_access", return_value=None):
+         patch("app.routes.hygiene_routes.check_adom_access", return_value=None):
         resp = _post(client, BODY)
     assert resp.status_code == 503
     assert resp.get_json()["error"] == "AI Assist is not enabled"
@@ -53,7 +53,7 @@ def test_route_503_when_disabled(client):
 ])
 def test_route_400_on_bad_body(client, bad):
     with patch("app.app_settings.get_setting", return_value=True), \
-         patch("app.decorators.check_adom_access", return_value=None):
+         patch("app.routes.hygiene_routes.check_adom_access", return_value=None):
         assert _post(client, bad).status_code == 400
 
 
@@ -66,7 +66,7 @@ def test_route_enforces_adom_access(client):
 
 def test_llm_failure_returns_200_with_error(client):
     with patch("app.app_settings.get_setting", return_value=True), \
-         patch("app.decorators.check_adom_access", return_value=None), \
+         patch("app.routes.hygiene_routes.check_adom_access", return_value=None), \
          patch("app.llm.get_provider", side_effect=RuntimeError("boom")):
         resp = _post(client, BODY)
     assert resp.status_code == 200
@@ -76,7 +76,33 @@ def test_llm_failure_returns_200_with_error(client):
 
 def test_success(client):
     with patch("app.app_settings.get_setting", return_value=True), \
-         patch("app.decorators.check_adom_access", return_value=None), \
+         patch("app.routes.hygiene_routes.check_adom_access", return_value=None), \
          patch("app.rule_lookup_ai.build_lookup_narrative", return_value=("text", None)):
         resp = _post(client, BODY)
     assert resp.get_json() == {"narrative": "text", "narrative_error": None}
+
+
+def test_malformed_row_fields_do_not_500(client):
+    bad_row = {"policyid": 1, "srcaddr": {"a": 1}, "dstaddr": 5, "service": "x", "match": [1]}
+    with patch("app.app_settings.get_setting", return_value=True), \
+         patch("app.routes.hygiene_routes.check_adom_access", return_value=None), \
+         patch("app.llm.get_provider", side_effect=RuntimeError("boom")):
+        resp = _post(client, {**BODY, "rows": [bad_row]})
+    assert resp.status_code == 200
+    assert resp.get_json()["narrative"] is None
+
+
+def test_rows_sliced_before_validation_and_remainder_counted(client):
+    rows = [{"policyid": i} for i in range(100)] + ["junk"]
+    seen = {}
+
+    def fake(adom, searched, result, user):
+        seen.update(result)
+        return "t", None
+
+    with patch("app.app_settings.get_setting", return_value=True), \
+         patch("app.routes.hygiene_routes.check_adom_access", return_value=None), \
+         patch("app.rule_lookup_ai.build_lookup_narrative", side_effect=fake):
+        resp = _post(client, {**BODY, "rows": rows, "total": 0})
+    assert resp.status_code == 200
+    assert len(seen["rows"]) == 25 and seen["total"] == 101
