@@ -112,6 +112,15 @@
 
 <!-- ── Rule Lookup ───────────────────────────────────────────────────────────── -->
 <div class="rr-section-label" style="margin-top:2rem">Rule Lookup</div>
+<div id="rlNlBox" class="hygiene-selectors" style="display:none;margin-bottom:.5rem">
+  <div class="hygiene-selector-row" style="flex-wrap:wrap;gap:.5rem">
+    <label for="rlNlText" style="white-space:nowrap">Describe what you're looking for</label>
+    <input type="text" id="rlNlText" class="form-control" maxlength="500" placeholder="e.g. web servers 10.1.0.0/16 to the grp-DB* group on 3306" style="flex:1;min-width:260px" />
+    <button class="btn btn-sm" id="rlNlBtn" title="Fill the fields below with AI; you still press Search">Fill with AI</button>
+  </div>
+  <div id="rlNlParsed" class="text-muted" style="display:none;font-size:.85rem;margin-top:.25rem"></div>
+  <div id="rlNlError" class="text-danger" style="display:none;font-size:.85rem;margin-top:.25rem"></div>
+</div>
 <div class="hygiene-selectors">
   <div class="hygiene-selector-row" style="flex-wrap:wrap;gap:.5rem">
     <label for="rlAdom">ADOM</label>
@@ -440,7 +449,7 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/hygiene.js') }}?v=17"></script>
-<script src="{{ url_for('static', filename='js/rule_lookup.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='js/rule_lookup.js') }}?v=3"></script>
 {% if policy_store_enabled %}
 <script>window._policyFreshness = [{adom: 'pvAdom', pkg: 'pvPackage', mount: 'pvFreshness'}];</script>
 <script src="{{ url_for('static', filename='js/policy_freshness.js') }}?v=1"></script>

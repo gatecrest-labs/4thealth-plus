@@ -405,7 +405,10 @@ async function _rlInitExplain() {
     const resp = await fetch('/api/hygiene/rule-lookup/ai-status');
     if (!resp.ok) return;
     const data = await resp.json();
-    if (data && data.available === true) $rl('rlExplainBtn').style.display = '';
+    if (data && data.available === true) {
+      $rl('rlExplainBtn').style.display = '';
+      $rl('rlNlBox').style.display = '';
+    }
   } catch (_) { /* stay hidden */ }
 }
 
@@ -444,3 +447,43 @@ $rl('rlExplainBtn').addEventListener('click', async () => {
 });
 
 _rlInitExplain();
+
+/* ── Natural-language input: fills + highlights the three inputs, never searches ── */
+$rl('rlNlBtn').addEventListener('click', async () => {
+  const text = $rl('rlNlText').value.trim();
+  const parsed = $rl('rlNlParsed'), err = $rl('rlNlError'), btn = $rl('rlNlBtn');
+  parsed.style.display = 'none';
+  err.style.display = 'none';
+  if (!text) return;
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/hygiene/rule-lookup/parse', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ text }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      err.textContent = data.error || 'Could not parse that description.';
+      err.style.display = '';
+      return;
+    }
+    const vals = { rlSrc: data.src || '', rlDst: data.dst || '', rlPort: data.port || '' };
+    Object.keys(vals).forEach(id => {
+      const el = $rl(id);
+      el.value = vals[id];
+      el.style.outline = vals[id] ? '2px solid #f59e0b' : '';
+    });
+    parsed.textContent = `Parsed as: src=${vals.rlSrc || '(any)'}  dst=${vals.rlDst || '(any)'}  port=${vals.rlPort || '(any)'} - check, then press Search.`;
+    parsed.style.display = '';
+    if (typeof _rlUpdateSearchBtn === 'function') _rlUpdateSearchBtn();
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = '';
+  } finally {
+    btn.disabled = false;
+  }
+});
+['rlSrc', 'rlDst', 'rlPort'].forEach(id => {
+  $rl(id).addEventListener('input', () => { $rl(id).style.outline = ''; });
+});

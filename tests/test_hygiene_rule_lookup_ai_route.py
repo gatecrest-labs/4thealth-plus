@@ -106,3 +106,53 @@ def test_rows_sliced_before_validation_and_remainder_counted(client):
         resp = _post(client, {**BODY, "rows": rows, "total": 0})
     assert resp.status_code == 200
     assert len(seen["rows"]) == 25 and seen["total"] == 101
+
+
+# ── NL parse route (Task 7) ──────────────────────────────────────────────────
+PARSE_URL = "/api/hygiene/rule-lookup/parse"
+
+
+def test_parse_503_when_ai_disabled(client):
+    with patch("app.app_settings.get_setting", return_value=False), \
+         patch("app.rule_lookup_ai.parse_nl_query") as p:
+        resp = _post(client, {"text": "hi"}, PARSE_URL)
+    assert resp.status_code == 503
+    assert resp.get_json()["error"] == "AI Assist is not enabled"
+    p.assert_not_called()
+
+
+@pytest.mark.parametrize("bad", [[1], {"text": 5}, {}, {"text": None}])
+def test_parse_400_on_bad_body(client, bad):
+    with patch("app.app_settings.get_setting", return_value=True):
+        assert _post(client, bad, PARSE_URL).status_code == 400
+
+
+def test_parse_success_never_calls_search(client):
+    with patch("app.app_settings.get_setting", return_value=True), \
+         patch("app.rule_lookup_ai.parse_nl_query",
+               return_value={"src": "10.0.0.1", "dst": "", "port": "tcp/443"}), \
+         patch("app.rule_lookup.search") as s, \
+         patch("app.rule_lookup_cache.get_adom") as ge, \
+         patch("app.rule_lookup_cache.refresh_adom_async") as ra:
+        resp = _post(client, {"text": "from 10.0.0.1 on 443"}, PARSE_URL)
+    assert resp.status_code == 200
+    assert resp.get_json() == {"src": "10.0.0.1", "dst": "", "port": "tcp/443"}
+    s.assert_not_called(); ge.assert_not_called(); ra.assert_not_called()
+
+
+def test_parse_400_on_value_error(client):
+    with patch("app.app_settings.get_setting", return_value=True), \
+         patch("app.rule_lookup_ai.parse_nl_query", side_effect=ValueError("src: bad")):
+        resp = _post(client, {"text": "x"}, PARSE_URL)
+    assert resp.status_code == 400
+    assert "src" in resp.get_json()["error"]
+
+
+def test_parse_502_on_provider_failure(client):
+    from app.llm.base import LLMError
+    with patch("app.app_settings.get_setting", return_value=True), \
+         patch("app.rule_lookup_ai.parse_nl_query", side_effect=LLMError("boom")):
+        assert _post(client, {"text": "x"}, PARSE_URL).status_code == 502
+    with patch("app.app_settings.get_setting", return_value=True), \
+         patch("app.rule_lookup_ai.parse_nl_query", side_effect=RuntimeError("boom")):
+        assert _post(client, {"text": "x"}, PARSE_URL).status_code == 502

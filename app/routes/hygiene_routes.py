@@ -811,6 +811,30 @@ def hygiene_rule_lookup_explain(adom: str):
     return jsonify({"narrative": narrative, "narrative_error": error})
 
 
+@bp.route("/api/hygiene/rule-lookup/parse", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_rule_lookup_parse():
+    """Turn natural language into the three Rule Lookup fields. Never searches."""
+    from app.ai_narrate import ai_enabled
+    from app.llm.base import LLMError
+    from app.rule_lookup_ai import parse_nl_query
+
+    if not ai_enabled():
+        return jsonify({"error": "AI Assist is not enabled"}), 503
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("text"), str):
+        return jsonify({"error": "text must be a string"}), 400
+    try:
+        fields = parse_nl_query(data["text"], user=session.get("user"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LLMError as exc:
+        return jsonify({"error": f"AI request failed: {exc}"}), 502
+    except Exception:
+        return jsonify({"error": "AI request failed"}), 502
+    return jsonify(fields)
+
+
 # ── API: object expansion maps (deferred, called after policy table renders) ──
 
 
