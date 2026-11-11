@@ -38,6 +38,11 @@ services:
       - FMG_PRIMARY_HOST=synthetic-fmg:8443
       - FMG_API_TOKEN=synthetic
       - FMG_VERIFY_SSL=false
+      # scale layers under test (override on the command line, e.g. JOB_QUEUE=false)
+      - INVENTORY_CACHE=${INVENTORY_CACHE:-true}
+      - POLICY_STORE=${POLICY_STORE:-true}
+      - AUDIT_SNAPSHOTS=${AUDIT_SNAPSHOTS:-true}
+      - JOB_QUEUE=${JOB_QUEUE:-true}
 
   collector:
     depends_on:
@@ -48,3 +53,8 @@ services:
       - FMG_PRIMARY_HOST=synthetic-fmg:8443
       - FMG_API_TOKEN=synthetic
       - FMG_VERIFY_SSL=false
+      # scale layers under test (override on the command line, e.g. JOB_QUEUE=false)
+      - INVENTORY_CACHE=${INVENTORY_CACHE:-true}
+      - POLICY_STORE=${POLICY_STORE:-true}
+      - AUDIT_SNAPSHOTS=${AUDIT_SNAPSHOTS:-true}
+      - JOB_QUEUE=${JOB_QUEUE:-true}
