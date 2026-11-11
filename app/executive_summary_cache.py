@@ -98,7 +98,8 @@ import threading
 import time as _time
 from datetime import UTC, datetime
 
-from app import boot_warmup, collector_store, inventory
+from app import boot_warmup, collector_store, hygiene_pkg_store, inventory
+from app.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -631,6 +632,79 @@ def _run_device_sweep(app) -> bool:
 # ── Hygiene sweep (expensive, slow cadence) ────────────────────────────────────
 
 
+def _compute_package_hygiene(policies: list[dict]) -> dict:
+    """Findings (one pass over every check), the score-counted subset and reference sets."""
+    from app.hygiene import CHECKS as HYGIENE_CHECK_TYPES
+    from app.hygiene import collect_policy_refs, run_checks
+
+    findings = run_checks(policies, list(HYGIENE_CHECK_TYPES))
+    addr_refs, svc_refs = collect_policy_refs(policies)
+    return {
+        "policy_count": len(policies),
+        "score_findings": sum(1 for f in findings if f["check"] in _HYGIENE_CHECKS),
+        "findings": findings,
+        "addr_refs": addr_refs,
+        "svc_refs": svc_refs,
+    }
+
+
+def _package_hygiene(client, adom: str, pkg_path: str) -> dict | None:
+    """One package's hygiene result, from the cache when ``POLICY_STORE`` allows.
+
+    A cached entry younger than the package's jittered TTL is reused without any
+    FMG call. Otherwise the policies are fetched; an unchanged fingerprint only
+    refreshes the entry's age. If the fetch fails, an entry younger than twice
+    the TTL is reused; anything older is skipped (None), as without the cache.
+    """
+    use_cache = bool(Config.POLICY_STORE)
+    cached = None
+    if use_cache:
+        try:
+            cached = hygiene_pkg_store.get(adom, pkg_path)
+        except hygiene_pkg_store.HygienePkgStoreError as exc:
+            logger.warning(
+                "executive_summary_cache: hygiene cache unreadable, fetching: %s", exc
+            )
+            use_cache = False
+    ttl = hygiene_pkg_store.effective_ttl_seconds(adom, pkg_path) if use_cache else 0.0
+    if cached is not None and (cached["age_seconds"] or 0.0) < ttl:
+        return cached
+    try:
+        policies = client.get_policies(adom, pkg_path)
+    except Exception as exc:
+        logger.warning(
+            "executive_summary_cache: get_policies(%s, %s) failed: %s",
+            adom,
+            pkg_path,
+            exc,
+        )
+        if cached is not None and (cached["age_seconds"] or 0.0) < 2 * ttl:
+            return cached
+        return None
+    if not use_cache:
+        return _compute_package_hygiene(policies)
+    fingerprint = hygiene_pkg_store.fingerprint(policies)
+    try:
+        if cached is not None and cached["fingerprint"] == fingerprint:
+            hygiene_pkg_store.touch(adom, pkg_path)
+            return cached
+        result = _compute_package_hygiene(policies)
+        hygiene_pkg_store.put(
+            adom,
+            pkg_path,
+            fingerprint=fingerprint,
+            policy_count=result["policy_count"],
+            score_findings=result["score_findings"],
+            findings=result["findings"],
+            addr_refs=result["addr_refs"],
+            svc_refs=result["svc_refs"],
+        )
+        return result
+    except hygiene_pkg_store.HygienePkgStoreError as exc:
+        logger.warning("executive_summary_cache: hygiene cache write failed: %s", exc)
+        return cached if cached is not None else _compute_package_hygiene(policies)
+
+
 def _run_hygiene_sweep(app) -> bool:
     """Sweep fleet-wide policy findings to compute hygiene_score.
 
@@ -657,11 +731,7 @@ def _run_hygiene_sweep(app) -> bool:
     try:
         from app.fmg_helpers import make_client
         from app.hygiene import CHECKS as HYGIENE_CHECK_TYPES
-        from app.hygiene import (
-            collect_policy_refs,
-            find_unused_objects_from_refs,
-            run_checks,
-        )
+        from app.hygiene import find_unused_objects_from_refs
 
         total_findings = 0
         total_policies = 0
@@ -691,39 +761,40 @@ def _run_hygiene_sweep(app) -> bool:
                 adom_addr_refs: set[str] = set()
                 adom_svc_refs: set[str] = set()
                 adom_had_policies = False
+                listed: set[str] = set()
                 for pkg in packages:
                     pkg_path = pkg.get("path", pkg.get("name", ""))
                     if not pkg_path:
                         continue
+                    listed.add(pkg_path)
+                    result = _package_hygiene(client, adom, pkg_path)
+                    if result is None:
+                        continue
+                    total_policies += result["policy_count"]
+                    total_findings += result["score_findings"]
+                    for f in result["findings"]:
+                        by_type[f["check"]] = by_type.get(f["check"], 0) + 1
+                    package_findings.append(
+                        {
+                            "package": pkg_path,
+                            "adom": adom,
+                            "findings": result["findings"],
+                        }
+                    )
+                    adom_addr_refs |= result["addr_refs"]
+                    adom_svc_refs |= result["svc_refs"]
+                    adom_had_policies = adom_had_policies or result["policy_count"] > 0
+
+                if Config.POLICY_STORE:
                     try:
-                        policies = client.get_policies(adom, pkg_path)
-                    except Exception as exc:
+                        hygiene_pkg_store.delete_missing(adom, listed)
+                    except hygiene_pkg_store.HygienePkgStoreError as exc:
                         logger.warning(
-                            "executive_summary_cache: get_policies(%s, %s) failed: %s",
+                            "executive_summary_cache: hygiene cache cleanup for %s "
+                            "failed: %s",
                             adom,
-                            pkg_path,
                             exc,
                         )
-                        continue
-                    total_policies += len(policies)
-
-                    # One pass over every check; the executive score counts the
-                    # _HYGIENE_CHECKS subset of the same findings.
-                    all_findings = run_checks(policies, list(HYGIENE_CHECK_TYPES))
-                    total_findings += sum(
-                        1 for f in all_findings if f["check"] in _HYGIENE_CHECKS
-                    )
-                    for f in all_findings:
-                        by_type[f["check"]] = by_type.get(f["check"], 0) + 1
-
-                    package_findings.append(
-                        {"package": pkg_path, "adom": adom, "findings": all_findings}
-                    )
-
-                    pkg_addr, pkg_svc = collect_policy_refs(policies)
-                    adom_addr_refs |= pkg_addr
-                    adom_svc_refs |= pkg_svc
-                    adom_had_policies = adom_had_policies or bool(policies)
 
                 if not adom_had_policies:
                     continue
