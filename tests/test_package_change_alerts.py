@@ -682,6 +682,16 @@ def test_one_rule_failing_does_not_stop_the_others(harness, rules_path, monkeypa
     assert len(sent) == 1  # the second rule still alerted
 
 
+@pytest.fixture(autouse=True)
+def _ai_off_by_default(monkeypatch):
+    """Never read the real app_settings.json; AI stays off unless _ai() opts in."""
+    import app.app_settings as aps
+
+    monkeypatch.setattr(
+        aps, "get_setting", lambda k, d=None: False if k == "ai_assist_enabled" else d
+    )
+
+
 # ── AI summary ────────────────────────────────────────────────────────────────
 
 

@@ -33,6 +33,24 @@ def _isolate_collector_db(tmp_path, monkeypatch):
     monkeypatch.setattr(fmg_metrics, "_flush_async", False)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_llm_and_ai_usage(request, tmp_path, monkeypatch):
+    """No test may call a real LLM or write the project-root ai_usage.db.
+    Tests that need a provider patch app.llm.get_provider themselves (after
+    this fixture runs, so theirs wins); ai_usage tests set their own _DB_PATH."""
+    import app.llm as llm
+    from app import ai_usage
+    from app.llm.base import LLMError
+
+    def _disabled():
+        raise LLMError("LLM disabled in tests")
+
+    # test_llm_providers exercises the real factory (it only builds objects).
+    if request.module.__name__.rsplit(".", 1)[-1] != "test_llm_providers":
+        monkeypatch.setattr(llm, "get_provider", _disabled)
+    monkeypatch.setattr(ai_usage, "_DB_PATH", tmp_path / "ai_usage_isolated.db")
+
+
 @pytest.fixture
 def app_ctx():
     from app import create_app
