@@ -65,3 +65,13 @@ def test_segmentation_tolerates_malformed_report():
     with patch("app.zone_ai.safe_narrate", fake):
         zone_ai.summarize_segmentation({"open_pairs": "x", "trust_mismatches": [1, {"from_zone": "a"}]})
     json.dumps(calls[0]["payload"])
+
+
+def test_segmentation_open_pairs_sorted_by_policy_count_before_cap():
+    pairs = [{"from_zone": f"a{i}", "to_zone": f"b{i}", "policy_count": 1} for i in range(20)]
+    pairs.append({"from_zone": "big", "to_zone": "x", "policy_count": 9})
+    cap = {}
+    with patch("app.zone_ai.safe_narrate", side_effect=lambda p, payload, **k: cap.update(payload=payload)):
+        zone_ai.summarize_segmentation({"open_pairs": pairs})
+    shown = cap["payload"]["open_pairs"]
+    assert shown[0]["from_zone"] == "big" and len(shown) == 15

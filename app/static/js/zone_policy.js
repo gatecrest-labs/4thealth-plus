@@ -531,6 +531,8 @@ let _segLoaded = false;
 
 async function loadSegHealth() {
   _segLoaded = true;
+  const segSumm = document.getElementById('zpSegSumm');
+  if (segSumm) { segSumm.textContent = ''; segSumm.style.display = 'none'; }
   document.getElementById('zpSegLoading').style.display = '';
   document.getElementById('zpSegError').style.display   = 'none';
   document.getElementById('zpSegContent').style.display = 'none';

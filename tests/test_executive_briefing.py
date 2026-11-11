@@ -316,6 +316,7 @@ def test_scheduled_tick_skips_when_disabled(cfg_path):
         {"enabled": True, "day": "MON", "time": "25:00", "email": ""},
         {"enabled": True, "day": "MON", "time": "07:00", "email": 5},
         {"enabled": True, "day": ["MON"], "time": "07:00", "email": ""},
+        {"enabled": True, "day": "MON", "time": "07:00", "email": "   "},
     ],
 )
 def test_update_config_validation(cfg_path, data):
@@ -340,3 +341,26 @@ def test_load_config_defaults_when_missing_or_corrupt(tmp_path, monkeypatch):
     assert sched.load_config()["enabled"] is False
     path.write_text("{not json")
     assert sched.load_config()["day"] == "MON"
+
+
+def test_corrupt_config_logs_warning_and_is_not_overwritten(tmp_path, monkeypatch):
+    path = tmp_path / "executive_briefing.json"
+    path.write_text("{not json")
+    monkeypatch.setattr(sched, "_CONFIG_PATH", path)
+    with patch.object(sched, "app_log") as log:
+        sched.load_config()
+    assert log.call_args[0][0] == "WARNING"
+    sched._append_run({"ran_at": "t", "status": "ok"}, {"kpis": {}})
+    assert path.read_text() == "{not json"
+    with pytest.raises(ValueError, match="unreadable"):
+        sched.update_config(
+            {"enabled": False, "day": "MON", "time": "07:00", "email": ""}
+        )
+    assert path.read_text() == "{not json"
+
+
+def test_missing_config_may_be_created(tmp_path, monkeypatch):
+    path = tmp_path / "executive_briefing.json"
+    monkeypatch.setattr(sched, "_CONFIG_PATH", path)
+    sched._append_run({"ran_at": "t", "status": "ok"})
+    assert path.exists()

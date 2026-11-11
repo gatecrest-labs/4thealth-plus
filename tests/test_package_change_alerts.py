@@ -796,3 +796,30 @@ def test_dedupe_hash_unchanged_by_ai(harness, rules_path, monkeypatch):
     _ai(monkeypatch, text="two")
     pca.evaluate_alerts("Corp", _results(a=True))
     assert len(sent) == 1  # deduped despite different narrative
+
+
+@pytest.mark.parametrize("bad", ["yes", 1, None, "false"])
+def test_ai_summary_enabled_must_be_bool(rules_path, bad):
+    with pytest.raises(ValueError, match="ai_summary_enabled"):
+        pca.create_rule(_rule_data(ai_summary_enabled=bad))
+    r = pca.create_rule(_rule_data())
+    with pytest.raises(ValueError, match="ai_summary_enabled"):
+        pca.update_rule(r["id"], _rule_data(ai_summary_enabled=bad))
+
+
+@pytest.mark.parametrize("text", ["", "   \n", None])
+def test_empty_narrative_yields_no_section_and_error(monkeypatch, text):
+    _ai(monkeypatch, text=text)
+    html_, err = pca._ai_summary_html(
+        "Corp", "Pkg", {"FW1": {"root": POLICY_BLOCK}}, True
+    )
+    assert html_ == "" and "empty response" in err
+
+
+def test_empty_narrative_recorded_on_run(harness, rules_path, monkeypatch):
+    sent, _ = harness
+    _ai(monkeypatch, text="  ")
+    pca.create_rule(_rule_data())
+    pca.evaluate_alerts("Corp", _results(a=True))
+    assert len(sent) == 1
+    assert "empty" in pca.get_all_rules()[0]["runs"][0]["ai_narrative_error"]

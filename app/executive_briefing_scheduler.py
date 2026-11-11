@@ -79,13 +79,31 @@ def _send_email(to, subject, body_html, attachments):
 # ── Persistence ───────────────────────────────────────────────────────────────
 
 
+def _config_unreadable() -> bool:
+    """True when the config file exists but cannot be parsed as a JSON object."""
+    if not Path(_CONFIG_PATH).exists():
+        return False
+    try:
+        with open(_CONFIG_PATH) as f:
+            return not isinstance(json.load(f), dict)
+    except Exception:
+        return True
+
+
 def load_config() -> dict:
     cfg = dict(DEFAULT_CONFIG)
     cfg["runs"] = []
     try:
         with open(_CONFIG_PATH) as f:
             data = json.load(f)
-    except Exception:
+    except FileNotFoundError:
+        return cfg
+    except Exception as exc:
+        app_log(
+            "WARNING",
+            "executive_briefing",
+            f"Config file unreadable, using defaults: {exc}",
+        )
         return cfg
     if isinstance(data, dict):
         cfg.update(data)
@@ -132,12 +150,18 @@ def _validate(data) -> dict:
     email = data.get("email", "")
     if not isinstance(email, str):
         raise ValueError("email must be a string")  # noqa: TRY004 - mapped to HTTP 400
+    if enabled and not email.strip():
+        raise ValueError("email is required when the briefing is enabled")
     return {"enabled": enabled, "day": day, "time": time_str, "email": email.strip()}
 
 
 def update_config(data) -> dict:
     clean = _validate(data)
     with _lock:
+        if _config_unreadable():
+            raise ValueError(
+                "existing config file is unreadable; fix or remove it before saving"
+            )
         cfg = load_config()
         cfg.update(clean)
         save_config(cfg)
@@ -147,6 +171,13 @@ def update_config(data) -> dict:
 
 def _append_run(record: dict, last_payload: dict | None = None) -> None:
     with _lock:
+        if _config_unreadable():
+            app_log(
+                "WARNING",
+                "executive_briefing",
+                "Config file unreadable; run record not saved (file left untouched)",
+            )
+            return
         cfg = load_config()
         cfg["runs"] = [record, *cfg.get("runs", [])][:_MAX_RUNS]
         if last_payload is not None:

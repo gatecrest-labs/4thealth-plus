@@ -99,6 +99,13 @@ def summarize_segmentation(report, user: str | None = None):
             if isinstance(m, dict)] if isinstance(rep.get("trust_mismatches"), list) else []
     pairs = [p for p in (rep.get("open_pairs") or [])
              if isinstance(p, dict)] if isinstance(rep.get("open_pairs"), list) else []
+    pairs.sort(
+        key=lambda p: (
+            -(_num(p.get("policy_count")) or 0),
+            str(p.get("from_zone", "")),
+            str(p.get("to_zone", "")),
+        )
+    )
     shown = pairs[:MAX_OPEN_PAIRS]
     # Mismatches first: key order is preserved in the JSON the model reads.
     payload = {

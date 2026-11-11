@@ -166,6 +166,8 @@ def _validate_rule_fields(data: dict) -> None:
         raise ValueError("packages must be a list of package names")
     if data.get("format", "html") not in _VALID_FORMATS:
         raise ValueError(f"format must be one of {sorted(_VALID_FORMATS)}")
+    if "ai_summary_enabled" in data and not isinstance(data["ai_summary_enabled"], bool):
+        raise ValueError("ai_summary_enabled must be true or false")
 
 
 def _load() -> list[dict]:
@@ -360,6 +362,12 @@ def _ai_summary_html(
             f"AI summary failed for {adom}/{pkg}: {exc}",
         )
         return "", str(exc)
+    if not str(text or "").strip():
+        msg = "The AI provider returned an empty response"
+        app_log(
+            "WARNING", "package_change_alerts", f"AI summary empty for {adom}/{pkg}"
+        )
+        return "", msg
     return (
         "<h3>AI Summary</h3>"
         f"<p style='white-space:pre-wrap'>{html.escape(str(text or ''))}</p>",
