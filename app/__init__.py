@@ -382,6 +382,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "inventory_cache_enabled": bool(Config.INVENTORY_CACHE),
             "policy_store_enabled": bool(Config.POLICY_STORE),
             "audit_snapshots_enabled": bool(Config.AUDIT_SNAPSHOTS),
+            "job_queue_enabled": bool(Config.JOB_QUEUE),
         }
 
     return app
