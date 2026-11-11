@@ -102,6 +102,17 @@ def devices(client, adom: str) -> list[dict]:
     return client.get_devices(adom)
 
 
+def device(client, adom: str, name: str) -> dict:
+    """One device's record (``{}`` if unknown): from the inventory store when the
+    layer is on, else ``client.get_device``."""
+    if not _enabled():
+        return client.get_device(adom, name) or {}
+    for dev in devices(client, adom):
+        if isinstance(dev, dict) and dev.get("name") == name:
+            return dev
+    return {}
+
+
 def devices_with_sync_status(client, adom: str) -> list[dict]:
     if not _enabled():
         return client.get_devices_with_sync_status(adom)
