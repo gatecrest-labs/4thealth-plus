@@ -147,3 +147,31 @@ def test_policy_store_run_reports_config_delta_gating(with_policy_store):
     assert (
         0 < cd["gated_per_run"] < 20
     )  # a realistic fleet has both clean and pending devices
+
+
+@pytest.fixture(scope="module")
+def with_audit_snapshots():
+    spec = importlib.util.spec_from_file_location("measure_fmg_baseline5", _SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["measure_fmg_baseline5"] = mod
+    spec.loader.exec_module(mod)
+    return mod.measure(
+        devices=20,
+        inventory_cache=True,
+        policy_store=True,
+        audit_snapshots=True,
+        **SMALL,
+    )
+
+
+def test_measure_audit_snapshots_reports_snapshot_source_and_zero_review_calls(
+    with_audit_snapshots,
+):
+    r = with_audit_snapshots
+    assert "snapshot_cache" in r["sweeps"] and "snapshot_revisions" in r["sweeps"]
+    assert r["sweeps"]["snapshot_cache"]["calls"] > 0
+    audit = r["audit_snapshots"]
+    assert audit["device_review_run_calls"]["live"] > 100
+    assert audit["device_review_run_calls"]["snapshot"] == 0
+    assert audit["captured_devices"] == 20
+    assert audit["prime_calls"] > 0

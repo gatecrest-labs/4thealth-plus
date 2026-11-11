@@ -93,6 +93,7 @@ def measure(
     latency_ms: tuple[float, float] = (0.0, 0.0),
     inventory_cache: bool = False,
     policy_store: bool = False,
+    audit_snapshots: bool = False,
     **synth_kwargs,
 ) -> dict:
     """Run each sweep once on a synthetic fleet and report FMG call volume.
@@ -115,6 +116,12 @@ def measure(
     package is refetched once per TTL, the rest of the time only the package
     lists are read).
     Also reports how many devices a scheduled Config-Delta run would preview.
+
+    With ``audit_snapshots`` (Phase 5) the whole fleet is captured once (reported
+    as ``prime_calls``), then one steady-state capture batch and one revision check
+    are measured (sources ``snapshot_cache`` / ``snapshot_revisions``), and a bulk
+    Device Review of one ADOM is run live and from snapshots on the same fleet
+    (``audit_snapshots.device_review_run_calls``).
     """
     from app import (
         create_app,
@@ -229,6 +236,10 @@ def measure(
             if inventory_cache:
                 config_delta = _config_delta_gating(synth, devices)
 
+            audit = None
+            if audit_snapshots:
+                audit = _audit_snapshots(synth, results)
+
     downloads = sum(s["by_url"].get(INVENTORY_KEY, 0) for s in results.values())
     adoms = max(synth.adom_count, 1)
     return {
@@ -240,9 +251,77 @@ def measure(
         "inventory_cache": inventory_cache,
         "policy_store": policy_store,
         "config_delta": config_delta,
+        "audit_snapshots": audit,
         "inventory_counters": inventory.counters(),
         "unsupported": dict(synth.unsupported),
         "proxy_calls": dict(synth.proxy_calls),
+    }
+
+
+def _audit_snapshots(synth, results: dict) -> dict:
+    """Prime the snapshot store, measure steady state, compare Device Review live vs snapshot."""
+    from app import audit_data, snapshot_cache, snapshot_store
+    from app.config import Config
+    from app.fmg_client import FMGClient
+    from app.routes import audit_review_routes
+
+    client = FMGClient(host="synthetic-fmg", token="synthetic")
+    fleet = snapshot_cache._fleet(client)
+    total_devices = sum(len(v) for v in fleet.values())
+
+    before = Counter(synth.calls)
+    started = time.monotonic()
+    for adom, names in fleet.items():
+        for name in names:
+            snapshot_cache.capture_device(client, adom, name)
+    prime_calls = sum((Counter(synth.calls) - before).values())
+    prime_seconds = round(time.monotonic() - started, 2)
+    captured = sum(
+        1
+        for adom in fleet
+        for row in snapshot_store.device_meta_rows(adom)
+        if row["keys"] > 0
+    )
+
+    batch_min = float(Config.AUDIT_SNAPSHOT_BATCH_MINUTES)
+    rev_min = float(Config.AUDIT_SNAPSHOT_REVISION_CHECK_MINUTES)
+    for name, func, interval in (
+        ("snapshot_cache", snapshot_cache.refresh_batch, batch_min),
+        ("snapshot_revisions", snapshot_cache.refresh_revisions, rev_min),
+    ):
+        b = Counter(synth.calls)
+        t = time.monotonic()
+        func(client)
+        by_url = dict(Counter(synth.calls) - b)
+        calls = sum(by_url.values())
+        results[name] = {
+            "calls": calls,
+            "by_url": by_url,
+            "interval_min": interval,
+            "calls_per_hour": calls * 60.0 / interval,
+            "seconds": round(time.monotonic() - t, 2),
+            "steady_state": True,
+        }
+
+    adom = next(iter(fleet), "")
+    review = {}
+    for label, on in (("live", False), ("snapshot", True)):
+        with patch.object(Config, "AUDIT_SNAPSHOTS", on):
+            b = sum(synth.proxy_calls.values())
+            t = time.monotonic()
+            audit_review_routes.bulk_device_review_adom(adom, [], {})
+            review[label] = sum(synth.proxy_calls.values()) - b
+            review[f"{label}_seconds"] = round(time.monotonic() - t, 2)
+    return {
+        "devices": total_devices,
+        "captured_devices": captured,
+        "prime_calls": prime_calls,
+        "prime_seconds": prime_seconds,
+        "window_days": Config.AUDIT_SNAPSHOT_WINDOW_DAYS,
+        "batch_size": snapshot_cache.batch_size(total_devices),
+        "review_adom": adom,
+        "device_review_run_calls": review,
+        "audit_counters": audit_data.counters(),
     }
 
 
@@ -281,6 +360,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="measure with POLICY_STORE on (Phase 3): hygiene steady state",
     )
+    ap.add_argument(
+        "--audit-snapshots",
+        action="store_true",
+        help="measure with AUDIT_SNAPSHOTS on (Phase 5): capture steady state + Device Review",
+    )
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args(argv)
 
@@ -289,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         tuple(args.latency_ms),
         inventory_cache=args.inventory_cache,
         policy_store=args.policy_store,
+        audit_snapshots=args.audit_snapshots,
     )
     for name, s in result["sweeps"].items():
         flag = f"  ERROR {s['error']}" if "error" in s else ""
@@ -303,6 +388,15 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"Config-Delta per scheduled run: {cd['previewed_per_run']} previewed, "
             f"{cd['gated_per_run']} gated of {cd['devices']}"
+        )
+    if result.get("audit_snapshots"):
+        a = result["audit_snapshots"]
+        rv = a["device_review_run_calls"]
+        print(
+            f"Snapshots: primed {a['captured_devices']}/{a['devices']} devices with "
+            f"{a['prime_calls']} calls in {a['prime_seconds']}s; batch size {a['batch_size']}; "
+            f"Device Review of {a['review_adom']}: live {rv['live']} proxy calls "
+            f"({rv['live_seconds']}s), snapshot {rv['snapshot']} ({rv['snapshot_seconds']}s)"
         )
     if result["unsupported"]:
         print(f"UNSUPPORTED by synthetic FMG: {result['unsupported']}")

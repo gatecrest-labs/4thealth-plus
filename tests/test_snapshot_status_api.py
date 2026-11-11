@@ -1,4 +1,5 @@
 """Snapshot coverage status API and badge (Phase 5, Task 7)."""
+# ruff: noqa: RUF059
 
 import json
 import time
@@ -20,7 +21,12 @@ _USERS = {
 
 @pytest.fixture
 def rig(monkeypatch):
-    for k, v in (("INVENTORY_CACHE", False), ("AUDIT_SNAPSHOTS", True), ("AUDIT_SNAPSHOT_WINDOW_DAYS", 7), ("AUDIT_SNAPSHOT_MAX_AGE_HOURS", 0)):
+    for k, v in (
+        ("INVENTORY_CACHE", False),
+        ("AUDIT_SNAPSHOTS", True),
+        ("AUDIT_SNAPSHOT_WINDOW_DAYS", 7),
+        ("AUDIT_SNAPSHOT_MAX_AGE_HOURS", 0),
+    ):
         monkeypatch.setattr(Config, k, v)
     snapshot_cache._revision_flags.clear()
     audit_data.reset_counters()
@@ -29,7 +35,9 @@ def rig(monkeypatch):
     real._post = synth.post
     monkeypatch.setattr("app.routes.api_routes._make_client", lambda: real)
     monkeypatch.setattr("app.fmg_helpers.make_client", lambda: real)
-    adom = next(a["name"] for a in real.get_adoms() if not a["name"].lower().startswith("forti"))
+    adom = next(
+        a["name"] for a in real.get_adoms() if not a["name"].lower().startswith("forti")
+    )
     names = sorted(d["name"] for d in real.get_devices(adom))
     return synth, real, adom, names
 
@@ -68,7 +76,10 @@ def test_requires_login_tab_and_adom(rig):
     c, p = _client()
     try:
         assert c.get("/api/audit-snapshots/status").status_code == 400
-        with patch("app.routes.api_routes.check_adom_access", return_value=({"error": "no"}, 403)):
+        with patch(
+            "app.routes.api_routes.check_adom_access",
+            return_value=({"error": "no"}, 403),
+        ):
             assert _get(c, adom).status_code == 403
     finally:
         p.stop()
@@ -89,7 +100,9 @@ def test_counts_coverage_stale_and_unreachable(monkeypatch, rig):
     synth, real, adom, names = rig
     for n in names[:4]:
         snapshot_cache.capture_device(real, adom, n)
-    snapshot_store._set_collected_at_for_test(adom, names[0], "ntp", (datetime.now(UTC) - timedelta(hours=400)).isoformat())
+    snapshot_store._set_collected_at_for_test(
+        adom, names[0], "ntp", (datetime.now(UTC) - timedelta(hours=400)).isoformat()
+    )
     snapshot_store.mark_failed(adom, names[1], ["ntp"], "boom")
     c, p = _client()
     try:
@@ -101,7 +114,11 @@ def test_counts_coverage_stale_and_unreachable(monkeypatch, rig):
     assert body["coverage_pct"] == 80.0
     assert body["devices_stale"] >= 1 and body["devices_unreachable"] >= 1
     assert body["window_days"] == 7 and body["max_age_hours"] == 7 * 24 + 24
-    assert body["oldest_at"] and body["newest_at"] and body["oldest_at"] <= body["newest_at"]
+    assert (
+        body["oldest_at"]
+        and body["newest_at"]
+        and body["oldest_at"] <= body["newest_at"]
+    )
 
 
 def test_response_has_no_config_content(rig):
@@ -113,8 +130,17 @@ def test_response_has_no_config_content(rig):
     finally:
         p.stop()
     assert set(json.loads(raw)) == {
-        "enabled", "adom", "window_days", "max_age_hours", "devices_total", "devices_captured",
-        "coverage_pct", "devices_stale", "devices_unreachable", "oldest_at", "newest_at",
+        "enabled",
+        "adom",
+        "window_days",
+        "max_age_hours",
+        "devices_total",
+        "devices_captured",
+        "coverage_pct",
+        "devices_stale",
+        "devices_unreachable",
+        "oldest_at",
+        "newest_at",
     }
     assert "allowaccess" not in raw and "trusthost" not in raw
 

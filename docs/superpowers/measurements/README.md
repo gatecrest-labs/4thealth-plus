@@ -63,3 +63,11 @@ Config-Delta run previews 270 of 1,000 synthetic devices.
 (raw data: `2026-11-phase4-1000.json`) and `scripts/verify_policy_store_load.py`
 (raw data: `2026-11-phase4-load.json`); write-up: `2026-11-phase4-results.md`. Background floor 309.5
 calls/hour (flat vs Phase 3); every interactive and scheduled policy/object reader makes zero FMG calls.
+
+## Phase 5: device audit snapshots (2026-11-11)
+
+`uv run python scripts/measure_fmg_baseline.py --devices 1000 --inventory-cache --policy-store --audit-snapshots`
+(raw data: `2026-11-phase5-1000.json`) and `scripts/verify_snapshot_load.py` (raw data:
+`2026-11-phase5-snapshot-load.json`); write-up: `2026-11-phase5-results.md`. Background floor 434.5 calls/hour
+(8.9x below the original baseline); a bulk Device Review of 200 devices drops from 4,000 proxy calls to 0.
+

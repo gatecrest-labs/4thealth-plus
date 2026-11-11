@@ -1,0 +1,25 @@
+{
+  "adoms": 5,
+  "db_bytes": 4030464,
+  "devices": 1000,
+  "errors": [],
+  "read_p50_ms": 1.435,
+  "read_p95_ms": 6.583,
+  "readers": 2,
+  "reads": 10538,
+  "review": {
+    "adom": "Ent-1",
+    "audit_counters": {
+      "fallbacks": 0,
+      "hits": 3000,
+      "live_requests": 0,
+      "store_errors": 0
+    },
+    "devices": 200,
+    "errors": 0,
+    "proxy_reads": 0,
+    "rows": 6077,
+    "seconds": 0.09
+  },
+  "write_seconds": 8.74
+}

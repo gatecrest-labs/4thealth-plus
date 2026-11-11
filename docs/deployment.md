@@ -349,7 +349,11 @@ These apply to **both** units (set them in `/opt/4thealth/.env`, which both read
 | `POLICY_PARALLEL_FETCH` | `4` | Packages the collector fetches in parallel (the FMG in-flight cap still applies). |
 | `POLICY_REFRESH_MIN_INTERVAL_SECS` | `30` | Minimum time between Refresh requests for the same package. |
 | `HYGIENE_PACKAGE_TTL_HOURS` | `6` | TTL for a cached package result, jittered x0.75..x1.25 per package so refetches spread over time. If a refetch fails an entry younger than twice its TTL is reused, otherwise the package is skipped as before. Hygiene numbers can therefore be up to about this old. |
-| `AUDIT_SNAPSHOTS`, `JOB_QUEUE` | off | Layer flags for later phases. Leave off until a phase says otherwise. |
+| `AUDIT_SNAPSHOTS` | off | Phase 5 layer. On: the **collector** keeps a configuration snapshot of every device (15 data keys: interfaces, NTP, syslog, admins, global settings, SNMP, HA, IPsec, ...), capturing one rolling batch every `AUDIT_SNAPSHOT_BATCH_MINUTES` so each device is refreshed within `AUDIT_SNAPSHOT_WINDOW_DAYS`; Device Review (interactive and scheduled) and the PSIRT workaround checks then read the store with no per-device FortiManager calls. Rows show **Data as of** and **Source**; a **Live (read devices now)** checkbox bypasses the store. Set it in the shared `.env`, restart **both** units. Rollback: set it off and restart. |
+| `AUDIT_SNAPSHOT_WINDOW_DAYS` | 7 | Every device is re-captured within this many days. 1 = daily refresh (about 840 calls/hour more at 1,000 devices). |
+| `AUDIT_SNAPSHOT_MAX_AGE_HOURS` | window x 24 + 24 | A snapshot older than this is not served; that key is read live instead. |
+| `AUDIT_SNAPSHOT_WORKERS`, `AUDIT_SNAPSHOT_BATCH_MINUTES`, `AUDIT_SNAPSHOT_REVISION_CHECK_MINUTES` | 2, 10, 60 | Capture concurrency, batch cadence, and how often FortiManager's config revisions are checked to refresh changed devices early. |
+| `JOB_QUEUE` | off | Layer flag for a later phase. Leave off until a phase says otherwise. |
 
 With `INVENTORY_CACHE` on, the collector starts the inventory refresh first and holds every other cache's first refresh until it finishes (or 120 s), then staggers them 15 s apart with up to 10 s jitter, so a restart no longer hits FortiManager all at once. Web workers never call FortiManager at boot. `forti*` system ADOMs are not inventoried (same convention as every ADOM list); the Firewalls search skips them while the layer is on.
 
@@ -515,3 +519,16 @@ sudo -u 4thealth /opt/4thealth/.venv/bin/python scripts/verify_policy_store_load
 ```
 
 It writes a synthetic fleet through the collector code path while separate reader processes query the same file, then prints database size, write time, read p50/p95 and the Rule Lookup index build time; it must end with `OK: no errors` (exit status 0). It needs no FortiManager and the proof database can be deleted afterwards.
+
+#### Device snapshots: staleness, size and the one-time check (Phase 5)
+
+A Device Review or PSIRT verdict from snapshots reflects the device as last captured: up to the window plus one day old (8 days by default), except that a device whose FortiManager config revision is newer than its snapshot is refreshed within about an hour. Every row says how old its data is, scheduled reports state the oldest data at the top, and the **Live** checkbox reads the current configuration on demand (slower; it loads FortiManager). An unreachable device keeps its last snapshot and is retried with exponential backoff (15 minutes, doubling, capped at a day). The Audit Review header shows "Snapshots cover N of M devices". Expect about 4 MB of database growth per 1,000 devices.
+
+Run the load check once on the production host as the app user, next to the other two proofs:
+
+```
+sudo -u 4thealth /opt/4thealth/.venv/bin/python scripts/verify_snapshot_load.py \
+    --db /opt/4thealth/snapshot-load-proof.db --readers 2
+```
+
+It must end with `OK: no errors`; it needs no FortiManager and the proof database can be deleted afterwards. The first capture of a large fleet takes about a day (never-captured devices go first); until a device is captured its data is read live.

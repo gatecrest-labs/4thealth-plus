@@ -1,4 +1,5 @@
 """PSIRT workaround checks read device snapshots (Phase 5, Task 6)."""
+# ruff: noqa: RUF059
 
 import json
 import time
@@ -20,7 +21,14 @@ ADVISORY = {
     "fortinet_severity": "high",
     "cvss_score": 8.1,
     "description": "x",
-    "affected_ranges": [{"product": "FortiOS", "min_version": "7.0.0", "max_version": "7.6.99", "fixed_version": "7.7.0"}],
+    "affected_ranges": [
+        {
+            "product": "FortiOS",
+            "min_version": "7.0.0",
+            "max_version": "7.6.99",
+            "fixed_version": "7.7.0",
+        }
+    ],
     "workaround_text": "Restrict management access using trusted hosts",
     "exploited_in_wild_text": "",
 }
@@ -42,7 +50,12 @@ class Guard(FMGClient):
 
 @pytest.fixture
 def rig(monkeypatch):
-    for k, v in (("INVENTORY_CACHE", False), ("AUDIT_SNAPSHOTS", False), ("AUDIT_SNAPSHOT_WINDOW_DAYS", 7), ("AUDIT_SNAPSHOT_MAX_AGE_HOURS", 0)):
+    for k, v in (
+        ("INVENTORY_CACHE", False),
+        ("AUDIT_SNAPSHOTS", False),
+        ("AUDIT_SNAPSHOT_WINDOW_DAYS", 7),
+        ("AUDIT_SNAPSHOT_MAX_AGE_HOURS", 0),
+    ):
         monkeypatch.setattr(Config, k, v)
     monkeypatch.setattr(Config, "PSIRT_ENRICHMENT_ENABLED", False)
     snapshot_cache._revision_flags.clear()
@@ -50,7 +63,9 @@ def rig(monkeypatch):
     synth = SyntheticFMG(adoms=1, devices=4, seed=3)
     real = FMGClient(host="fmg.example", token="t")
     real._post = synth.post
-    adom = next(a["name"] for a in real.get_adoms() if not a["name"].lower().startswith("forti"))
+    adom = next(
+        a["name"] for a in real.get_adoms() if not a["name"].lower().startswith("forti")
+    )
     names = sorted(d["name"] for d in real.get_devices(adom))
     for n in names:
         snapshot_cache.capture_device(real, adom, n)
@@ -78,25 +93,40 @@ def _use(monkeypatch, client):
 
 
 def _post(c, url, payload):
-    return c.post(url, data=json.dumps(payload), content_type="application/json", headers={"X-CSRF-Token": "t"})
+    return c.post(
+        url,
+        data=json.dumps(payload),
+        content_type="application/json",
+        headers={"X-CSRF-Token": "t"},
+    )
 
 
 def _findings(body):
     return sorted(body["findings"], key=lambda f: f["device"])
 
 
-def test_assess_with_snapshots_equals_live_assessment_zero_proxy_calls(monkeypatch, rig, http):
+def test_assess_with_snapshots_equals_live_assessment_zero_proxy_calls(
+    monkeypatch, rig, http
+):
     synth, real, adom, names = rig
     _use(monkeypatch, real)
-    live = _post(http, "/api/audit-review/psirt/assess", {"adom": adom, "advisory": ADVISORY}).get_json()
+    live = _post(
+        http, "/api/audit-review/psirt/assess", {"adom": adom, "advisory": ADVISORY}
+    ).get_json()
     monkeypatch.setattr(Config, "AUDIT_SNAPSHOTS", True)
     guard = Guard(synth)
     _use(monkeypatch, guard)
-    snap = _post(http, "/api/audit-review/psirt/assess", {"adom": adom, "advisory": ADVISORY}).get_json()
+    snap = _post(
+        http, "/api/audit-review/psirt/assess", {"adom": adom, "advisory": ADVISORY}
+    ).get_json()
     assert guard.proxy_reads == 0
-    strip = lambda fs: [{k: v for k, v in f.items() if k not in ("data_as_of", "source")} for f in fs]  # noqa: E731
+    strip = lambda fs: [
+        {k: v for k, v in f.items() if k not in ("data_as_of", "source")} for f in fs
+    ]
     assert strip(_findings(snap)) == _findings(live) and live["findings"]
-    assert {f["workaround_status"] for f in live["findings"]} - {"manual_verification_required"}
+    assert {f["workaround_status"] for f in live["findings"]} - {
+        "manual_verification_required"
+    }
 
 
 def test_workaround_check_sees_snapshot_interfaces_and_admins(monkeypatch, rig):
@@ -108,21 +138,37 @@ def test_workaround_check_sees_snapshot_interfaces_and_admins(monkeypatch, rig):
     live = SnapshotFMGAdapter(real, live=True)
     for n in names:
         for key in ("configure_trusted_hosts", "disable_http_https_admin_access"):
-            assert check_workaround(key, adapter, adom, n) == check_workaround(key, live, adom, n)
+            assert check_workaround(key, adapter, adom, n) == check_workaround(
+                key, live, adom, n
+            )
 
 
 def test_provenance_attached_to_device_results_and_report(monkeypatch, rig, http):
     synth, real, adom, names = rig
     monkeypatch.setattr(Config, "AUDIT_SNAPSHOTS", True)
     _use(monkeypatch, Guard(synth))
-    body = _post(http, "/api/audit-review/psirt/assess", {"adom": adom, "advisory": ADVISORY}).get_json()
+    body = _post(
+        http, "/api/audit-review/psirt/assess", {"adom": adom, "advisory": ADVISORY}
+    ).get_json()
     checked = [f for f in body["findings"] if f["in_range"]]
-    assert checked and all(f["source"] == "snapshot" and f["data_as_of"] for f in checked)
-    html = _post(http, "/api/audit-review/psirt/report", {"assessment": body}).get_data(as_text=True)
+    assert checked and all(
+        f["source"] == "snapshot" and f["data_as_of"] for f in checked
+    )
+    html = _post(http, "/api/audit-review/psirt/report", {"assessment": body}).get_data(
+        as_text=True
+    )
     assert "Data as of" in html
     monkeypatch.setattr(Config, "AUDIT_SNAPSHOTS", False)
-    plain = {**body, "findings": [{k: v for k, v in f.items() if k not in ("data_as_of", "source")} for f in body["findings"]]}
-    assert "Data as of" not in _post(http, "/api/audit-review/psirt/report", {"assessment": plain}).get_data(as_text=True)
+    plain = {
+        **body,
+        "findings": [
+            {k: v for k, v in f.items() if k not in ("data_as_of", "source")}
+            for f in body["findings"]
+        ],
+    }
+    assert "Data as of" not in _post(
+        http, "/api/audit-review/psirt/report", {"assessment": plain}
+    ).get_data(as_text=True)
 
 
 def test_single_device_route_carries_provenance(monkeypatch, rig, http):
@@ -130,7 +176,11 @@ def test_single_device_route_carries_provenance(monkeypatch, rig, http):
     monkeypatch.setattr(Config, "AUDIT_SNAPSHOTS", True)
     guard = Guard(synth)
     _use(monkeypatch, guard)
-    body = _post(http, "/api/audit-review/psirt/assess/device", {"adom": adom, "device": names[0], "advisory": ADVISORY}).get_json()
+    body = _post(
+        http,
+        "/api/audit-review/psirt/assess/device",
+        {"adom": adom, "device": names[0], "advisory": ADVISORY},
+    ).get_json()
     assert guard.proxy_reads == 0
     assert body["finding"]["source"] == "snapshot" and body["finding"]["data_as_of"]
 
@@ -140,7 +190,11 @@ def test_live_flag_bypasses_snapshots(monkeypatch, rig, http):
     monkeypatch.setattr(Config, "AUDIT_SNAPSHOTS", True)
     _use(monkeypatch, real)
     synth.proxy_calls.clear()
-    body = _post(http, "/api/audit-review/psirt/assess", {"adom": adom, "advisory": ADVISORY, "live": True}).get_json()
+    body = _post(
+        http,
+        "/api/audit-review/psirt/assess",
+        {"adom": adom, "advisory": ADVISORY, "live": True},
+    ).get_json()
     assert sum(synth.proxy_calls.values()) > 0
     assert {f["source"] for f in body["findings"] if f["in_range"]} == {"live"}
 
@@ -160,7 +214,10 @@ def test_adoms_and_devices_come_from_inventory_facade(monkeypatch, rig):
     guard = Guard(synth)
     calls = []
     orig = guard._post
-    guard._post = lambda body, timeout=None: (calls.append(body["params"][0].get("url")), orig(body, timeout))[1]
+    guard._post = lambda body, timeout=None: (
+        calls.append(body["params"][0].get("url")),
+        orig(body, timeout),
+    )[1]
     adapter = SnapshotFMGAdapter(guard)
     assert [a["name"] for a in adapter.get_adoms() if a["name"] == adom] == [adom]
     assert sorted(d["name"] for d in adapter.get_devices(adom)) == names
@@ -172,9 +229,16 @@ def test_star_adom_assessment_respects_adom_access(monkeypatch, rig, http):
     monkeypatch.setattr(Config, "AUDIT_SNAPSHOTS", True)
     _use(monkeypatch, Guard(synth))
     monkeypatch.setattr("app.groups.get_allowed_adoms", lambda *a, **k: [])
-    assert _post(http, "/api/audit-review/psirt/assess", {"adom": "*", "advisory": ADVISORY}).status_code == 403
+    assert (
+        _post(
+            http, "/api/audit-review/psirt/assess", {"adom": "*", "advisory": ADVISORY}
+        ).status_code
+        == 403
+    )
     monkeypatch.setattr("app.groups.get_allowed_adoms", lambda *a, **k: [adom])
-    body = _post(http, "/api/audit-review/psirt/assess", {"adom": "*", "advisory": ADVISORY}).get_json()
+    body = _post(
+        http, "/api/audit-review/psirt/assess", {"adom": "*", "advisory": ADVISORY}
+    ).get_json()
     assert {f["adom"] for f in body["findings"]} == {adom}
 
 
@@ -186,5 +250,9 @@ def test_flag_off_unchanged(monkeypatch, rig, http):
         raise AssertionError("snapshot store touched with the flag off")
 
     monkeypatch.setattr("app.snapshot_store.get_keys", nope)
-    body = _post(http, "/api/audit-review/psirt/assess", {"adom": adom, "advisory": ADVISORY}).get_json()
-    assert body["findings"] and all("source" not in f and "data_as_of" not in f for f in body["findings"])
+    body = _post(
+        http, "/api/audit-review/psirt/assess", {"adom": adom, "advisory": ADVISORY}
+    ).get_json()
+    assert body["findings"] and all(
+        "source" not in f and "data_as_of" not in f for f in body["findings"]
+    )
