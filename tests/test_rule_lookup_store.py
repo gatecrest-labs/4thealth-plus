@@ -34,8 +34,18 @@ class NoPmClient(FMGClient):
         self._post = post
 
 
+def _quiesce(timeout: float = 10.0) -> None:
+    """Wait for background Rule Lookup builds to finish, then reset the module state."""
+    deadline = time.time() + timeout
+    while rule_lookup_cache._building and time.time() < deadline:
+        time.sleep(0.02)
+    rule_lookup_cache._building.clear()
+    rule_lookup_cache._store.clear()
+
+
 @pytest.fixture
 def rig(monkeypatch):
+    _quiesce()
     monkeypatch.setattr(Config, "INVENTORY_CACHE", False)
     monkeypatch.setattr(Config, "POLICY_STORE", False)
     monkeypatch.setattr(Config, "POLICY_PACKAGE_TTL_HOURS", 6)
@@ -57,7 +67,8 @@ def rig(monkeypatch):
     adom = next(
         a["name"] for a in real.get_adoms() if not a["name"].lower().startswith("forti")
     )
-    return synth, real, adom
+    yield synth, real, adom
+    _quiesce()  # an async rebuild must not outlive its test (it would hit the next one)
 
 
 def _prime(monkeypatch, real):
@@ -260,6 +271,7 @@ def test_response_includes_data_as_of(monkeypatch, rig, http):
 
 
 def test_build_time_and_memory_for_a_24k_rule_adom(monkeypatch):
+    _quiesce()
     monkeypatch.setattr(Config, "INVENTORY_CACHE", False)
     monkeypatch.setattr(Config, "POLICY_STORE", True)
     monkeypatch.setattr(Config, "POLICY_PARALLEL_FETCH", 4)
