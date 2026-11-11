@@ -485,6 +485,32 @@ def _rpc_ok(data) -> bool:
         return True
 
 
+_OBJECT_PATHS = {
+    "address": "obj/firewall/address",
+    "addrgrp": "obj/firewall/addrgrp",
+    "vip": "obj/firewall/vip",
+    "ippool": "obj/firewall/ippool",
+    "service": "obj/firewall/service/custom",
+    "svcgrp": "obj/firewall/service/group",
+}
+_GLOBAL_OBJECT_KINDS = frozenset({"address", "addrgrp", "vip", "ippool"})
+
+
+def _object_urls(adom: str, kind: str, scope: str) -> list[str]:
+    """URLs holding *kind* objects for *scope* (local ADOM first, then global)."""
+    path = _OBJECT_PATHS[kind]
+    urls = []
+    if scope in ("all", "local"):
+        urls.append(f"/pm/config/adom/{adom}/{path}")
+    if scope in ("all", "global") and kind in _GLOBAL_OBJECT_KINDS:
+        urls.append(f"/pm/config/global/{path}")
+    return urls
+
+
+def _as_fmg_error(exc: Exception) -> "FMGError":
+    return exc if isinstance(exc, FMGError) else FMGError(str(exc))
+
+
 class FMGClient:
     def __init__(
         self,
@@ -1182,18 +1208,23 @@ class FMGClient:
                 found_nomod = True
         return "nomod" if found_nomod else ""
 
-    def get_policy_packages(self, adom: str) -> list:
+    def get_policy_packages(self, adom: str, strict: bool = False) -> list:
         """Return all policy packages in an ADOM, recursing into folder subobj lists.
 
         Each returned dict has 'name' (display name) and 'path' (the slash-joined
         folder/package string needed for API calls, e.g. 'MyFolder/MyPackage').
+        ``strict=True`` raises ``FMGError`` instead of returning ``[]`` on failure.
         """
         try:
             data = self._get(f"/pm/pkg/adom/{adom}")
             if not isinstance(data, list):
+                if strict and data not in ({}, None):
+                    raise FMGError(f"unexpected package list shape for ADOM {adom}")
                 return []
             return self._flatten_packages(data, prefix="")
-        except Exception:
+        except Exception as exc:
+            if strict:
+                raise _as_fmg_error(exc) from exc
             return []
 
     @staticmethod
@@ -1214,22 +1245,25 @@ class FMGClient:
                 result.append({**item, "path": f"{prefix}{name}"})
         return result
 
-    def get_pkg_settings(self, adom: str, pkg_path: str) -> dict:
+    def get_pkg_settings(self, adom: str, pkg_path: str, strict: bool = False) -> dict:
         """Return the 'package settings' dict for a policy package.
 
         The last component of pkg_path is the package name; the leading parts
         are folder names.  The API path for the package object itself is:
           /pm/pkg/adom/<adom>/<folder1>/<folder2>/.../<pkg_name>
-        Returns {} on any error.
+        Returns {} on any error (``strict=True`` raises ``FMGError`` instead).
         """
         try:
             data = self._get(f"/pm/pkg/adom/{adom}/{pkg_path}")
-            if isinstance(data, dict):
+            if isinstance(data, dict) and data:
                 return data.get("package settings") or {}
-            if isinstance(data, list) and data:
+            if isinstance(data, list) and data and isinstance(data[0], dict):
                 return data[0].get("package settings") or {}
-        except Exception:
-            pass
+            if strict:
+                raise FMGError(f"package {pkg_path} not found in ADOM {adom}")
+        except Exception as exc:
+            if strict:
+                raise _as_fmg_error(exc) from exc
         return {}
 
     def get_policies(self, adom: str, pkg_path: str) -> list:
@@ -1402,23 +1436,30 @@ class FMGClient:
         except Exception:
             return 0
 
-    def get_pkg_scope_members(self, adom: str, pkg_path: str) -> list:
+    def get_pkg_scope_members(
+        self, adom: str, pkg_path: str, strict: bool = False
+    ) -> list:
         """Return the list of devices/groups this policy package is installed on.
 
         Each entry is typically {"name": "FW01", "vdom": "root"}.
-        Returns [] on error or when the package has no explicit scope.
+        Returns [] on error or when the package has no explicit scope
+        (``strict=True`` raises ``FMGError`` on error or a missing package).
         """
         try:
             data = self._get(f"/pm/pkg/adom/{adom}/{pkg_path}")
             if isinstance(data, list) and data:
                 data = data[0]
-            if not isinstance(data, dict):
+            if not isinstance(data, dict) or (strict and not data):
+                if strict:
+                    raise FMGError(f"package {pkg_path} not found in ADOM {adom}")
                 return []
             scope = data.get("scope member") or data.get("scope_member") or []
             if isinstance(scope, list):
                 return scope
             return []
-        except Exception:
+        except Exception as exc:
+            if strict:
+                raise _as_fmg_error(exc) from exc
             return []
 
     def get_device_group_names(self, adom: str) -> set[str]:
@@ -1655,7 +1696,7 @@ class FMGClient:
                 continue
         return servers
 
-    def _get_paged(self, url: str, page_size: int = 1000) -> list:
+    def _get_paged(self, url: str, page_size: int = 1000, strict: bool = False) -> list:
         """Paginated GET for endpoints that may return large lists.
 
         Sends range=[offset, page_size] until a short page is returned.
@@ -1678,6 +1719,8 @@ class FMGClient:
                 raise FMGError(f"FMG error on {url}: {result.get('status')}")
             page = result.get("data", [])
             if not isinstance(page, list):
+                if strict and page not in (None, {}):
+                    raise FMGError(f"unexpected data shape from {url}")
                 break
             all_items.extend(page)
             if len(page) < page_size:
@@ -1685,81 +1728,65 @@ class FMGClient:
             offset += page_size
         return all_items
 
-    def get_address_objects(self, adom: str, scope: str = "all") -> list:
+    def get_objects(
+        self, adom: str, kind: str, scope: str = "all", strict: bool = False
+    ) -> list:
+        """Firewall objects of one *kind* (see ``_OBJECT_PATHS``) for an ADOM.
+
+        ``scope`` is ``local`` (the ADOM), ``global`` (the shared database) or
+        ``all`` (local then global). Services have no global pool. By default a
+        failed read is swallowed and contributes nothing; with ``strict=True`` any
+        FMG error, exception or unexpected shape raises ``FMGError`` so a caller
+        that stores the result can tell "empty" from "failed".
+        """
+        results: list = []
+        for url in _object_urls(adom, kind, scope):
+            try:
+                if kind in ("service", "svcgrp") and not strict:
+                    data = self._get(url)  # legacy: single un-paged read
+                    results.extend(data if isinstance(data, list) else [])
+                else:
+                    results.extend(self._get_paged(url, strict=strict))
+            except Exception as exc:
+                if strict:
+                    raise _as_fmg_error(exc) from exc
+        return results
+
+    def get_address_objects(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
         """Return firewall address objects filtered by scope: 'local', 'global', or 'all'."""
-        urls = []
-        if scope in ("all", "local"):
-            urls.append(f"/pm/config/adom/{adom}/obj/firewall/address")
-        if scope in ("all", "global"):
-            urls.append("/pm/config/global/obj/firewall/address")
-        results: list = []
-        for url in urls:
-            try:
-                results.extend(self._get_paged(url))
-            except Exception:
-                pass
-        return results
+        return self.get_objects(adom, "address", scope, strict)
 
-    def get_address_groups(self, adom: str, scope: str = "all") -> list:
+    def get_address_groups(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
         """Return firewall address groups filtered by scope: 'local', 'global', or 'all'."""
-        urls = []
-        if scope in ("all", "local"):
-            urls.append(f"/pm/config/adom/{adom}/obj/firewall/addrgrp")
-        if scope in ("all", "global"):
-            urls.append("/pm/config/global/obj/firewall/addrgrp")
-        results: list = []
-        for url in urls:
-            try:
-                results.extend(self._get_paged(url))
-            except Exception:
-                pass
-        return results
+        return self.get_objects(adom, "addrgrp", scope, strict)
 
-    def get_service_objects(self, adom: str, scope: str = "all") -> list:
+    def get_service_objects(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
         """Return all custom service objects in an ADOM (services have no global pool)."""
-        if scope == "global":
-            return []
-        try:
-            data = self._get(f"/pm/config/adom/{adom}/obj/firewall/service/custom")
-            return data if isinstance(data, list) else []
-        except Exception:
-            return []
+        return self.get_objects(adom, "service", scope, strict)
 
-    def get_service_groups(self, adom: str, scope: str = "all") -> list:
+    def get_service_groups(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
         """Return all service groups in an ADOM (service groups have no global pool)."""
-        if scope == "global":
-            return []
-        try:
-            data = self._get(f"/pm/config/adom/{adom}/obj/firewall/service/group")
-            return data if isinstance(data, list) else []
-        except Exception:
-            return []
+        return self.get_objects(adom, "svcgrp", scope, strict)
 
-    def get_vip_objects(self, adom: str) -> list:
-        """Return all firewall VIP objects in an ADOM plus the global database."""
-        results: list = []
-        for url in (
-            f"/pm/config/adom/{adom}/obj/firewall/vip",
-            "/pm/config/global/obj/firewall/vip",
-        ):
-            try:
-                results.extend(self._get_paged(url))
-            except Exception:
-                pass
-        return results
+    def get_vip_objects(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
+        """Return firewall VIP objects: the ADOM's, the global database's, or both."""
+        return self.get_objects(adom, "vip", scope, strict)
 
-    def get_ippool_objects(self, adom: str) -> list:
-        """Return all firewall IP pool objects in an ADOM plus the global database."""
-        results: list = []
-        for url in (
-            f"/pm/config/adom/{adom}/obj/firewall/ippool",
-            "/pm/config/global/obj/firewall/ippool",
-        ):
-            try:
-                results.extend(self._get_paged(url))
-            except Exception:
-                pass
-        return results
+    def get_ippool_objects(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
+        """Return firewall IP pool objects: the ADOM's, the global database's, or both."""
+        return self.get_objects(adom, "ippool", scope, strict)
 
     def get_device_vip_objects(self, device: str, vdom: str = "root") -> list:
         """Return VIP objects from a specific device/vdom via the per-device DB path.
