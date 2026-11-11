@@ -335,7 +335,17 @@ These apply to **both** units (set them in `/opt/4thealth/.env`, which both read
 | `FMG_MAX_INFLIGHT` | collector 8, web worker 4 | Per-process cap on concurrent FortiManager requests (total <= 16 with two web workers). `0` = unlimited. FMG handles a few concurrent proxy calls well; more does not make sweeps faster (lab: 4 workers gave ~1.3x). |
 | `FMG_SLOT_WAIT_SECS` | `60` | Seconds a call waits for a free in-flight slot before failing with a clear timeout error (`0` = wait forever). |
 | `FMG_RETRIES` | `2` | Extra attempts with jittered backoff on connection failures, 5xx and timeouts for read (`get`) calls only; write-like `exec` calls are retried only when the connection was never established. `0` disables. |
-| `INVENTORY_CACHE`, `POLICY_STORE`, `AUDIT_SNAPSHOTS`, `JOB_QUEUE` | off | Layer flags for the scale work; later phases switch each layer from direct FMG calls to the cached path. Leave off until a phase says otherwise. |
+| `INVENTORY_CACHE` | off | Phase 2 layer. On: the **collector** fetches ADOMs, devices, VDOMs, HA, conn/conf/db status and per-VDOM package status once per ADOM into the shared store; every dashboard cache and device/ADOM list reads it instead of calling FortiManager. Set it in the shared `.env` and restart **both** units. Rollback: set it off and restart. |
+| `INVENTORY_REFRESH_SECS` | `300` | How often the collector refreshes the inventory (about 132 FMG calls/hour at 5 ADOMs; raise to 600 to halve it). |
+| `INVENTORY_MAX_AGE_SECS` | unset (3 x refresh) | A reader falls back to one live FMG call for an ADOM whose cached data is older than this (or missing). Fallbacks are counted. |
+| `INVENTORY_PARALLEL_ADOMS` | `4` | ADOMs the collector fetches in parallel (the FMG in-flight cap still applies). |
+| `POLICY_STORE`, `AUDIT_SNAPSHOTS`, `JOB_QUEUE` | off | Layer flags for later phases. Leave off until a phase says otherwise. |
+
+With `INVENTORY_CACHE` on, the collector starts the inventory refresh first and holds every other cache's first refresh until it finishes (or 120 s), then staggers them 15 s apart with up to 10 s jitter, so a restart no longer hits FortiManager all at once. Web workers never call FortiManager at boot. `forti*` system ADOMs are not inventoried (same convention as every ADOM list); the Firewalls search skips them while the layer is on.
+
+The Dashboard, Firewalls, Versions and Map pages show a **Data as of** badge (top bar) fed by `GET /api/inventory/status`: green when every ADOM is current, amber when some are older than `INVENTORY_MAX_AGE_SECS`, red when a refresh failed. Admins get a Refresh button (`POST /api/inventory/refresh`, at most once a minute; the collector picks the request up within about 10 s).
+
+Check the inventory is fresh: `curl -sk -b <session> https://<host>/api/inventory/status` or look at the badge; in the Admin FMG metrics table the `get /dvmdb/adom/{adom}/device` line should show roughly one call per ADOM every refresh period from the collector and none from web workers.
 
 Use an **FMG API token** (`FMG_API_TOKEN`), not username/password, at this scale: password auth opens a real FortiManager admin session per client and FortiManager caps them.
 

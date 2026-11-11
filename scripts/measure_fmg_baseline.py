@@ -89,7 +89,10 @@ def _sweeps():
 
 
 def measure(
-    devices: int = 1000, latency_ms: tuple[float, float] = (0.0, 0.0), **synth_kwargs
+    devices: int = 1000,
+    latency_ms: tuple[float, float] = (0.0, 0.0),
+    inventory_cache: bool = False,
+    **synth_kwargs,
 ) -> dict:
     """Run each sweep once on a synthetic fleet and report FMG call volume.
 
@@ -97,12 +100,21 @@ def measure(
     "interval_min", "calls_per_hour", "seconds", "error"?}}, "calls_per_hour",
     "inventory_downloads_per_cycle"}``. ``synth_kwargs`` are passed to
     ``SyntheticFMG`` (adoms, packages_per_adom, rules_per_package, ...).
+
+    With ``inventory_cache`` the ``INVENTORY_CACHE`` layer is switched on: the
+    collector's inventory refresh runs first (measured as the ``inventory_cache``
+    source, at its own refresh interval) and every other sweep then reads the
+    store instead of FortiManager.
     """
     from app import (
         create_app,
         device_backup_cache,
+        inventory,
         license_status_cache,
         summary_history,
+    )
+    from app import (
+        inventory_cache as inventory_job,
     )
     from app.config import Config
     from app.fmg_client import FMGClient
@@ -125,6 +137,11 @@ def measure(
         stack.enter_context(patch.object(FMGClient, "_post", fake_post))
         stack.enter_context(patch.object(Config, "FMG_PRIMARY_HOST", "synthetic-fmg"))
         stack.enter_context(patch.object(Config, "FMG_API_TOKEN", "synthetic"))
+        # The exec-summary sweep also does live infra-target fetches; keep a
+        # measurement run off the network (they are not FortiManager calls).
+        stack.enter_context(patch.object(Config, "INFRA_TARGETS", []))
+        stack.enter_context(patch.object(Config, "INVENTORY_CACHE", inventory_cache))
+        inventory.reset_counters()
         stack.enter_context(
             patch.object(license_status_cache, "_STORE_PATH", tmp_path / "license.json")
         )
@@ -137,7 +154,18 @@ def measure(
 
         app = create_app(test_config={"TESTING": True})
         with app.app_context():
-            for name, module, func, interval_min in _sweeps():
+            sweeps = _sweeps()
+            if inventory_cache:
+                sweeps = [
+                    (
+                        "inventory_cache",
+                        inventory_job,
+                        "_run_refresh",
+                        Config.INVENTORY_REFRESH_SECS / 60.0,
+                    ),
+                    *sweeps,
+                ]
+            for name, module, func, interval_min in sweeps:
                 before = Counter(synth.calls)
                 started = time.monotonic()
                 error = None
@@ -158,14 +186,16 @@ def measure(
                     entry["error"] = error
                 results[name] = entry
 
-    inventory = sum(s["by_url"].get(INVENTORY_KEY, 0) for s in results.values())
+    downloads = sum(s["by_url"].get(INVENTORY_KEY, 0) for s in results.values())
     adoms = max(synth.adom_count, 1)
     return {
         "devices": devices,
         "adoms": synth.adom_count,
         "sweeps": results,
         "calls_per_hour": sum(s["calls_per_hour"] for s in results.values()),
-        "inventory_downloads_per_cycle": inventory // adoms,
+        "inventory_downloads_per_cycle": downloads // adoms,
+        "inventory_cache": inventory_cache,
+        "inventory_counters": inventory.counters(),
         "unsupported": dict(synth.unsupported),
         "proxy_calls": dict(synth.proxy_calls),
     }
@@ -175,14 +205,21 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--devices", type=int, default=1000)
     ap.add_argument("--latency-ms", type=float, nargs=2, default=(0.0, 0.0))
+    ap.add_argument(
+        "--inventory-cache",
+        action="store_true",
+        help="measure with the INVENTORY_CACHE layer on (Phase 2)",
+    )
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args(argv)
 
-    result = measure(args.devices, tuple(args.latency_ms))
+    result = measure(
+        args.devices, tuple(args.latency_ms), inventory_cache=args.inventory_cache
+    )
     for name, s in result["sweeps"].items():
         flag = f"  ERROR {s['error']}" if "error" in s else ""
         print(
-            f"{name:24s} {s['calls']:>7d} calls  every {s['interval_min']:>5d} min"
+            f"{name:24s} {s['calls']:>7d} calls  every {s['interval_min']:>6g} min"
             f"  = {s['calls_per_hour']:>9.1f}/h  ({s['seconds']}s){flag}"
         )
     print(f"TOTAL calls/hour: {result['calls_per_hour']:.1f}")

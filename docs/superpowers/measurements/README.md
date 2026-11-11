@@ -42,3 +42,10 @@ cycle** across the sweeps (finding C2).
   for a rough latency-bound estimate.
 - Real FMG behaviour (task queue, proxy throttling, version differences)
   cannot be proven by the synthetic rig.
+
+## Phase 2: inventory cache (2026-11-10)
+
+`uv run python scripts/measure_fmg_baseline.py --devices 1000 --inventory-cache`
+(raw data: `2026-11-phase2-1000.json`, write-up: `2026-11-phase2-results.md`):
+3,887.8 -> 635.8 background FMG calls/hour (6.1x lower). The remaining 10x needs the
+hygiene sweep reduced (Phases 3-4).
