@@ -62,6 +62,13 @@ def start_all_schedulers(app: Flask) -> None:
 
         init_inventory_scheduler(app)
 
+    # Device audit snapshots (AUDIT_SNAPSHOTS): rolling per-device config capture.
+    if not app.config.get("_SNAPSHOT_CACHE_STARTED"):
+        app.config["_SNAPSHOT_CACHE_STARTED"] = True
+        from app.snapshot_cache import init_scheduler as init_snapshot_scheduler
+
+        init_snapshot_scheduler(app)
+
     # Policy/object store refresh (POLICY_STORE): packages, policies, blocks, objects.
     if not app.config.get("_POLICY_CACHE_STARTED"):
         app.config["_POLICY_CACHE_STARTED"] = True

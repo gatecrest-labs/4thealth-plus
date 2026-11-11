@@ -50,6 +50,14 @@ def _err(body: dict, url: str, code: int, message: str) -> dict:
     }
 
 
+class _Http:
+    """A proxy answer with a non-200 HTTP status (a legitimate "not configured")."""
+
+    def __init__(self, status: int, results=None):
+        self.status = status
+        self.results = {} if results is None else results
+
+
 class SyntheticFMG:
     def __init__(
         self,
@@ -82,6 +90,8 @@ class SyntheticFMG:
         # Policy-block reference rules appended to every package (0 = none); the
         # block names are per ADOM so many packages share the same few blocks.
         self.blocks_per_package = blocks_per_package
+        # Devices FMG cannot reach through its proxy ("No tunnel 80"): tests add names.
+        self.down_devices: set[str] = set()
 
         self.calls: Counter[str] = Counter()
         self.unsupported: Counter[str] = Counter()
@@ -306,6 +316,96 @@ class SyntheticFMG:
                 }
                 for v in dev["vdom"]
             ]
+        return self._audit_payload(path, dev)
+
+    def _audit_payload(self, path: str, dev: dict):
+        """Device configuration for the Device Review checks: about 70% of devices
+        are compliant per resource, deterministically; non-HA devices answer the
+        HA status with an HTTP 404 like a FortiGate with no HA configured."""
+        rng = random.Random(f"{self.seed}:audit:{dev['name']}:{path}")
+        good = rng.random() < 0.7
+        name = dev["name"]
+        if path == "/api/v2/cmdb/system/ntp":
+            return {
+                "ntpsync": "enable" if good else "disable",
+                "type": "custom",
+                "ntpserver": [{"id": 1, "server": "10.0.0.123"}],
+            }
+        if path.startswith("/api/v2/cmdb/log.syslogd") and path.endswith("/setting"):
+            first = path == "/api/v2/cmdb/log.syslogd/setting"
+            if first and good:
+                return {"status": "enable", "server": "10.0.0.50"}
+            return {"status": "disable"}
+        if path == "/api/v2/cmdb/system/admin":
+            return [
+                {
+                    "name": "admin",
+                    "trusthost1": "10.0.0.0 255.0.0.0" if good else "0.0.0.0 0.0.0.0",
+                    "accprofile": "super_admin",
+                    "two-factor": "fortitoken" if good else "disable",
+                },
+                {
+                    "name": "ops",
+                    "trusthost1": "10.0.0.0 255.0.0.0",
+                    "accprofile": "prof_admin",
+                    "two-factor": "disable",
+                },
+            ]
+        if path == "/api/v2/cmdb/system/global":
+            return {
+                "hostname": name if good else "FortiGate-60F",
+                "admintimeout": 5 if good else 480,
+                "admin-lockout-threshold": 3 if good else 10,
+                "admin-port": 8443 if good else 80,
+                "admin-https-ssl-versions": "tlsv1-2 tlsv1-3"
+                if good
+                else "tlsv1-0 tlsv1-1 tlsv1-2",
+                "pre-login-banner": "enable" if good else "disable",
+                "timezone": "12",
+                "strong-crypto": "enable",
+            }
+        if path == "/api/v2/cmdb/system/password-policy":
+            return {"status": "enable", "minimum-length": 14 if good else 6}
+        if path == "/api/v2/cmdb/log.disk/setting":
+            return {
+                "status": "enable" if good else "disable",
+                "severity": "information",
+            }
+        if path.startswith("/api/v2/cmdb/log.fortianalyzer") and path.endswith(
+            "/setting"
+        ):
+            if path == "/api/v2/cmdb/log.fortianalyzer/setting":
+                return {"status": "enable", "server": "10.0.0.60"}
+            return {"status": "disable"}
+        if path == "/api/v2/cmdb/system/dns":
+            return {"primary": "10.0.0.53", "secondary": "10.0.0.54"}
+        if path == "/api/v2/cmdb/system/snmp/community":
+            return [] if good else [{"id": 1, "name": "public", "status": "enable"}]
+        if path == "/api/v2/cmdb/system/snmp/sysinfo":
+            return {"status": "enable"}
+        if path == "/api/v2/cmdb/system/snmp/user":
+            return [
+                {"name": "snmpv3", "security-level": "auth-priv", "status": "enable"}
+            ]
+        if path == "/api/v2/monitor/system/ha-status":
+            if not dev.get("ha_mode"):
+                return _Http(404)
+            return {"mode": "a-p", "member": [{"hostname": name, "role": "primary"}]}
+        if path.startswith("/api/v2/cmdb/vpn.ipsec/phase"):
+            return [
+                {
+                    "vdom": v["name"],
+                    "results": [
+                        {
+                            "name": "vpn-hq",
+                            "ike-version": 2 if good else 1,
+                            "proposal": "aes256-sha256" if good else "des-md5",
+                            "pfs": "enable" if good else "disable",
+                        }
+                    ],
+                }
+                for v in dev["vdom"]
+            ]
         return None
 
     # ---- transport ---------------------------------------------------------
@@ -424,7 +524,7 @@ class SyntheticFMG:
                         {
                             "oid": 1000 + i,
                             "version": 1,
-                            "name": f"{d['name']}_2026-11-01-02-00-00-UTC",
+                            "name": f"{d['name']}-pkg_2026-11-01-02-00-00-UTC",
                             "created_time": 1793000000 + i,
                         }
                         for i, d in enumerate(self._adoms[adom])
@@ -515,14 +615,30 @@ class SyntheticFMG:
         for target in targets:
             segs = target.split("/")  # adom/<adom>/device/<device>
             adom, device = (segs[1], segs[3]) if len(segs) >= 4 else ("", "")
+            if device in self.down_devices:
+                out.append(
+                    {
+                        "target": target,
+                        "status": {
+                            "code": -20055,
+                            "message": "Device unreachable: error: No tunnel 80.",
+                        },
+                    }
+                )
+                continue
             payload = self._proxy_payload(adom, device, resource)
             if payload is None:
                 return None
+            status, results = (
+                (payload.status, payload.results)
+                if isinstance(payload, _Http)
+                else (200, payload)
+            )
             out.append(
                 {
                     "target": target,
                     "status": {"code": 0, "message": "OK"},
-                    "response": {"http_status": 200, "results": payload},
+                    "response": {"http_status": status, "results": results},
                 }
             )
         return _ok(body, "/sys/proxy/json", out)

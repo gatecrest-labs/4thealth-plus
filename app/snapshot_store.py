@@ -242,3 +242,12 @@ def _set_collected_at_for_test(
             (collected_at, adom, device, key),
         )
         conn.commit()
+
+
+def _set_last_ok_for_test(adom: str, device: str, last_ok_at: str) -> None:
+    with _conn(write=True) as conn:
+        conn.execute(
+            "UPDATE device_snapshot_state SET last_ok_at=? WHERE adom=? AND device=?",
+            (last_ok_at, adom, device),
+        )
+        conn.commit()
