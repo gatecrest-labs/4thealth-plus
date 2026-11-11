@@ -172,6 +172,18 @@ def start_all_schedulers(app: Flask) -> None:
         except Exception as exc:
             app.logger.warning("Audit Review scheduler failed to start: %s", exc)
 
+    if not app.config.get("_EXEC_BRIEFING_SCHEDULER_STARTED"):
+        app.config["_EXEC_BRIEFING_SCHEDULER_STARTED"] = True
+        try:
+            from app.executive_briefing_scheduler import (
+                init_scheduler as init_exec_briefing_scheduler,
+            )
+
+            with app.app_context():
+                init_exec_briefing_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Executive Briefing scheduler failed to start: %s", exc)
+
     if not app.config.get("_RH_SCHEDULER_STARTED"):
         app.config["_RH_SCHEDULER_STARTED"] = True
         try:

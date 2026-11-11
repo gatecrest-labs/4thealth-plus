@@ -63,6 +63,7 @@ from flask import Blueprint, jsonify, render_template, request, session
 
 from app import config_diff_scheduler as _sched
 from app import device_review_scheduler as _dr_sched
+from app import executive_briefing_scheduler as _eb_sched
 from app import log_source as _log_source
 from app import log_usage_client as _log_usage_client
 from app import nat_report_scheduler as _nat_sched
@@ -71,6 +72,7 @@ from app import registry
 from app import rule_hygiene_scheduler as _rh_sched
 from app import rule_policy_scheduler as _rp_sched
 from app import smtp_client as _smtp
+from app.ai_narrate import ai_enabled
 from app.api_tokens import create_token, list_tokens, revoke_token
 from app.app_logger import (
     app_log,
@@ -1002,6 +1004,49 @@ def admin_rp_jobs_status(job_id: str):
         return jsonify({"error": "Job not found"}), 404
     last_run = job["runs"][0] if job.get("runs") else None
     return jsonify({"running": _rp_sched.is_job_running(job_id), "last_run": last_run})
+
+
+# ── Executive Briefing API ────────────────────────────────────────────────────
+
+
+@bp.route("/api/executive-briefing")
+@_admin_required
+def admin_exec_briefing_get():
+    return jsonify(_eb_sched.public_config())
+
+
+@bp.route("/api/executive-briefing", methods=["PUT"])
+@_admin_required
+def admin_exec_briefing_put():
+    data = request.get_json(silent=True)
+    try:
+        cfg = _eb_sched.update_config(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(cfg)
+
+
+@bp.route("/api/executive-briefing/generate", methods=["POST"])
+@_admin_required
+def admin_exec_briefing_generate():
+    """On-demand AI preview of the briefing. Sends no email, persists nothing."""
+    if not ai_enabled():
+        return jsonify({"error": "AI Assist is not enabled"}), 503
+    try:
+        result = _eb_sched.generate_preview(user=session.get("user"))
+    except Exception as exc:
+        app_log("ERROR", "executive_briefing", f"Preview failed: {exc}")
+        return jsonify({"error": f"Could not assemble executive summary: {exc}"}), 502
+    return jsonify(result)
+
+
+@bp.route("/api/executive-briefing/send-now", methods=["POST"])
+@_admin_required
+def admin_exec_briefing_send_now():
+    record = _eb_sched.run_briefing(user=session.get("user"))
+    if record.get("status") != "ok":
+        return jsonify({"error": record.get("error") or "Send failed", **record}), 502
+    return jsonify(record)
 
 
 # ── Package Change Alerts API ─────────────────────────────────────────────────

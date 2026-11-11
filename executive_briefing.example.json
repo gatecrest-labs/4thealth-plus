@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "day": "MON",
+  "time": "07:00",
+  "email": "exec-team@example.com",
+  "last_payload": null,
+  "last_sent_at": null,
+  "runs": []
+}

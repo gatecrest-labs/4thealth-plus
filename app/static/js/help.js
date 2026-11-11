@@ -471,6 +471,9 @@ const SECTIONS = [
 <h3>Scheduled Jobs</h3>
 <p>The <strong>Scheduled</strong> sub-tab in the Admin panel lets admins create recurring automated reports. Two job types are available: <strong>Config-Delta</strong> (pending configuration diffs) and <strong>Audit Review</strong> (CIS hardening audit). Both use the same SMTP settings configured at the top of the panel.</p>
 
+<h3>Executive Briefing</h3>
+<p>At the bottom of the <strong>Scheduled</strong> sub-tab, the Executive Briefing emails the fleet KPIs (hygiene score, version compliance, pending diffs, firewalls online, backups, licenses, PSIRT exposure, end-of-support hardware, silent devices) once a week on the chosen day and time. Each figure shows its change since the last briefing sent, and any data section older than 48 hours is marked stale. <strong>Send now</strong> sends it immediately. <em>If AI Assist is enabled:</em> a short AI-written summary is added below the table, and <strong>Generate preview</strong> shows that summary here without sending anything. Only the numbers in the table are sent to the AI — never device names or hostnames. The table is always sent, even if the AI summary fails.</p>
+
 <h3>SMTP Settings</h3>
 <p>Before creating any scheduled job, configure the outbound mail server:</p>
 <ul>
@@ -587,7 +590,7 @@ const SECTIONS = [
 <p>Lets external programs query Zone Policy data over a bearer-token API, without a browser session. Disabled by default — check <strong>External API enabled</strong> and save to turn it on. Create tokens with <strong>+ New Token</strong>; the plaintext value is shown once and never again, so copy it immediately. Tokens can be revoked at any time. When disabled, every <code>/external/api/</code> request returns <code>503</code> regardless of token validity.</p>
 
 <h3>AI Assist</h3>
-<p>One <strong>ai_assist_enabled</strong> toggle turns on every AI feature in the app at once — Rule Validation's AI Assist, Audit Review's AI Summary/AI Explain/PSIRT extraction, Config-Delta's AI Summary, Rule Lookup's Explain results, Zone Policy's Explain/Summarize buttons, Package Change Alert email summaries (per-rule checkbox), and the Admin AI Trend Summary. Off by default. This sub-tab also shows an AI usage/cost chart — every LLM call the app makes (which provider, how many tokens, estimated cost) is tracked here regardless of which feature triggered it.</p>
+<p>One <strong>ai_assist_enabled</strong> toggle turns on every AI feature in the app at once — Rule Validation's AI Assist, Audit Review's AI Summary/AI Explain/PSIRT extraction, Config-Delta's AI Summary, Rule Lookup's Explain results, Zone Policy's Explain/Summarize buttons, Package Change Alert email summaries (per-rule checkbox), the Executive Briefing email summary and preview, and the Admin AI Trend Summary. Off by default. This sub-tab also shows an AI usage/cost chart — every LLM call the app makes (which provider, how many tokens, estimated cost) is tracked here regardless of which feature triggered it.</p>
 
 <h3>Backup</h3>
 <p>Creates AES-256 encrypted ZIP backups of all runtime configuration. <strong>One-time backups</strong> download directly to your browser. <strong>Scheduled backups</strong> (daily/weekly/custom) run server-side and can optionally push the archive to a remote FTP or SFTP server. The backup password is shown once on first save, the same as API tokens — store it offline, it cannot be retrieved again. The last 20 local archives are kept automatically; older ones are pruned.</p>

@@ -15,7 +15,7 @@
       if (btn.dataset.panel === 'ai-assist' && !_aiAssistLoaded) loadAiAssist();
       if (btn.dataset.panel === 'log-hygiene' && !_logHygieneLoaded) loadLogHygiene();
       if (btn.dataset.panel === 'scheduled') {
-        loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); loadNATJobs(); loadRPJobs(); loadPCAlerts();
+        loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); loadNATJobs(); loadRPJobs(); loadPCAlerts(); loadExecBriefing();
         _wireJobPageSizes();
       }
       if (btn.dataset.panel === 'backup') { window.loadBackupConfig(); window.loadBackupJobs(); }
@@ -3317,4 +3317,133 @@ async function pcaTestRule(ruleId) {
   });
   const body = await resp.json().catch(() => ({}));
   alert(resp.ok ? 'Test email sent.' : `Test email failed: ${body.error || resp.status}`);
+}
+
+/* ── Executive Briefing ─────────────────────────────────────────────────────── */
+
+let _ebWired = false;
+
+function _ebMsg(text, isError) {
+  const el = document.getElementById('ebMsg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = isError ? 'var(--danger)' : '';
+}
+
+function _ebRenderLastRun(cfg) {
+  const el = document.getElementById('ebLastRun');
+  if (!el) return;
+  const run = (cfg.runs || [])[0];
+  if (!run) { el.textContent = 'No briefing sent yet.'; return; }
+  let text = `Last run: ${run.ran_at || '?'} \u2014 ${run.status || '?'}`;
+  if (run.error) text += ` (${run.error})`;
+  if (run.ai_narrative_error) text += ` [AI summary omitted: ${run.ai_narrative_error}]`;
+  el.textContent = text;
+}
+
+async function _ebCheckAiAvailability() {
+  // Mirrors checkHostMetricsAiAvailability: fail closed on any error.
+  const btn = document.getElementById('ebPreviewBtn');
+  const out = document.getElementById('ebPreviewOutput');
+  if (!btn) return;
+  let on = false;
+  try {
+    const resp = await fetch('/admin/api/settings');
+    const data = await resp.json();
+    on = resp.ok && data.ai_assist_enabled === true;
+  } catch (e) {
+    on = false;
+  }
+  btn.style.display = on ? '' : 'none';
+  if (!on && out) { out.style.display = 'none'; out.textContent = ''; }
+}
+
+async function loadExecBriefing() {
+  if (!document.getElementById('ebConfigForm')) return;
+  if (!_ebWired) { _ebWire(); _ebWired = true; }
+  _ebCheckAiAvailability();
+  try {
+    const resp = await fetch('/admin/api/executive-briefing');
+    const cfg = await resp.json();
+    if (!resp.ok) throw new Error(cfg.error || resp.status);
+    document.getElementById('eb-enabled').checked = !!cfg.enabled;
+    document.getElementById('eb-day').value = cfg.day || 'MON';
+    document.getElementById('eb-time').value = cfg.time || '07:00';
+    document.getElementById('eb-email').value = cfg.email || '';
+    _ebRenderLastRun(cfg);
+  } catch (e) {
+    _ebMsg(`Failed to load Executive Briefing settings: ${e.message || e}`, true);
+  }
+}
+
+function _ebWire() {
+  document.getElementById('ebSaveBtn').addEventListener('click', async () => {
+    const body = {
+      enabled: document.getElementById('eb-enabled').checked,
+      day: document.getElementById('eb-day').value,
+      time: document.getElementById('eb-time').value,
+      email: document.getElementById('eb-email').value,
+    };
+    try {
+      const resp = await fetch('/admin/api/executive-briefing', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) { _ebMsg(`Save failed: ${data.error || resp.status}`, true); return; }
+      _ebMsg('Saved.');
+      _ebRenderLastRun(data);
+    } catch (e) {
+      _ebMsg(`Save failed: ${e.message || e}`, true);
+    }
+  });
+
+  document.getElementById('ebSendNowBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('ebSendNowBtn');
+    btn.disabled = true;
+    _ebMsg('Sending\u2026');
+    try {
+      const resp = await fetch('/admin/api/executive-briefing/send-now', {
+        method: 'POST', headers: { 'X-CSRF-Token': getCSRF() },
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) _ebMsg(`Send failed: ${data.error || resp.status}`, true);
+      else _ebMsg('Briefing sent.');
+    } catch (e) {
+      _ebMsg(`Send failed: ${e.message || e}`, true);
+    } finally {
+      btn.disabled = false;
+      loadExecBriefing();
+    }
+  });
+
+  document.getElementById('ebPreviewBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('ebPreviewBtn');
+    const out = document.getElementById('ebPreviewOutput');
+    btn.disabled = true;
+    out.style.display = '';
+    out.textContent = 'Generating preview\u2026';
+    try {
+      const resp = await fetch('/admin/api/executive-briefing/generate', {
+        method: 'POST', headers: { 'X-CSRF-Token': getCSRF() },
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        out.textContent = data.error || `Request failed (${resp.status})`;
+      } else if (data.narrative) {
+        let text = data.narrative;
+        if ((data.stale_sections || []).length) {
+          text += `\n\nStale data: ${data.stale_sections.join(', ')}`;
+        }
+        out.textContent = text;
+      } else {
+        out.textContent = `AI summary unavailable: ${data.narrative_error || 'unknown error'}`;
+      }
+    } catch (e) {
+      out.textContent = `Request failed: ${e.message || e}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
