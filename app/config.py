@@ -45,6 +45,13 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw in _TRUTHY
 
 
+def _policy_ttl_hours() -> int:
+    """Policy package TTL in hours: POLICY_PACKAGE_TTL_HOURS, else the older
+    HYGIENE_PACKAGE_TTL_HOURS, else 6."""
+    fallback = _env_int("HYGIENE_PACKAGE_TTL_HOURS", 6)
+    return _env_int("POLICY_PACKAGE_TTL_HOURS", fallback)
+
+
 def _env_int(name: str, default: int | None) -> int | None:
     """Integer env var *name*; unset, blank or non-numeric gives *default*."""
     raw = os.environ.get(name, "").strip()
@@ -151,6 +158,14 @@ class Config:
     # POLICY_STORE: a package's cached hygiene result is reused until it is this
     # old (each package jittered x0.75..x1.25 so refetches spread out).
     HYGIENE_PACKAGE_TTL_HOURS = _env_int("HYGIENE_PACKAGE_TTL_HOURS", 6)
+    # Policy/object store (Phase 4). Package TTL (jittered x0.75..x1.25), object
+    # refresh period, the age beyond which a reader goes live (0 = 2 x 1.25 x TTL),
+    # collector fetch parallelism, per-package Refresh throttle.
+    POLICY_PACKAGE_TTL_HOURS = _policy_ttl_hours()
+    POLICY_OBJECTS_REFRESH_MINUTES = _env_int("POLICY_OBJECTS_REFRESH_MINUTES", 60)
+    POLICY_MAX_AGE_SECS = _env_int("POLICY_MAX_AGE_SECS", 0)
+    POLICY_PARALLEL_FETCH = _env_int("POLICY_PARALLEL_FETCH", 4)
+    POLICY_REFRESH_MIN_INTERVAL_SECS = _env_int("POLICY_REFRESH_MIN_INTERVAL_SECS", 30)
     AUDIT_SNAPSHOTS = _env_flag("AUDIT_SNAPSHOTS")
     JOB_QUEUE = _env_flag("JOB_QUEUE")
 

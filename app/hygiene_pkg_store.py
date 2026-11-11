@@ -41,11 +41,17 @@ def fingerprint(policies: list[dict]) -> str:
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
+def effective_ttl_for(adom: str, pkg: str, base_seconds: float) -> float:
+    """*base_seconds* x a stable 0.75..1.25 factor derived from ``adom/pkg``."""
+    frac = (zlib.crc32(f"{adom}/{pkg}".encode()) % 10000) / 10000.0
+    return base_seconds * (0.75 + 0.5 * frac)
+
+
 def effective_ttl_seconds(adom: str, pkg: str) -> float:
     """The package's TTL: configured hours x a stable 0.75..1.25 factor (spreads refetches)."""
-    base = float(Config.HYGIENE_PACKAGE_TTL_HOURS) * 3600.0
-    frac = (zlib.crc32(f"{adom}/{pkg}".encode()) % 10000) / 10000.0
-    return base * (0.75 + 0.5 * frac)
+    return effective_ttl_for(
+        adom, pkg, float(Config.HYGIENE_PACKAGE_TTL_HOURS) * 3600.0
+    )
 
 
 def get(adom: str, pkg: str) -> dict | None:
