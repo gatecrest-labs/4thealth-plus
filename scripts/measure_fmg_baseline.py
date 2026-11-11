@@ -92,6 +92,7 @@ def measure(
     devices: int = 1000,
     latency_ms: tuple[float, float] = (0.0, 0.0),
     inventory_cache: bool = False,
+    policy_store: bool = False,
     **synth_kwargs,
 ) -> dict:
     """Run each sweep once on a synthetic fleet and report FMG call volume.
@@ -105,6 +106,12 @@ def measure(
     collector's inventory refresh runs first (measured as the ``inventory_cache``
     source, at its own refresh interval) and every other sweep then reads the
     store instead of FortiManager.
+
+    With ``policy_store`` the ``POLICY_STORE`` layer is on too: the hygiene sweep
+    runs cold, then again warm, and its calls/hour is the steady state
+    ``warm x (60 / interval) + (cold - warm) / ttl_hours`` (every package is
+    refetched once per TTL, the rest of the time it is served from the cache).
+    Also reports how many devices a scheduled Config-Delta run would preview.
     """
     from app import (
         create_app,
@@ -141,6 +148,7 @@ def measure(
         # measurement run off the network (they are not FortiManager calls).
         stack.enter_context(patch.object(Config, "INFRA_TARGETS", []))
         stack.enter_context(patch.object(Config, "INVENTORY_CACHE", inventory_cache))
+        stack.enter_context(patch.object(Config, "POLICY_STORE", policy_store))
         inventory.reset_counters()
         stack.enter_context(
             patch.object(license_status_cache, "_STORE_PATH", tmp_path / "license.json")
@@ -182,9 +190,23 @@ def measure(
                     "calls_per_hour": calls * 60.0 / interval_min,
                     "seconds": round(time.monotonic() - started, 2),
                 }
+                if policy_store and name == "exec_hygiene_sweep" and not error:
+                    warm_before = Counter(synth.calls)
+                    getattr(module, func)(app)
+                    warm = sum((Counter(synth.calls) - warm_before).values())
+                    ttl_h = float(Config.HYGIENE_PACKAGE_TTL_HOURS)
+                    entry["warm_calls"] = warm
+                    entry["steady_state"] = True
+                    entry["calls_per_hour"] = (
+                        warm * 60.0 / interval_min + max(calls - warm, 0) / ttl_h
+                    )
                 if error:
                     entry["error"] = error
                 results[name] = entry
+
+            config_delta = None
+            if inventory_cache:
+                config_delta = _config_delta_gating(synth, devices)
 
     downloads = sum(s["by_url"].get(INVENTORY_KEY, 0) for s in results.values())
     adoms = max(synth.adom_count, 1)
@@ -195,10 +217,33 @@ def measure(
         "calls_per_hour": sum(s["calls_per_hour"] for s in results.values()),
         "inventory_downloads_per_cycle": downloads // adoms,
         "inventory_cache": inventory_cache,
+        "policy_store": policy_store,
+        "config_delta": config_delta,
         "inventory_counters": inventory.counters(),
         "unsupported": dict(synth.unsupported),
         "proxy_calls": dict(synth.proxy_calls),
     }
+
+
+def _config_delta_gating(synth, devices: int) -> dict:
+    """Devices a scheduled Config-Delta run previews vs gates, from the inventory store."""
+    from app import config_delta_gate, inventory_store
+    from app.fmg_helpers import make_client
+
+    previewed = gated = 0
+    with make_client() as client:
+        for meta in inventory_store.read_meta() or []:
+            adom = meta["adom"]
+            config_delta_gate.mark_full_sweep_done(
+                adom
+            )  # a normal (non-full-sweep) run
+            rows = inventory_store.read_devices(adom) or []
+            sel = config_delta_gate.select_devices(
+                client, adom, [{"name": d["name"], "ip": d.get("ip", "")} for d in rows]
+            )
+            previewed += len(sel.preview)
+            gated += len(sel.gated)
+    return {"devices": devices, "previewed_per_run": previewed, "gated_per_run": gated}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -210,11 +255,19 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="measure with the INVENTORY_CACHE layer on (Phase 2)",
     )
+    ap.add_argument(
+        "--policy-store",
+        action="store_true",
+        help="measure with POLICY_STORE on (Phase 3): hygiene steady state",
+    )
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args(argv)
 
     result = measure(
-        args.devices, tuple(args.latency_ms), inventory_cache=args.inventory_cache
+        args.devices,
+        tuple(args.latency_ms),
+        inventory_cache=args.inventory_cache,
+        policy_store=args.policy_store,
     )
     for name, s in result["sweeps"].items():
         flag = f"  ERROR {s['error']}" if "error" in s else ""
@@ -224,6 +277,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     print(f"TOTAL calls/hour: {result['calls_per_hour']:.1f}")
     print(f"inventory downloads per cycle: {result['inventory_downloads_per_cycle']}")
+    if result.get("config_delta"):
+        cd = result["config_delta"]
+        print(
+            f"Config-Delta per scheduled run: {cd['previewed_per_run']} previewed, "
+            f"{cd['gated_per_run']} gated of {cd['devices']}"
+        )
     if result["unsupported"]:
         print(f"UNSUPPORTED by synthetic FMG: {result['unsupported']}")
     if args.out:

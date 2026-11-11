@@ -339,7 +339,12 @@ These apply to **both** units (set them in `/opt/4thealth/.env`, which both read
 | `INVENTORY_REFRESH_SECS` | `300` | How often the collector refreshes the inventory (about 132 FMG calls/hour at 5 ADOMs; raise to 600 to halve it). |
 | `INVENTORY_MAX_AGE_SECS` | unset (3 x refresh) | A reader falls back to one live FMG call for an ADOM whose cached data is older than this (or missing). Fallbacks are counted. |
 | `INVENTORY_PARALLEL_ADOMS` | `4` | ADOMs the collector fetches in parallel (the FMG in-flight cap still applies). |
-| `POLICY_STORE`, `AUDIT_SNAPSHOTS`, `JOB_QUEUE` | off | Layer flags for later phases. Leave off until a phase says otherwise. |
+| `CONFIG_DELTA_GATING` | `on` | With `INVENTORY_CACHE` on, scheduled Config-Delta runs preview only devices whose cached conf/db/package status is pending, unknown or stale (clean devices are listed as "not re-previewed"). `off` previews everything. Clicking one device in the UI is always a live preview. |
+| `CONFIG_DELTA_FULL_SWEEP_HOURS` | `24` | Every device is previewed at least this often, because `conf_status` can lag the real device. This bounds how long a missed change can go unnoticed (this plus the inventory age, up to ~10 min). |
+| `CONFIG_DELTA_JOB_BUDGET_SECS` | `3600` | A gated run stops previewing after this long; devices not reached are reported as errors (never as clean) so Package Change Alerts leave their state untouched. `0` = no limit. |
+| `POLICY_STORE` | off | Phase 3 slice: the executive hygiene sweep keeps each package's findings and referenced-object names in the shared store and only re-downloads a package's policies when that entry is older than its TTL. Rollback: set it off and restart the collector. |
+| `HYGIENE_PACKAGE_TTL_HOURS` | `6` | TTL for a cached package result, jittered x0.75..x1.25 per package so refetches spread over time. If a refetch fails an entry younger than twice its TTL is reused, otherwise the package is skipped as before. Hygiene numbers can therefore be up to about this old. |
+| `AUDIT_SNAPSHOTS`, `JOB_QUEUE` | off | Layer flags for later phases. Leave off until a phase says otherwise. |
 
 With `INVENTORY_CACHE` on, the collector starts the inventory refresh first and holds every other cache's first refresh until it finishes (or 120 s), then staggers them 15 s apart with up to 10 s jitter, so a restart no longer hits FortiManager all at once. Web workers never call FortiManager at boot. `forti*` system ADOMs are not inventoried (same convention as every ADOM list); the Firewalls search skips them while the layer is on.
 

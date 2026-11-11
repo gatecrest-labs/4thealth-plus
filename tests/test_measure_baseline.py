@@ -113,3 +113,32 @@ def test_inventory_cache_run_makes_no_per_device_package_or_device_list_calls(
         assert not any("_package/status" in k for k in keys), name
     assert sweeps["pending_status_cache"]["calls"] == 0
     assert with_inventory_cache["inventory_counters"]["fallbacks"] == 0
+
+
+@pytest.fixture(scope="module")
+def with_policy_store():
+    spec = importlib.util.spec_from_file_location("measure_fmg_baseline3", _SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["measure_fmg_baseline3"] = mod
+    spec.loader.exec_module(mod)
+    return mod.measure(devices=20, inventory_cache=True, policy_store=True, **SMALL)
+
+
+def test_policy_store_run_lowers_hygiene_steady_state(
+    with_inventory_cache, with_policy_store
+):
+    before = with_inventory_cache["sweeps"]["exec_hygiene_sweep"]
+    after = with_policy_store["sweeps"]["exec_hygiene_sweep"]
+    assert after["warm_calls"] < after["calls"]  # the second pass is served from cache
+    assert after["steady_state"] is True
+    assert after["calls_per_hour"] < before["calls_per_hour"]
+    assert with_policy_store["calls_per_hour"] < with_inventory_cache["calls_per_hour"]
+
+
+def test_policy_store_run_reports_config_delta_gating(with_policy_store):
+    cd = with_policy_store["config_delta"]
+    assert cd["devices"] == 20
+    assert cd["previewed_per_run"] + cd["gated_per_run"] == 20
+    assert (
+        0 < cd["gated_per_run"] < 20
+    )  # a realistic fleet has both clean and pending devices

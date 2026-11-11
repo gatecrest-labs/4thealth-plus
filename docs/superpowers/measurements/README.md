@@ -49,3 +49,10 @@ cycle** across the sweeps (finding C2).
 (raw data: `2026-11-phase2-1000.json`, write-up: `2026-11-phase2-results.md`):
 3,887.8 -> 635.8 background FMG calls/hour (6.1x lower). The remaining 10x needs the
 hygiene sweep reduced (Phases 3-4).
+
+## Phase 3: Config-Delta gating and hygiene package cache (2026-11-10)
+
+`uv run python scripts/measure_fmg_baseline.py --devices 1000 --inventory-cache --policy-store`
+(raw data: `2026-11-phase3-1000.json`, write-up: `2026-11-phase3-results.md`): 635.8 -> 302.4
+background FMG calls/hour (12.9x below the original 3,887.8; target <= ~389 met). A scheduled
+Config-Delta run previews 270 of 1,000 synthetic devices.
