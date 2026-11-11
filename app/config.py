@@ -148,6 +148,9 @@ class Config:
     CONFIG_DELTA_GATING = _env_bool("CONFIG_DELTA_GATING", True)
     CONFIG_DELTA_FULL_SWEEP_HOURS = _env_int("CONFIG_DELTA_FULL_SWEEP_HOURS", 24)
     CONFIG_DELTA_JOB_BUDGET_SECS = _env_int("CONFIG_DELTA_JOB_BUDGET_SECS", 3600)
+    # POLICY_STORE: a package's cached hygiene result is reused until it is this
+    # old (each package jittered x0.75..x1.25 so refetches spread out).
+    HYGIENE_PACKAGE_TTL_HOURS = _env_int("HYGIENE_PACKAGE_TTL_HOURS", 6)
     AUDIT_SNAPSHOTS = _env_flag("AUDIT_SNAPSHOTS")
     JOB_QUEUE = _env_flag("JOB_QUEUE")
 

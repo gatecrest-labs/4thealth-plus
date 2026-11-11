@@ -67,11 +67,14 @@ def _age(collected_at: str | None) -> float | None:
 
 
 _ready_lock = threading.Lock()
-_ready: set[str] = set()  # database files whose schema this process has created
+_ready: set[tuple[str, str]] = (
+    set()
+)  # (database file, schema id) created by this process
 
 
-def _create_schema(conn: sqlite3.Connection) -> None:
-    collector_store._retry_locked(lambda: conn.executescript(_SCHEMA))
+def _create_schema(conn: sqlite3.Connection, schema: str | None = None) -> None:
+    script = _SCHEMA if schema is None else schema
+    collector_store._retry_locked(lambda: conn.executescript(script))
 
 
 class _Conn:
@@ -83,8 +86,15 @@ class _Conn:
     database file per process, not on every call.
     """
 
-    def __init__(self, write: bool = False):
+    def __init__(
+        self,
+        write: bool = False,
+        schema: str | None = None,
+        schema_id: str = "inventory",
+    ):
         self.write = write
+        self.schema = schema
+        self.schema_id = schema_id
         self.conn = None
 
     def __enter__(self) -> sqlite3.Connection:
@@ -92,11 +102,14 @@ class _Conn:
             collector_store._lock.acquire()
         try:
             self.conn = collector_store._connect()
-            key = str(collector_store._db_path())
+            key = (str(collector_store._db_path()), self.schema_id)
             with _ready_lock:
                 needs_schema = key not in _ready
             if needs_schema:
-                _create_schema(self.conn)
+                if self.schema is None:
+                    _create_schema(self.conn)
+                else:
+                    _create_schema(self.conn, self.schema)
                 with _ready_lock:
                     _ready.add(key)
         except sqlite3.Error as exc:
