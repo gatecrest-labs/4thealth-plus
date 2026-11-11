@@ -56,17 +56,28 @@ def batch_size(fleet_size: int, never_captured: int = 0) -> int:
     )
 
 
-def _fleet(client) -> dict[str, list[str]]:
-    names = {}
+def _fleet_checked(client) -> tuple[dict[str, list[str]], set[str]]:
+    """``(fleet, failed_adoms)``: a denied/failing ADOM must not stop the others."""
+    names: dict[str, list[str]] = {}
+    failed: set[str] = set()
     for adom in inventory.adoms(client) or []:
         name = adom.get("name", "") if isinstance(adom, dict) else ""
         if not name or name.lower().startswith("forti"):
             continue
-        devices = inventory.devices(client, name) or []
+        try:
+            devices = inventory.devices(client, name) or []
+        except Exception as exc:
+            logger.warning("snapshot_cache: device list for %s failed: %s", name, exc)
+            failed.add(name)
+            continue
         names[name] = sorted(
             {d["name"] for d in devices if isinstance(d, dict) and d.get("name")}
         )
-    return names
+    return names, failed
+
+
+def _fleet(client) -> dict[str, list[str]]:
+    return _fleet_checked(client)[0]
 
 
 def capture_device(client, adom: str, device: str) -> dict:
@@ -84,18 +95,20 @@ def capture_device(client, adom: str, device: str) -> dict:
         )
     else:
         snapshot_store.mark_ok(adom, device)
-    with _flags_lock:
-        _revision_flags.discard((adom, device))
+    if not failed:  # a failed capture keeps its priority for the next batch
+        with _flags_lock:
+            _revision_flags.discard((adom, device))
     return {"ok_keys": sorted(ok), "failed_keys": sorted(failed)}
 
 
 def _refresh_batch(client, now: datetime) -> dict:
     started = time.monotonic()
-    fleet = _fleet(client)
+    fleet, failed_adoms = _fleet_checked(client)
     total = sum(len(v) for v in fleet.values())
     for adom, names in fleet.items():
         snapshot_store.delete_missing_devices(adom, set(names))
-    snapshot_store.delete_missing_adoms(set(fleet))
+    # an ADOM whose listing failed is unknown, not gone: keep its snapshots
+    snapshot_store.delete_missing_adoms(set(fleet) | failed_adoms)
 
     now_iso = now.isoformat()
     candidates: list[tuple] = []

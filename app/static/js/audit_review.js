@@ -542,7 +542,7 @@ function renderTable() {
   const tbody = document.getElementById('drTbody');
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="${window._auditSnapshots ? 7 : 6}" style="text-align:center;color:var(--text-muted)">No results match the current filters.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${window._auditSnapshots ? 7 : 6}" style="text-align:center;color:var(--text-muted)">No results match the current filters.</td></tr>`;
     document.getElementById('drPager').innerHTML    = '';
     document.getElementById('drSummary').textContent = buildSummary(rows);
     return;

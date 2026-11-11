@@ -101,3 +101,11 @@ def test_captures_nest_and_inner_failures_reach_the_outer_one():
     with c.capture_proxy_failures() as outer, c.capture_proxy_failures() as inner:
         c.get_device_ntp("A", "fw1")
     assert len(inner) == 1 and len(outer) == 1
+
+
+def test_capture_records_a_device_http_error_on_a_config_read():
+    for status in (403, 500):
+        c = _client(lambda body, timeout=None, st=status: _envelope(http_status=st, results={}))
+        with c.capture_proxy_failures() as failures:
+            c.get_device_ntp("A", "fw1")
+        assert failures and str(status) in failures[0]

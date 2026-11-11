@@ -275,3 +275,20 @@ def test_registered_jobs_and_boot_priority(monkeypatch):
     assert snapshot_cache.init_scheduler(object()) is True
     assert set(added) == {"snapshot_batch", "snapshot_revisions"}
     assert deferred == [("snapshot_cache", 3)]
+
+
+def test_one_failing_adom_does_not_stop_captures_in_other_adoms(monkeypatch):
+    from app import inventory, snapshot_cache as sc
+    from app.fmg_client import FMGError
+
+    monkeypatch.setattr(inventory, "adoms", lambda c: [{"name": "Good"}, {"name": "Bad"}])
+
+    def devices(c, adom):
+        if adom == "Bad":
+            raise FMGError("denied", code=-11)
+        return [{"name": "fw1"}]
+
+    monkeypatch.setattr(inventory, "devices", devices)
+    fleet, failed = sc._fleet_checked(None)
+    assert fleet == {"Good": ["fw1"]} and failed == {"Bad"}
+    assert sc._fleet(None) == {"Good": ["fw1"]}

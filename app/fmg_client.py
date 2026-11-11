@@ -1125,6 +1125,15 @@ class FMGClient:
         else:
             payload = response
 
+        # A device answering 4xx/5xx to a config read (e.g. 403 for the API admin
+        # profile, 500 when busy) has not told us its configuration: record it so
+        # a snapshot never stores the error body as the config. Only a missing HA
+        # status (404 on a standalone unit) is a legitimate "not configured".
+        if http_status >= 400 and not (
+            http_status == 404 and "system/ha-status" in resource
+        ):
+            self._note_proxy_failure(f"device HTTP {http_status} for {resource}")
+
         return {"rpc_code": rpc_code, "http_status": http_status, "payload": payload}
 
     def get_device_proxy_error(self, adom: str, device_name: str) -> dict | None:
