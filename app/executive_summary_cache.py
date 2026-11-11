@@ -657,7 +657,11 @@ def _run_hygiene_sweep(app) -> bool:
     try:
         from app.fmg_helpers import make_client
         from app.hygiene import CHECKS as HYGIENE_CHECK_TYPES
-        from app.hygiene import find_unused_objects, run_checks
+        from app.hygiene import (
+            collect_policy_refs,
+            find_unused_objects_from_refs,
+            run_checks,
+        )
 
         total_findings = 0
         total_policies = 0
@@ -684,7 +688,9 @@ def _run_hygiene_sweep(app) -> bool:
                 # lists — and therefore unused-object detection — are
                 # ADOM-scoped, so accumulate the ADOM's policies and run that
                 # check once, below, over the union.
-                all_adom_policies: list = []
+                adom_addr_refs: set[str] = set()
+                adom_svc_refs: set[str] = set()
+                adom_had_policies = False
                 for pkg in packages:
                     pkg_path = pkg.get("path", pkg.get("name", ""))
                     if not pkg_path:
@@ -700,9 +706,13 @@ def _run_hygiene_sweep(app) -> bool:
                         )
                         continue
                     total_policies += len(policies)
-                    total_findings += len(run_checks(policies, _HYGIENE_CHECKS))
 
+                    # One pass over every check; the executive score counts the
+                    # _HYGIENE_CHECKS subset of the same findings.
                     all_findings = run_checks(policies, list(HYGIENE_CHECK_TYPES))
+                    total_findings += sum(
+                        1 for f in all_findings if f["check"] in _HYGIENE_CHECKS
+                    )
                     for f in all_findings:
                         by_type[f["check"]] = by_type.get(f["check"], 0) + 1
 
@@ -710,17 +720,25 @@ def _run_hygiene_sweep(app) -> bool:
                         {"package": pkg_path, "adom": adom, "findings": all_findings}
                     )
 
-                    all_adom_policies.extend(policies)
+                    pkg_addr, pkg_svc = collect_policy_refs(policies)
+                    adom_addr_refs |= pkg_addr
+                    adom_svc_refs |= pkg_svc
+                    adom_had_policies = adom_had_policies or bool(policies)
 
-                if not all_adom_policies:
+                if not adom_had_policies:
                     continue
                 try:
                     addresses = client.get_address_objects(adom)
                     addr_groups = client.get_address_groups(adom)
                     services = client.get_service_objects(adom)
                     svc_groups = client.get_service_groups(adom)
-                    unused = find_unused_objects(
-                        all_adom_policies, addresses, addr_groups, services, svc_groups
+                    unused = find_unused_objects_from_refs(
+                        adom_addr_refs,
+                        adom_svc_refs,
+                        addresses,
+                        addr_groups,
+                        services,
+                        svc_groups,
                     )
                     by_type["unused_objects"] += len(unused["unused_addresses"]) + len(
                         unused["unused_services"]

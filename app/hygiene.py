@@ -841,7 +841,8 @@ def _is_builtin_obj(name: str) -> bool:
     )
 
 
-def _collect_policy_refs(policies: list[dict]) -> tuple[set[str], set[str]]:
+def collect_policy_refs(policies: list[dict]) -> tuple[set[str], set[str]]:
+    """Names of address and service objects referenced by *policies* (policy blocks skipped)."""
     addr_refs: set[str] = set()
     svc_refs: set[str] = set()
     for p in policies:
@@ -853,6 +854,9 @@ def _collect_policy_refs(policies: list[dict]) -> tuple[set[str], set[str]]:
         for item in _addr_list(p.get("service") or p.get("services") or []):
             svc_refs.add(item)
     return addr_refs, svc_refs
+
+
+_collect_policy_refs = collect_policy_refs  # historical name
 
 
 def _expand_group_members(groups: list[dict], direct_refs: set[str]) -> set[str]:
@@ -904,7 +908,24 @@ def find_unused_objects(
             "unused_services":  [{"name": str, "type": str}, ...],
         }
     """
-    addr_refs, svc_refs = _collect_policy_refs(policies)
+    addr_refs, svc_refs = collect_policy_refs(policies)
+    return find_unused_objects_from_refs(
+        addr_refs, svc_refs, addresses, addr_groups, services, svc_groups
+    )
+
+
+def find_unused_objects_from_refs(
+    addr_refs: set[str],
+    svc_refs: set[str],
+    addresses: list[dict],
+    addr_groups: list[dict],
+    services: list[dict],
+    svc_groups: list[dict],
+) -> dict:
+    """``find_unused_objects`` from already-collected reference name sets.
+
+    Lets a sweep keep one small name set per package instead of every policy list.
+    """
     addr_member_refs = _expand_group_members(addr_groups, addr_refs)
     svc_member_refs = _expand_group_members(svc_groups, svc_refs)
     all_addr_refs = addr_refs | addr_member_refs
