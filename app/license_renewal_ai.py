@@ -45,21 +45,14 @@ def _clip(v) -> str:
     return str(v)[:_MAX_STR]
 
 
-def build_renewal_buckets(
-    all_devices: list, lifecycle: list, as_of: date | None = None
-) -> dict:
+def build_renewal_buckets(all_devices: list, as_of: date | None = None) -> dict:
     """Group at-risk devices per ADOM, ordered soonest-first.
 
-    ``lifecycle`` is a list of ``{device, adom, platform}`` records; a device
-    is tagged ``eos_12m`` only when its platform is in the EOS table.
+    Each record's ``platform`` (empty/missing on older persisted sweeps) is
+    matched against the EOS table; ``eos_12m`` only applies to platforms in it.
     """
     as_of = as_of or datetime.now(UTC).date()
     horizon = _add_months(as_of, 12)
-    platform = {}
-    for r in lifecycle if isinstance(lifecycle, list) else []:
-        if isinstance(r, dict) and isinstance(r.get("platform"), str):
-            platform[(r.get("adom"), r.get("device"))] = r["platform"]
-
     by_adom: dict[str, list[dict]] = {}
     for d in all_devices if isinstance(all_devices, list) else []:
         if not isinstance(d, dict) or not d.get("device") or not d.get("adom"):
@@ -82,7 +75,8 @@ def build_renewal_buckets(
                 tags.append("<=60")
             elif days <= 90:
                 tags.append("<=90")
-        plat = platform.get((d["adom"], d["device"]))
+        plat = d.get("platform")
+        plat = plat.strip() if isinstance(plat, str) else ""
         eos = hw_eos_date(plat) if plat else None
         if eos is not None and eos <= horizon:
             tags.append("eos_12m")

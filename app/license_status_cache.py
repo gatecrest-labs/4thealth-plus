@@ -80,7 +80,9 @@ def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> di
     "expires"}, "firmware": str}, ...]} — each device dict must already
     carry its parsed "license" sub-dict (see _run_sweep(), which attaches
     it before calling this function). "firmware" is optional — missing or
-    absent devices are recorded as "n/a" in all_devices.
+    absent devices are recorded as "n/a" in all_devices. "platform" (hardware
+    model string) is optional too, recorded as "" when absent; it lets the
+    renewal plan tag hardware end-of-support from this persisted sweep.
 
     Returns "details" (unchanged: only expired/unknown devices, no
     firmware — kept exactly as before for the executive-summary consumer)
@@ -133,6 +135,7 @@ def _classify_devices(devices_by_adom_with_license: dict[str, list[dict]]) -> di
                     "status": status,
                     "expires": expires,
                     "firmware": device.get("firmware", "n/a"),
+                    "platform": str(device.get("platform") or "").strip(),
                     "subscriptions": license_info.get("subscriptions", {}),
                 }
             )
@@ -304,6 +307,9 @@ def _run_sweep(app) -> bool:
                         "name": name,
                         "license": license_info,
                         "firmware": _build_firmware_version(dev),
+                        "platform": str(
+                            dev.get("platform_str") or dev.get("platform") or ""
+                        ).strip(),
                     }
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:

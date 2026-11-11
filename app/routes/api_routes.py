@@ -502,7 +502,7 @@ def license_ai_status():
 @tab_required("versions")
 def license_renewal_plan():
     """Deterministic renewal buckets plus an optional AI-written plan."""
-    from app import license_renewal_ai, license_status_cache, pending_status_cache
+    from app import license_renewal_ai, license_status_cache
     from app.ai_narrate import ai_enabled
     from app.groups import get_allowed_adoms
 
@@ -530,15 +530,7 @@ def license_renewal_plan():
         if allowed is not None:
             devices = [d for d in devices if d.get("adom") in allowed]
 
-    # Per-device hardware platform from the same cache the executive
-    # summary's lifecycle counts use (matched against app.model_eos).
-    lifecycle = [
-        {"device": x.get("name"), "adom": a, "platform": x.get("platform")}
-        for a, lst in pending_status_cache.get_all_cached_devices().items()
-        for x in lst
-        if isinstance(x, dict)
-    ]
-    buckets = license_renewal_ai.build_renewal_buckets(devices, lifecycle)
+    buckets = license_renewal_ai.build_renewal_buckets(devices)
     narrative = error = None
     if ai_enabled():
         narrative, error = license_renewal_ai.build_renewal_plan(

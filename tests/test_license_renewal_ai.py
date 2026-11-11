@@ -31,13 +31,13 @@ DEVICES = [
 
 
 def test_expired_devices_first_and_tagged():
-    b = lr.build_renewal_buckets(DEVICES, [], as_of=AS_OF)
+    b = lr.build_renewal_buckets(DEVICES, as_of=AS_OF)
     first = b["adoms"][0]["devices"][0]
     assert first["device"] == "a-exp" and "expired" in first["tags"]
 
 
 def test_buckets_ordered_soonest_first():
-    b = lr.build_renewal_buckets(DEVICES, [], as_of=AS_OF)
+    b = lr.build_renewal_buckets(DEVICES, as_of=AS_OF)
     assert [a["adom"] for a in b["adoms"]] == ["A", "B"]
     assert [d["device"] for d in b["adoms"][0]["devices"]] == ["a-exp", "a-30"]
     assert [d["device"] for d in b["adoms"][1]["devices"]] == ["b-60", "b-90"]
@@ -47,14 +47,12 @@ def test_buckets_ordered_soonest_first():
 
 
 def test_eos_and_license_both_considered():
-    devs = [dev("fw1", "C", expires="2026-12-01"), dev("fw2", "C", expires="2029-01-01"),
-            dev("fw3", "C", expires="2029-01-01")]
-    life = [{"device": "fw1", "adom": "C", "platform": "FortiGate-60F"},
-            {"device": "fw2", "adom": "C", "platform": "FortiGate-60F"},
-            {"device": "fw3", "adom": "C", "platform": "Unknown-Model"}]
+    devs = [dict(dev("fw1", "C", expires="2026-12-01"), platform="FortiGate-60F"),
+            dict(dev("fw2", "C", expires="2029-01-01"), platform="FortiGate-60F"),
+            dict(dev("fw3", "C", expires="2029-01-01"), platform="Unknown-Model")]
     with patch("app.license_renewal_ai.hw_eos_date",
                lambda m: date(2027, 3, 1) if m == "FortiGate-60F" else None):
-        b = lr.build_renewal_buckets(devs, life, as_of=AS_OF)
+        b = lr.build_renewal_buckets(devs, as_of=AS_OF)
     by = {d["device"]: d for d in b["adoms"][0]["devices"]}
     assert by["fw1"]["tags"] == ["<=30", "eos_12m"]
     assert by["fw2"]["tags"] == ["eos_12m"]
@@ -62,22 +60,40 @@ def test_eos_and_license_both_considered():
     assert [d["device"] for d in b["adoms"][0]["devices"]] == ["fw1", "fw2"]
 
 
+def test_real_eos_table_tags_known_platform_only():
+    devs = [dict(dev("old", "C", expires="2029-01-01"), platform="FortiGate-60C"),
+            dict(dev("new", "C", expires="2029-01-01"), platform="FortiGate-1100E"),
+            dict(dev("odd", "C", expires="2029-01-01"), platform="NotAModel")]
+    b = lr.build_renewal_buckets(devs, as_of=AS_OF)
+    by = {d["device"]: d for d in b["adoms"][0]["devices"]}
+    assert by["old"]["tags"] == ["eos_12m"] and by["old"]["hw_eos"] == "2020-04-15"
+    assert set(by) == {"old"}
+
+
+def test_record_without_platform_yields_no_eos_tag():
+    devs = [dev("legacy", "C", expires="2026-12-01"),
+            dict(dev("blank", "C", expires="2026-12-01"), platform=None)]
+    b = lr.build_renewal_buckets(devs, as_of=AS_OF)
+    for d in b["adoms"][0]["devices"]:
+        assert d["tags"] == ["<=30"] and d["hw_eos"] is None
+
+
 def test_as_of_injection_is_deterministic():
-    a = lr.build_renewal_buckets(DEVICES, [], as_of=AS_OF)
-    assert a == lr.build_renewal_buckets(DEVICES, [], as_of=AS_OF)
-    later = lr.build_renewal_buckets(DEVICES, [], as_of=date(2026, 12, 15))
+    a = lr.build_renewal_buckets(DEVICES, as_of=AS_OF)
+    assert a == lr.build_renewal_buckets(DEVICES, as_of=AS_OF)
+    later = lr.build_renewal_buckets(DEVICES, as_of=date(2026, 12, 15))
     t = {d["device"]: d["tags"] for x in later["adoms"] for d in x["devices"]}
     assert t["a-30"] == ["expired"]
 
 
 def test_malformed_devices_ignored():
-    b = lr.build_renewal_buckets([None, 3, {"adom": "A"}, dev("x", "A", expires="garbage")], [None], as_of=AS_OF)
+    b = lr.build_renewal_buckets([None, 3, {"adom": "A"}, dev("x", "A", expires="garbage")], as_of=AS_OF)
     assert b["total_devices"] == 0
 
 
 def _many(n):
     return lr.build_renewal_buckets(
-        [dev(f"d{i}", "A", expires="2026-11-20") for i in range(n)], [], as_of=AS_OF)
+        [dev(f"d{i}", "A", expires="2026-11-20") for i in range(n)], as_of=AS_OF)
 
 
 def test_caps_40_devices_with_remainder_count():
@@ -135,7 +151,7 @@ def _ai(on):
 
 def _common():
     return [patch("app.license_status_cache.get_latest", return_value=LATEST),
-            patch("app.pending_status_cache.get_all_cached_devices", return_value={})]
+]
 
 
 def _run(c, body, ai=True, allowed=None, narr=("txt", None)):
