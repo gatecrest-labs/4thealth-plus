@@ -92,8 +92,13 @@ def _wait_for_first_commit(
 def run_proof(db: Path, seconds: float = 5.0, journal: str = "WAL") -> dict:
     """Run one writer/reader proof against *db* with the given journal mode."""
     db = Path(db)
-    if db.exists():
-        db.unlink()
+    # a previous run killed with SIGKILL leaves -wal/-shm/-journal behind; SQLite on
+    # Linux fails with "disk I/O error" when it finds them next to a missing database
+    for path in (
+        db,
+        *(db.with_name(db.name + sfx) for sfx in ("-wal", "-shm", "-journal")),
+    ):
+        path.unlink(missing_ok=True)
     env = dict(
         os.environ,
         COLLECTOR_DB_PATH=str(db),
