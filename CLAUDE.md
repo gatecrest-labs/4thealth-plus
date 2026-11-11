@@ -107,6 +107,12 @@ app/
   app_settings.py      # Persistent app settings (app_settings.json); used for external_api_enabled toggle
   api_tokens.py        # Bearer token CRUD for the external API; SHA-256 hashes stored in api_tokens.json
   package_change_alerts.py  # Package Change Alerts: rules, policy-diff filter, dedupe, email; invoked by config_diff_scheduler
+  ai_narrate.py        # Shared best-effort LLM narration helper (ai_enabled(), safe_narrate()); the AI only explains computed results
+  rule_lookup_ai.py    # Rule Lookup AI: Explain results + natural-language to Source/Destination/Port fields (re-validated by the search parsers)
+  zone_ai.py           # Zone Policy AI: Explain query results, Segmentation Health summary (server recomputes the data)
+  executive_briefing.py            # Executive Briefing: allow-listed KPIs, week-over-week deltas, freshness, email HTML
+  executive_briefing_scheduler.py  # Weekly Executive Briefing job + config (executive_briefing.json)
+  license_renewal_ai.py  # License renewal plan: deterministic per-ADOM grouping/tags + optional AI narration
   routes/
     auth_routes.py            # /login, /logout
     dashboard_routes.py       # /, /firewalls, /versions (Jinja2 pages)

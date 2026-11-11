@@ -24,7 +24,7 @@ const SECTIONS = [
   <li><strong>Map (Beta)</strong> — interactive geographic map of all managed FortiGate devices, colour-coded by ADOM with zoom-based clustering.</li>
 </ul>
 <h3>AI Assist</h3>
-<p>Several tabs offer an optional AI Assist mode — Rule Validation, Config-Delta, Device Versions (license renewal plan), and Audit Review (CIS results, Hygiene Analysis findings, and PSIRT advisory extraction all have their own AI touchpoint) — plus an AI trend summary on the Admin page. All are off by default and gated by a single <strong>Admin → AI Assist</strong> toggle. In every case the AI only explains an already-computed result; it never decides a verdict, a check outcome, or a trend by itself — those are always computed deterministically first.</p>
+<p>Several tabs offer an optional AI Assist mode — Rule Validation, Config-Delta, Device Versions (license renewal plan), Rule Review (Rule Lookup Explain results and a natural-language search box), Zone Policy (Explain with AI and a Segmentation Health summary), and Audit Review (CIS results, Hygiene Analysis findings, and PSIRT advisory extraction all have their own AI touchpoint) — plus an AI trend summary on the Admin page, AI summaries in Package Change Alert emails, and the Executive Briefing email summary. All are off by default and gated by a single <strong>Admin → AI Assist</strong> toggle. In every case the AI only explains an already-computed result; it never decides a verdict, a check outcome, or a trend by itself — those are always computed deterministically first.</p>
 <h3>Status Colours</h3>
 <div class="help-status-list">
   <span class="status-dot green"></span> <span><strong>Green</strong> — device is reachable and all metrics are within normal thresholds.</span>
@@ -477,6 +477,12 @@ const SECTIONS = [
 <h3>Executive Briefing</h3>
 <p>At the bottom of the <strong>Scheduled</strong> sub-tab, the Executive Briefing emails the fleet KPIs (hygiene score, version compliance, pending diffs, firewalls online, backups, licenses, PSIRT exposure, end-of-support hardware, silent devices) once a week on the chosen day and time. Each figure shows its change since the last briefing sent, and any data section older than 48 hours is marked stale. <strong>Send now</strong> sends it immediately. <em>If AI Assist is enabled:</em> a short AI-written summary is added below the table, and <strong>Generate preview</strong> shows that summary here without sending anything. Only the numbers in the table are sent to the AI — never device names or hostnames. The table is always sent, even if the AI summary fails.</p>
 
+<h3>Package Change Alert AI Summary</h3>
+<p>Each Package Change Alert rule has an <strong>AI Summary</strong> checkbox (on by default). <em>If AI Assist is enabled</em> and the box is ticked, the alert email includes a short plain-English summary of the package's pending policy changes. If the AI is unavailable or returns nothing, the email is still sent without the summary and the reason is recorded on the rule's run history. Untick the box to avoid AI cost for a rule.</p>
+
+<h3>Rule Lookup AI</h3>
+<p><em>If AI Assist is enabled:</em> the <strong>Explain</strong> button on Rule Lookup results narrates which of the listed rules would allow or deny the searched flow, flagging broader or overlapping matches as less certain (it uses the first 25 rows on the page). The <strong>Describe what you're looking for</strong> box above the search fields turns plain English into the Source, Destination and Port fields; check the highlighted "Parsed as:" line, then press <strong>Search</strong> yourself — it never searches on its own.</p>
+
 <h3>SMTP Settings</h3>
 <p>Before creating any scheduled job, configure the outbound mail server:</p>
 <ul>
@@ -593,7 +599,7 @@ const SECTIONS = [
 <p>Lets external programs query Zone Policy data over a bearer-token API, without a browser session. Disabled by default — check <strong>External API enabled</strong> and save to turn it on. Create tokens with <strong>+ New Token</strong>; the plaintext value is shown once and never again, so copy it immediately. Tokens can be revoked at any time. When disabled, every <code>/external/api/</code> request returns <code>503</code> regardless of token validity.</p>
 
 <h3>AI Assist</h3>
-<p>One <strong>ai_assist_enabled</strong> toggle turns on every AI feature in the app at once — Rule Validation's AI Assist, Audit Review's AI Summary/AI Explain/PSIRT extraction, Config-Delta's AI Summary, Rule Lookup's Explain results and natural-language search box, Zone Policy's Explain/Summarize buttons, Package Change Alert email summaries (per-rule checkbox), the Executive Briefing email summary and preview, and the Admin AI Trend Summary. Off by default. This sub-tab also shows an AI usage/cost chart — every LLM call the app makes (which provider, how many tokens, estimated cost) is tracked here regardless of which feature triggered it.</p>
+<p>One <strong>ai_assist_enabled</strong> toggle turns on every AI feature in the app at once — Rule Validation's AI Assist, Audit Review's AI Summary/AI Explain/PSIRT extraction, Config-Delta's AI Summary, Device Versions' license renewal plan, Rule Lookup's Explain results and natural-language search box, Zone Policy's Explain/Summarize buttons, Package Change Alert email summaries (per-rule checkbox), the Executive Briefing email summary and preview, and the Admin AI Trend Summary. Off by default. This sub-tab also shows an AI usage/cost chart — every LLM call the app makes (which provider, how many tokens, estimated cost) is tracked here regardless of which feature triggered it.</p>
 
 <h3>Backup</h3>
 <p>Creates AES-256 encrypted ZIP backups of all runtime configuration. <strong>One-time backups</strong> download directly to your browser. <strong>Scheduled backups</strong> (daily/weekly/custom) run server-side and can optionally push the archive to a remote FTP or SFTP server. The backup password is shown once on first save, the same as API tokens — store it offline, it cannot be retrieved again. The last 20 local archives are kept automatically; older ones are pruned.</p>
