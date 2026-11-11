@@ -533,6 +533,9 @@ class FMGClient:
         self._version: FMGVersion | None = None
         # op name -> {url, code, message} for failures a method swallowed.
         self.degraded: dict[str, dict] = {}
+        # Per-thread stack of lists collecting transport-level proxy failures
+        # (see capture_proxy_failures).
+        self._capture = threading.local()
         # Opt-in traffic capture for building test fixtures (see fmg_recorder).
         self._recorder = None
         record_file = os.environ.get("FMG_RECORD_FILE")
@@ -1002,6 +1005,35 @@ class FMGClient:
 
             return "\n".join(raw_parts)
 
+    @contextlib.contextmanager
+    def capture_proxy_failures(self):
+        """Collect transport-level failures of ``_proxy`` calls made in this thread.
+
+        Yields a list that gains one text per failure: an exception from the
+        transport, an FMG RPC error, or a device FMG could not reach ("No tunnel").
+        An HTTP 4xx/5xx *from the device* is an answer, not a failure. The
+        device getters swallow errors and return ``{}``/``[]``; a caller that
+        stores their output (device snapshots) uses this to tell "the device has
+        nothing configured" from "we could not ask". Captures nest: an inner
+        capture's failures also reach the outer one.
+        """
+        stack = getattr(self._capture, "stack", None)
+        if stack is None:
+            stack = self._capture.stack = []
+        failures: list[str] = []
+        stack.append(failures)
+        try:
+            yield failures
+        finally:
+            stack.pop()
+            if stack:
+                stack[-1].extend(failures)
+
+    def _note_proxy_failure(self, text: str) -> None:
+        stack = getattr(self._capture, "stack", None)
+        if stack:
+            stack[-1].append(text)
+
     def _proxy(self, adom: str, device: str, resource: str) -> dict:
         body = {
             "id": self._next_id(),
@@ -1019,10 +1051,18 @@ class FMGClient:
         }
         if self.session:
             body["session"] = self.session
-        data = self._post(body)
+        try:
+            data = self._post(body)
+        except Exception as exc:
+            self._note_proxy_failure(f"{type(exc).__name__}: {exc}")
+            raise
         result = data.get("result", [{}])[0]
         rpc_code = result.get("status", {}).get("code", -1)
         raw = result.get("data", {})
+        if rpc_code != 0:
+            self._note_proxy_failure(
+                f"FMG RPC error {rpc_code}: {result.get('status', {}).get('message', '')}"
+            )
 
         # FMG proxy envelope:
         #   result[0].data → list of per-device dicts
@@ -1049,6 +1089,10 @@ class FMGClient:
             and wrapper_status.get("code", 0) != 0
             and "response" not in device_wrapper
         ):
+            self._note_proxy_failure(
+                f"device unreachable via FMG ({wrapper_status.get('code')}): "
+                f"{str(wrapper_status.get('message', '')).strip()}"
+            )
             return {
                 "rpc_code": rpc_code,
                 "http_status": 502,

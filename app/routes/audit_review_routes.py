@@ -38,7 +38,7 @@ import datetime
 
 from flask import Blueprint, jsonify, render_template, request, session
 
-from app import inventory, registry
+from app import device_data, inventory, registry
 from app.app_logger import app_log
 from app.decorators import check_adom_access, tab_required
 from app.device_review import _CHECKS_BY_KEY, CHECKS_META, run_checks
@@ -122,86 +122,7 @@ def _fetch_device_data(
     client, adom: str, device: str, data_keys: set[str], device_meta: dict | None = None
 ) -> dict:
     """Fetch only the device data blobs required by the selected checks."""
-    data: dict = {}
-    if "interfaces" in data_keys:
-        try:
-            data["interfaces"] = client.get_device_interfaces_all_vdoms(adom, device)
-        except Exception:
-            data["interfaces"] = []
-    if "ntp" in data_keys:
-        try:
-            data["ntp"] = client.get_device_ntp(adom, device)
-        except Exception:
-            data["ntp"] = {}
-    if "syslog" in data_keys:
-        try:
-            data["syslog"] = client.get_device_syslog(adom, device)
-        except Exception:
-            data["syslog"] = []
-    if "admins" in data_keys:
-        try:
-            data["admins"] = client.get_device_admins(adom, device)
-        except Exception:
-            data["admins"] = []
-    if "system_global" in data_keys:
-        try:
-            data["system_global"] = client.get_device_system_global(adom, device)
-        except Exception:
-            data["system_global"] = {}
-    if "password_policy" in data_keys:
-        try:
-            data["password_policy"] = client.get_device_password_policy(adom, device)
-        except Exception:
-            data["password_policy"] = {}
-    if "log_disk" in data_keys:
-        try:
-            data["log_disk"] = client.get_device_log_disk(adom, device)
-        except Exception:
-            data["log_disk"] = {}
-    if "log_faz" in data_keys:
-        try:
-            data["log_faz"] = client.get_device_log_faz(adom, device)
-        except Exception:
-            data["log_faz"] = []
-    if "dns" in data_keys:
-        try:
-            data["dns"] = client.get_device_dns(adom, device)
-        except Exception:
-            data["dns"] = {}
-    if "snmp_community" in data_keys:
-        try:
-            data["snmp_community"] = client.get_device_snmp_community(adom, device)
-        except Exception:
-            data["snmp_community"] = []
-    if "snmp_sysinfo" in data_keys:
-        try:
-            data["snmp_sysinfo"] = client.get_device_snmp_sysinfo(adom, device)
-        except Exception:
-            data["snmp_sysinfo"] = {}
-    if "snmp_users" in data_keys:
-        try:
-            data["snmp_users"] = client.get_device_snmp_users(adom, device)
-        except Exception:
-            data["snmp_users"] = []
-    if "ha_status" in data_keys:
-        try:
-            data["ha_status"] = client.get_device_ha_status(adom, device)
-        except Exception:
-            data["ha_status"] = {}
-    if "ipsec_phase1" in data_keys:
-        try:
-            data["ipsec_phase1"] = client.get_device_ipsec_phase1(adom, device)
-        except Exception:
-            data["ipsec_phase1"] = []
-    if "ipsec_phase2" in data_keys:
-        try:
-            data["ipsec_phase2"] = client.get_device_ipsec_phase2(adom, device)
-        except Exception:
-            data["ipsec_phase2"] = []
-    # device_meta is passed in from the caller (already fetched from device list)
-    if "device_meta" in data_keys:
-        data["device_meta"] = device_meta or {}
-    return data
+    return device_data.fetch_device_data(client, adom, device, data_keys, device_meta)
 
 
 # ── API: single-device run (used by the per-device progress loop) ─────────────
