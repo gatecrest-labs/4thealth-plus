@@ -71,3 +71,8 @@ calls/hour (flat vs Phase 3); every interactive and scheduled policy/object read
 `2026-11-phase5-snapshot-load.json`); write-up: `2026-11-phase5-results.md`. Background floor 434.5 calls/hour
 (8.9x below the original baseline); a bulk Device Review of 200 devices drops from 4,000 proxy calls to 0.
 
+## Phase 6: job queue (2026-11-11)
+
+`scripts/verify_job_queue.py` (raw data: `2026-11-phase6-job-queue.json`); write-up: `2026-11-phase6-results.md`.
+No FMG-call change (floor stays 434.5/hour); 10 jobs ran with the cap respected and no errors.
+

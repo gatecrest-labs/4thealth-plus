@@ -353,7 +353,9 @@ These apply to **both** units (set them in `/opt/4thealth/.env`, which both read
 | `AUDIT_SNAPSHOT_WINDOW_DAYS` | 7 | Every device is re-captured within this many days. 1 = daily refresh (about 840 calls/hour more at 1,000 devices). |
 | `AUDIT_SNAPSHOT_MAX_AGE_HOURS` | window x 24 + 24 | A snapshot older than this is not served; that key is read live instead. |
 | `AUDIT_SNAPSHOT_WORKERS`, `AUDIT_SNAPSHOT_BATCH_MINUTES`, `AUDIT_SNAPSHOT_REVISION_CHECK_MINUTES` | 2, 10, 60 | Capture concurrency, batch cadence, and how often FortiManager's config revisions are checked to refresh changed devices early. |
-| `JOB_QUEUE` | off | Layer flag for a later phase. Leave off until a phase says otherwise. |
+| `JOB_QUEUE` | off | Phase 6 layer. On: Device Review's **Run Review** and Hygiene Analysis's **Run Analysis** become server-side jobs the **collector** executes (web only enqueues and polls), so they survive a closed tab or reload (the page resumes the Device Review job), do not pin a web thread, and show progress and a Cancel button. Set it in the shared `.env`, restart **both** units. Rollback: set it off and restart (queued jobs are abandoned; the interactive endpoints are unchanged). |
+| `JOB_MAX_RUNNING`, `JOB_MAX_QUEUED_PER_USER` | 2, 5 | Jobs the collector runs at once; queued jobs one user may hold (HTTP 429 beyond it). |
+| `JOB_MAX_RESULT_BYTES`, `JOB_RETENTION_DAYS` | 20 MB, 7 | A larger (compressed) result fails the job with a clear message; finished jobs and results are deleted after this many days. |
 
 With `INVENTORY_CACHE` on, the collector starts the inventory refresh first and holds every other cache's first refresh until it finishes (or 120 s), then staggers them 15 s apart with up to 10 s jitter, so a restart no longer hits FortiManager all at once. Web workers never call FortiManager at boot. `forti*` system ADOMs are not inventoried (same convention as every ADOM list); the Firewalls search skips them while the layer is on.
 
@@ -532,3 +534,7 @@ sudo -u 4thealth /opt/4thealth/.venv/bin/python scripts/verify_snapshot_load.py 
 ```
 
 It must end with `OK: no errors`; it needs no FortiManager and the proof database can be deleted afterwards. The first capture of a large fleet takes about a day (never-captured devices go first); until a device is captured its data is read live.
+
+#### Job queue: behaviour to know (Phase 6)
+
+A user sees and cancels only their own jobs (admin sees all); a job for an ADOM the user can no longer access is hidden. Cancel is cooperative: a running Device Review stops before the next device and keeps the partial result (`cancelled`), a queued job is cancelled at once. If the collector restarts, jobs that were running are marked failed ("collector restarted") rather than resumed; the user re-runs them. A Device Review result is about 9 KB of JSON per device with all checks (1.8 MB for 200 devices); the 20 MB cap applies to the compressed result, so it leaves room for well over a thousand devices in one run. Check the queue end to end on the host with `scripts/verify_job_queue.py`.
