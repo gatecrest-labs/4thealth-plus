@@ -18,6 +18,7 @@ def render_psirt_html(assessment: dict) -> str:
         "psirt_report.html",
         advisory=assessment["advisory"],
         findings=assessment["findings"],
+        has_provenance=any(f.get("data_as_of") for f in assessment["findings"]),
         out_of_scope_products=assessment["out_of_scope_products"],
         priority=assessment["priority"],
         priority_rationale=assessment["priority_rationale"],
