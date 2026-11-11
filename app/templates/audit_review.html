@@ -164,6 +164,7 @@
     <select id="hygienePackage" class="form-select" disabled>
       <option value="">— select package —</option>
     </select>
+    {% if policy_store_enabled %}<span id="hygieneFreshness" class="inv-freshness" hidden></span>{% endif %}
   </div>
 
   <div class="hygiene-selector-row" style="margin-top:.75rem">
@@ -468,4 +469,8 @@ const CHECK_DEFS = {{ dr_checks | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/audit_review.js') }}?v=1"></script>
 <script src="{{ url_for('static', filename='js/psirt.js') }}?v=1"></script>
+{% if policy_store_enabled %}
+<script>window._policyFreshness = [{adom: 'hygieneAdom', pkg: 'hygienePackage', mount: 'hygieneFreshness'}];</script>
+<script src="{{ url_for('static', filename='js/policy_freshness.js') }}?v=1"></script>
+{% endif %}
 {% endblock %}

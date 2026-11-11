@@ -365,6 +365,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "nav_registry": registry.get_registry(),
             "csrf_token": ensure_csrf_token(),
             "inventory_cache_enabled": bool(Config.INVENTORY_CACHE),
+            "policy_store_enabled": bool(Config.POLICY_STORE),
         }
 
     return app

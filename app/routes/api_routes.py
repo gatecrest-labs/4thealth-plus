@@ -1058,3 +1058,89 @@ def inventory_refresh():
     resp = jsonify({"error": "Refresh requested too recently", "retry_after": wait})
     resp.headers["Retry-After"] = str(wait)
     return resp, 429
+
+
+# ── Policy store freshness (F8) ──────────────────────────────────────────────
+
+
+@bp.route("/policy-store/status")
+@login_required
+@tab_required("rule_hygiene", "audit_review")
+def policy_store_status():
+    """Per-package freshness of the policy store for one ADOM (no policy content)."""
+    from app import policy_store
+
+    adom = (request.args.get("adom") or "").strip()
+    if not adom:
+        return jsonify({"error": "adom is required"}), 400
+    if err := check_adom_access(adom):
+        return err
+    body = {
+        "enabled": bool(Config.POLICY_STORE),
+        "adom": adom,
+        "packages": [],
+        "objects": None,
+    }
+    if not Config.POLICY_STORE:
+        return jsonify(body)
+    try:
+        limit = policy_store.max_age_seconds()
+        body["packages"] = [
+            {
+                "pkg": m["pkg"],
+                "fetched_at": m["fetched_at"],
+                "age_seconds": m["age_seconds"],
+                "policy_count": m["policy_count"],
+                "status": m["status"],
+                "stale": m["age_seconds"] is None or m["age_seconds"] > limit,
+            }
+            for m in policy_store.package_meta(adom)
+        ]
+        rows = [
+            m
+            for m in policy_store.objects_meta()
+            if m["scope_key"] in (adom, policy_store.GLOBAL_KEY) and m["fetched_at"]
+        ]
+        if rows:
+            oldest = max(rows, key=lambda m: m["age_seconds"] or 0.0)
+            body["objects"] = {
+                "fetched_at": oldest["fetched_at"],
+                "age_seconds": oldest["age_seconds"],
+                "stale": (oldest["age_seconds"] or 0.0) > limit,
+            }
+    except policy_store.PolicyStoreError as exc:
+        return internal_api_error("api", exc)
+    return jsonify(body)
+
+
+@bp.route("/policy-store/refresh", methods=["POST"])
+@login_required
+@tab_required("rule_hygiene", "audit_review")
+def policy_store_refresh():
+    """Ask the collector to refetch one package now (served within ~10 s, throttled)."""
+    import math
+
+    from app import policy_store
+
+    data = request.get_json(silent=True) or {}
+    adom = (data.get("adom") or "").strip()
+    pkg = (data.get("pkg") or "").strip()
+    if not adom or not pkg:
+        return jsonify({"error": "adom and pkg are required"}), 400
+    if err := check_adom_access(adom):
+        return err
+    if not Config.POLICY_STORE:
+        return jsonify({"error": "Policy store is not enabled"}), 503
+    interval = Config.POLICY_REFRESH_MIN_INTERVAL_SECS
+    try:
+        if pkg not in {m["pkg"] for m in policy_store.package_meta(adom)}:
+            return jsonify({"error": "Unknown package"}), 404
+        if policy_store.request_package_refresh(adom, pkg, interval):
+            return jsonify({"requested": True}), 202
+        age = policy_store.refresh_request_age_seconds(adom, pkg) or 0.0
+    except policy_store.PolicyStoreError as exc:
+        return internal_api_error("api", exc)
+    wait = max(1, math.ceil(interval - age))
+    resp = jsonify({"error": "Refresh requested too recently", "retry_after": wait})
+    resp.headers["Retry-After"] = str(wait)
+    return resp, 429

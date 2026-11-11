@@ -1746,7 +1746,13 @@ class FMGClient:
                     data = self._get(url)  # legacy: single un-paged read
                     results.extend(data if isinstance(data, list) else [])
                 else:
-                    results.extend(self._get_paged(url, strict=strict))
+                    # The default path calls _get_paged exactly as before (callers and
+                    # tests patch it with a one-argument function).
+                    results.extend(
+                        self._get_paged(url, strict=True)
+                        if strict
+                        else self._get_paged(url)
+                    )
             except Exception as exc:
                 if strict:
                     raise _as_fmg_error(exc) from exc

@@ -22,6 +22,7 @@
     <select id="pvPackage" class="form-select" disabled>
       <option value="">— select package —</option>
     </select>
+    {% if policy_store_enabled %}<span id="pvFreshness" class="inv-freshness" hidden></span>{% endif %}
 
     <span style="color:var(--text-muted);font-size:.82rem;align-self:center">or</span>
     <input type="text" id="pvPkgSearch" class="form-control" placeholder="Type package name…" style="max-width:240px" />
@@ -438,4 +439,8 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/hygiene.js') }}?v=17"></script>
 <script src="{{ url_for('static', filename='js/rule_lookup.js') }}?v=2"></script>
+{% if policy_store_enabled %}
+<script>window._policyFreshness = [{adom: 'pvAdom', pkg: 'pvPackage', mount: 'pvFreshness'}];</script>
+<script src="{{ url_for('static', filename='js/policy_freshness.js') }}?v=1"></script>
+{% endif %}
 {% endblock %}

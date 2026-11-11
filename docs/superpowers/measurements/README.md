@@ -56,3 +56,10 @@ hygiene sweep reduced (Phases 3-4).
 (raw data: `2026-11-phase3-1000.json`, write-up: `2026-11-phase3-results.md`): 635.8 -> 302.4
 background FMG calls/hour (12.9x below the original 3,887.8; target <= ~389 met). A scheduled
 Config-Delta run previews 270 of 1,000 synthetic devices.
+
+## Phase 4: policy and object store (2026-11-11)
+
+`uv run python scripts/measure_fmg_baseline.py --devices 1000 --inventory-cache --policy-store`
+(raw data: `2026-11-phase4-1000.json`) and `scripts/verify_policy_store_load.py`
+(raw data: `2026-11-phase4-load.json`); write-up: `2026-11-phase4-results.md`. Background floor 309.5
+calls/hour (flat vs Phase 3); every interactive and scheduled policy/object reader makes zero FMG calls.

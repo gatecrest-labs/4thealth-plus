@@ -342,7 +342,12 @@ These apply to **both** units (set them in `/opt/4thealth/.env`, which both read
 | `CONFIG_DELTA_GATING` | `on` | With `INVENTORY_CACHE` on, scheduled Config-Delta runs preview only devices whose cached conf/db/package status is pending, unknown or stale (clean devices are listed as "not re-previewed"). `off` previews everything. Clicking one device in the UI is always a live preview. |
 | `CONFIG_DELTA_FULL_SWEEP_HOURS` | `24` | Every device is previewed at least this often, because `conf_status` can lag the real device. This bounds how long a missed change can go unnoticed (this plus the inventory age, up to ~10 min). |
 | `CONFIG_DELTA_JOB_BUDGET_SECS` | `3600` | A gated run stops previewing after this long; devices not reached are reported as errors (never as clean) so Package Change Alerts leave their state untouched. `0` = no limit. |
-| `POLICY_STORE` | off | Phase 3 slice: the executive hygiene sweep keeps each package's findings and referenced-object names in the shared store and only re-downloads a package's policies when that entry is older than its TTL. Rollback: set it off and restart the collector. |
+| `POLICY_STORE` | off | Phase 3+4 layer. On: the **collector** keeps every ADOM's policy packages, policies, policy blocks and firewall objects in the shared store (refreshing each package about every 6 h, objects hourly); Rule Review, Rule Lookup, Object/NAT lookups, Where-Used, Hygiene, the unused-object finder, the executive hygiene sweep, summary rule counts and the scheduled Rule Hygiene / Rule Policy / NAT reports read it with no FortiManager calls. Per-device reads (hit counts, per-device VIPs, interfaces), Package Change Alerts and the Rule Validation planner stay live. Set it in the shared `.env`, restart **both** units. Rollback: set it off and restart. |
+| `POLICY_PACKAGE_TTL_HOURS` | `6` (or `HYGIENE_PACKAGE_TTL_HOURS` if set) | How long a package is considered current; jittered x0.75..x1.25 per package so refetches spread over time. |
+| `POLICY_OBJECTS_REFRESH_MINUTES` | `60` | How often the collector refetches firewall objects (the shared global objects are fetched once per cycle, not per ADOM). |
+| `POLICY_MAX_AGE_SECS` | `0` (= 2 x 1.25 x TTL, 15 h) | A reader serves a stored row up to this age; older or missing rows cost one live FMG call (counted). |
+| `POLICY_PARALLEL_FETCH` | `4` | Packages the collector fetches in parallel (the FMG in-flight cap still applies). |
+| `POLICY_REFRESH_MIN_INTERVAL_SECS` | `30` | Minimum time between Refresh requests for the same package. |
 | `HYGIENE_PACKAGE_TTL_HOURS` | `6` | TTL for a cached package result, jittered x0.75..x1.25 per package so refetches spread over time. If a refetch fails an entry younger than twice its TTL is reused, otherwise the package is skipped as before. Hygiene numbers can therefore be up to about this old. |
 | `AUDIT_SNAPSHOTS`, `JOB_QUEUE` | off | Layer flags for later phases. Leave off until a phase says otherwise. |
 
@@ -496,3 +501,17 @@ sudo systemctl status 4thealth
 | New/changed `pyproject.toml` dependency | Yes | Yes |
 | Template or JS/CSS changes | No | No (served directly) |
 | New gitignored config file (`.example.json`) | No | No (copy manually, configure via UI) |
+
+
+#### Policy store: freshness, size and the one-time check (Phase 4)
+
+Policy data is up to about 7.5 h old unless someone clicks **Refresh** next to a package in Rule Review or Audit Review (the collector refetches it within ~10 s; throttled per package). Rule Lookup shows `data_as_of`; scheduled reports that rest on data older than 15 minutes say so at the top of the email. Expect the shared database to grow by about 15-40 MB at 400 packages of 300 rules (policy blobs are zlib-compressed).
+
+Before going live, run the load check once on the production host as the app user, next to the shared-store proof:
+
+```
+sudo -u 4thealth /opt/4thealth/.venv/bin/python scripts/verify_policy_store_load.py \
+    --db /opt/4thealth/policy-load-proof.db --adoms 5 --packages 80 --rules 300 --readers 2
+```
+
+It writes a synthetic fleet through the collector code path while separate reader processes query the same file, then prints database size, write time, read p50/p95 and the Rule Lookup index build time; it must end with `OK: no errors` (exit status 0). It needs no FortiManager and the proof database can be deleted afterwards.
