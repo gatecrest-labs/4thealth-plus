@@ -166,6 +166,17 @@ class Config:
     POLICY_MAX_AGE_SECS = _env_int("POLICY_MAX_AGE_SECS", 0)
     POLICY_PARALLEL_FETCH = _env_int("POLICY_PARALLEL_FETCH", 4)
     POLICY_REFRESH_MIN_INTERVAL_SECS = _env_int("POLICY_REFRESH_MIN_INTERVAL_SECS", 30)
+    # Device audit snapshots (Phase 5). The rolling window over which every device
+    # is re-captured, the age beyond which a reader goes live (0 = window + 1 day),
+    # collector workers, batch period and how often ADOM config revisions are
+    # checked for devices that changed.
+    AUDIT_SNAPSHOT_WINDOW_DAYS = _env_int("AUDIT_SNAPSHOT_WINDOW_DAYS", 7)
+    AUDIT_SNAPSHOT_MAX_AGE_HOURS = _env_int("AUDIT_SNAPSHOT_MAX_AGE_HOURS", 0)
+    AUDIT_SNAPSHOT_WORKERS = _env_int("AUDIT_SNAPSHOT_WORKERS", 2)
+    AUDIT_SNAPSHOT_BATCH_MINUTES = _env_int("AUDIT_SNAPSHOT_BATCH_MINUTES", 10)
+    AUDIT_SNAPSHOT_REVISION_CHECK_MINUTES = _env_int(
+        "AUDIT_SNAPSHOT_REVISION_CHECK_MINUTES", 60
+    )
     AUDIT_SNAPSHOTS = _env_flag("AUDIT_SNAPSHOTS")
     JOB_QUEUE = _env_flag("JOB_QUEUE")
 
