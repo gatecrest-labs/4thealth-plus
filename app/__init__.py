@@ -21,6 +21,7 @@ _BLUEPRINT_MODULES = [
     "app.routes.external_api_routes",
     "app.routes.backup_routes",
     "app.routes.sync_routes",
+    "app.routes.job_routes",
     # "app.routes.my_new_module",  ← add future modules here
 ]
 
@@ -68,6 +69,13 @@ def start_all_schedulers(app: Flask) -> None:
         from app.snapshot_cache import init_scheduler as init_snapshot_scheduler
 
         init_snapshot_scheduler(app)
+
+    # Job queue (JOB_QUEUE): runs queued Device Review / Hygiene jobs (collector only).
+    if not app.config.get("_JOB_RUNNER_STARTED"):
+        app.config["_JOB_RUNNER_STARTED"] = True
+        from app.job_runner import init_scheduler as init_job_scheduler
+
+        init_job_scheduler(app)
 
     # Policy/object store refresh (POLICY_STORE): packages, policies, blocks, objects.
     if not app.config.get("_POLICY_CACHE_STARTED"):
