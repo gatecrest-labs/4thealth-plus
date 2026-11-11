@@ -50,7 +50,7 @@ def hygiene_packages(adom: str):
         return err
     try:
         with make_client() as client:
-            raw = client.get_policy_packages(adom)
+            raw = policy_facade.packages(client, adom)
         packages = []
         for pkg in raw:
             if not isinstance(pkg, dict):
@@ -84,6 +84,12 @@ def hygiene_packages_raw(adom: str):
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
         return internal_api_error("hygiene", exc)
+
+
+def _as_of(adom: str, path: str | None = None) -> dict:
+    """``{"data_as_of": iso}`` when the policy store backs this read, else ``{}``."""
+    value = policy_facade.data_as_of(adom, path)
+    return {"data_as_of": value} if value else {}
 
 
 def _pkg_path(data: dict) -> str:
@@ -482,7 +488,7 @@ def hygiene_policies():
     # large ADOMs like OT-SERVICES with many/large policy blocks.
     try:
         with make_client() as client:
-            raw = client.get_policies(adom, path)
+            raw = policy_facade.policies(client, adom, path)
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
@@ -559,7 +565,12 @@ def hygiene_policies():
         )
 
         return jsonify(
-            {"policies": policies, "total": len(policies), "pblock_names": pblock_names}
+            {
+                "policies": policies,
+                "total": len(policies),
+                "pblock_names": pblock_names,
+                **_as_of(adom, path),
+            }
         )
     except Exception as exc:
         return internal_api_error("hygiene", exc)
@@ -621,7 +632,7 @@ def hygiene_policy_pblocks():
                 if not block_name:
                     continue
                 try:
-                    raw = client.get_pblock_policies(adom, block_name)
+                    raw = policy_facade.pblock_policies(client, adom, block_name)
                     pblocks[block_name] = [
                         _build_rule(r, i)
                         for i, r in enumerate(raw)
@@ -772,10 +783,10 @@ def hygiene_policy_objects():
         return err
     try:
         with make_client() as client:
-            addr_objects = client.get_address_objects(adom)
-            addr_groups = client.get_address_groups(adom)
-            vip_objects = client.get_vip_objects(adom)
-            svc_groups = client.get_service_groups(adom)
+            addr_objects = policy_facade.objects(client, adom, "address")
+            addr_groups = policy_facade.objects(client, adom, "addrgrp")
+            vip_objects = policy_facade.objects(client, adom, "vip")
+            svc_groups = policy_facade.objects(client, adom, "svcgrp")
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
@@ -851,11 +862,11 @@ def hygiene_object_lookup(adom: str):
 
     try:
         with make_client() as client:
-            addr_objects = client.get_address_objects(adom)
-            addr_groups = client.get_address_groups(adom)
-            vip_objects = client.get_vip_objects(adom)
-            svc_objects = client.get_service_objects(adom)
-            svc_groups = client.get_service_groups(adom)
+            addr_objects = policy_facade.objects(client, adom, "address")
+            addr_groups = policy_facade.objects(client, adom, "addrgrp")
+            vip_objects = policy_facade.objects(client, adom, "vip")
+            svc_objects = policy_facade.objects(client, adom, "service")
+            svc_groups = policy_facade.objects(client, adom, "svcgrp")
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
@@ -1050,11 +1061,11 @@ def hygiene_object_where_used(adom: str):
 
     try:
         with make_client() as client:
-            packages = client.get_policy_packages(adom)
+            packages = policy_facade.packages(client, adom)
             if category == "address":
-                groups_raw = client.get_address_groups(adom)
+                groups_raw = policy_facade.objects(client, adom, "addrgrp")
             else:
-                groups_raw = client.get_service_groups(adom)
+                groups_raw = policy_facade.objects(client, adom, "svcgrp")
 
             # Find groups that directly contain this object
             containing_groups: list[str] = []
@@ -1081,7 +1092,7 @@ def hygiene_object_where_used(adom: str):
                 """Fetch and scan one package; returns (rules, scanned, skipped)."""
                 try:
                     with make_client() as c:
-                        policies = c.get_policies(adom, pkg_path)
+                        policies = policy_facade.policies(c, adom, pkg_path)
                 except Exception:
                     return [], 0, 1
 
@@ -1277,8 +1288,8 @@ def hygiene_nat_lookup(adom: str):
     # ── Phase 1: fetch ADOM-level shared VIPs and IP pools ──────────────────────
     try:
         with make_client() as client:
-            shared_vips = client.get_vip_objects(adom)
-            pools = client.get_ippool_objects(adom)
+            shared_vips = policy_facade.objects(client, adom, "vip")
+            pools = policy_facade.objects(client, adom, "ippool")
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
@@ -1535,15 +1546,15 @@ def hygiene_run():
 
     try:
         with make_client() as client:
-            policies = client.get_policies(adom, path)
-            pkg_settings = client.get_pkg_settings(adom, path)
+            policies = policy_facade.policies(client, adom, path)
+            pkg_settings = policy_facade.pkg_settings(client, adom, path)
 
             # For the unhit check, FMG's stored _hitcount is only updated when
             # FMG syncs stats from the device — which may be stale or never run.
             # Fetch live hit counts from each device in scope and overlay them so
             # the check always reflects what the device actually sees.
             if "unhit" in valid_checks:
-                scope = client.get_pkg_scope_members(adom, path)
+                scope = policy_facade.pkg_scope(client, adom, path)
                 live_hits: dict[int, int] = {}
                 for member in scope[:10]:
                     dev = (
@@ -1578,11 +1589,11 @@ def hygiene_run():
             )
             if _needs_objects:
                 try:
-                    addr_objects = client.get_address_objects(adom)
-                    addr_groups = client.get_address_groups(adom)
-                    vip_objects = client.get_vip_objects(adom)
-                    svc_objects = client.get_service_objects(adom)
-                    svc_groups = client.get_service_groups(adom)
+                    addr_objects = policy_facade.objects(client, adom, "address")
+                    addr_groups = policy_facade.objects(client, adom, "addrgrp")
+                    vip_objects = policy_facade.objects(client, adom, "vip")
+                    svc_objects = policy_facade.objects(client, adom, "service")
+                    svc_groups = policy_facade.objects(client, adom, "svcgrp")
                     addr_resolver = build_addr_resolver(
                         addr_objects, addr_groups, vip_objects
                     )
@@ -1654,6 +1665,7 @@ def hygiene_run():
             "policy_count": len(policies),
             "total": len(findings),
             "findings": findings,
+            **_as_of(adom, path),
         }
     )
 
@@ -1673,11 +1685,11 @@ def hygiene_unused_objects():
         return err
     try:
         with make_client() as client:
-            policies = client.get_policies(adom, path) or []
-            addresses = client.get_address_objects(adom, scope=scope) or []
-            addr_groups = client.get_address_groups(adom, scope=scope) or []
-            services = client.get_service_objects(adom, scope=scope) or []
-            svc_groups = client.get_service_groups(adom, scope=scope) or []
+            policies = policy_facade.policies(client, adom, path) or []
+            addresses = policy_facade.objects(client, adom, "address", scope) or []
+            addr_groups = policy_facade.objects(client, adom, "addrgrp", scope) or []
+            services = policy_facade.objects(client, adom, "service", scope) or []
+            svc_groups = policy_facade.objects(client, adom, "svcgrp", scope) or []
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
@@ -1693,6 +1705,7 @@ def hygiene_unused_objects():
             "total_addresses": len(addresses) + len(addr_groups),
             "total_services": len(services) + len(svc_groups),
             "checked_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
+            **_as_of(adom, path),
         }
     )
 
