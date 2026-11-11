@@ -37,6 +37,14 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in _TRUTHY
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    """Boolean env var *name*; unset or blank gives *default*."""
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in _TRUTHY
+
+
 def _env_int(name: str, default: int | None) -> int | None:
     """Integer env var *name*; unset, blank or non-numeric gives *default*."""
     raw = os.environ.get(name, "").strip()
@@ -135,6 +143,11 @@ class Config:
     INVENTORY_MAX_AGE_SECS = _env_int("INVENTORY_MAX_AGE_SECS", 0)
     INVENTORY_PARALLEL_ADOMS = _env_int("INVENTORY_PARALLEL_ADOMS", 4)
     POLICY_STORE = _env_flag("POLICY_STORE")
+    # F5 Config-Delta gating (needs INVENTORY_CACHE): preview only devices whose
+    # cached sync status shows pending changes. Default on; "off" disables.
+    CONFIG_DELTA_GATING = _env_bool("CONFIG_DELTA_GATING", True)
+    CONFIG_DELTA_FULL_SWEEP_HOURS = _env_int("CONFIG_DELTA_FULL_SWEEP_HOURS", 24)
+    CONFIG_DELTA_JOB_BUDGET_SECS = _env_int("CONFIG_DELTA_JOB_BUDGET_SECS", 3600)
     AUDIT_SNAPSHOTS = _env_flag("AUDIT_SNAPSHOTS")
     JOB_QUEUE = _env_flag("JOB_QUEUE")
 

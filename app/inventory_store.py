@@ -36,6 +36,7 @@ _ADOM_LIST_AT = "adom_list_collected_at"
 _REFRESH_LAST = "refresh_last_requested"
 _REFRESH_PENDING = "refresh_pending"
 _PKG_OK = "pkg_ok:"
+_FULL_SWEEP = "config_delta_full:"
 
 
 def max_age_seconds() -> float:
@@ -222,6 +223,9 @@ def delete_missing_adoms(keep: set[str]) -> None:
             for t in ("inventory_device", "inventory_pkg", "inventory_meta"):
                 conn.execute(f"DELETE FROM {t} WHERE adom=?", (adom,))
             conn.execute("DELETE FROM inventory_state WHERE key=?", (_PKG_OK + adom,))
+            conn.execute(
+                "DELETE FROM inventory_state WHERE key=?", (_FULL_SWEEP + adom,)
+            )
         conn.commit()
 
 
@@ -275,6 +279,26 @@ def has_pkg_status(adom: str) -> bool:
             ).fetchone()
             is not None
         )
+
+
+def mark_full_sweep(adom: str) -> None:
+    """Record that every device of *adom* was just previewed (Config-Delta full sweep)."""
+    with _Conn(write=True) as conn:
+        conn.execute(
+            "INSERT INTO inventory_state (key, value) VALUES (?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (_FULL_SWEEP + adom, _now().isoformat()),
+        )
+        conn.commit()
+
+
+def last_full_sweep_age_seconds(adom: str) -> float | None:
+    """Seconds since the last Config-Delta full sweep of *adom*, or None if never."""
+    with _Conn() as conn:
+        row = conn.execute(
+            "SELECT value FROM inventory_state WHERE key=?", (_FULL_SWEEP + adom,)
+        ).fetchone()
+    return _age(row[0]) if row else None
 
 
 def pkg_status_ages() -> dict[str, float]:
