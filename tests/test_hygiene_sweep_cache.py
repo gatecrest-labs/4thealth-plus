@@ -211,3 +211,23 @@ def test_refetch_load_is_spread(monkeypatch):
     _sweep(monkeypatch, True)
     refetched = _policy_fetches(synth)
     assert 0 < refetched < 60
+
+
+def test_rule_hygiene_reports_the_age_of_the_data_it_used(monkeypatch, rig):
+    monkeypatch.setattr(Config, "POLICY_STORE", True)
+    assert esc._run_hygiene_sweep(object()) is True
+    fresh = esc.get_summary()["rule_hygiene"]
+    assert fresh["data_as_of"] <= fresh["collected_at"]
+    assert (
+        datetime.fromisoformat(fresh["collected_at"])
+        - datetime.fromisoformat(fresh["data_as_of"])
+    ).total_seconds() < 120
+
+    _age_all(3 * 3600)  # entries 3 h old, still inside every package's TTL
+    assert esc._run_hygiene_sweep(object()) is True
+    cached = esc.get_summary()["rule_hygiene"]
+    lag = (
+        datetime.fromisoformat(cached["collected_at"])
+        - datetime.fromisoformat(cached["data_as_of"])
+    ).total_seconds()
+    assert 3 * 3600 - 120 <= lag <= 3 * 3600 + 120  # oldest entry used is ~3 h old

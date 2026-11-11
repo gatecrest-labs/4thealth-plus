@@ -248,3 +248,24 @@ def test_adom_list_and_cold_device_list_from_store_with_zero_inventory_calls(
     assert guard.inventory_calls == []
     assert len(r2.get_json()) == 40
     assert inventory.counters()["fallbacks"] == 0
+
+
+def test_full_sweep_not_recorded_when_a_preview_errored(monkeypatch, fleet):
+    _synth, _client, adom, previews = fleet
+    from app import inventory_store
+
+    def flaky(self, adom_, device):
+        if device.endswith("0003"):
+            raise RuntimeError("No tunnel 80")
+        previews.append(device)
+        return ""
+
+    monkeypatch.setattr(FMGClient, "get_install_preview", flaky)
+    res = pcr.bulk_preview_adom(adom, max_workers=1)
+    assert any(r["status"] == "error" for r in res)
+    assert (
+        inventory_store.last_full_sweep_age_seconds(adom) is None
+    )  # try again next run
+    monkeypatch.setattr(FMGClient, "get_install_preview", lambda self, a, d: "")
+    pcr.bulk_preview_adom(adom, max_workers=1)
+    assert inventory_store.last_full_sweep_age_seconds(adom) is not None

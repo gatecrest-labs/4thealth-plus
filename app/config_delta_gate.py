@@ -76,10 +76,16 @@ def select_devices(client, adom: str, devices: list[dict]) -> GateResult:
         age = meta["age_seconds"] if meta else None
         if _full_sweep_due(adom):
             return GateResult(preview=list(devices), full_sweep=True, status_age_s=age)
-        max_age = 2.0 * float(Config.INVENTORY_REFRESH_SECS)
-        if age is None or age > max_age:
-            # Stale or never collected: preview everything, and do not let the
-            # facade make a live FMG call just to make this decision.
+        # Never more lenient than the facade: past its own limit it would go live.
+        max_age = min(
+            2.0 * float(Config.INVENTORY_REFRESH_SECS),
+            inventory_store.max_age_seconds(),
+        )
+        pkg_age = inventory_store.pkg_status_age_seconds(adom)
+        if age is None or age > max_age or pkg_age is None or pkg_age > max_age:
+            # Device list or package status stale / never collected: preview
+            # everything, and do not let the facade make live FMG calls (one per
+            # device for package status) just to make this decision.
             return GateResult(preview=list(devices), status_age_s=age)
         rows = {
             r.get("name"): r

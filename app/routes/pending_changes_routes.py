@@ -276,9 +276,9 @@ def bulk_preview_adom(
         )
 
     results.full_sweep = selection.full_sweep
-    if selection.full_sweep and not any(
-        r.get("error") == _BUDGET_ERROR for r in results
-    ):
+    # Only a complete, error-free sweep resets the 24 h clock: a budget skip or an
+    # FMG outage (every preview errored) must not defer the next full sweep.
+    if selection.full_sweep and not any(r["status"] == "error" for r in results):
         config_delta_gate.mark_full_sweep_done(adom)
     return results
 

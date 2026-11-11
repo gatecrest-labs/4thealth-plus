@@ -195,3 +195,43 @@ def test_store_unreadable_previews_everything(monkeypatch):
     monkeypatch.setattr(inventory_store, "read_meta", broken)
     res = gate.select_devices(object(), "A", devices)
     assert res.gated == [] and len(res.preview) == len(devices)
+
+
+def test_stale_package_status_previews_everything_without_a_live_call():
+    """Devices fresh but package rows old: the facade would go live per device, so don't ask."""
+    devices = _populate()
+    inventory_store.mark_full_sweep("A")
+    # Re-collect devices only; package rows keep their old collection time.
+    inventory_store.replace_adom("A", inventory_store.read_devices("A"), [], _old(5000))
+    inventory_store.replace_adom("A", inventory_store.read_devices("A"), None, _now())
+    res = gate.select_devices(
+        object(), "A", devices
+    )  # object(): any live call would raise
+    assert res.gated == [] and len(res.preview) == len(devices)
+
+
+def test_never_collected_package_status_previews_everything_without_a_live_call():
+    devices = _populate()
+    inventory_store.mark_full_sweep("A")
+    inventory_store.delete_missing_adoms(set())
+    inventory_store.replace_adom(
+        "A", inventory_store.read_devices("A") or [], None, _now()
+    )
+    devs = [{"name": f"d{i}", "conf_status": 1, "db_status": 1} for i in range(3)]
+    inventory_store.replace_adom("A", devs, None, _now())
+    res = gate.select_devices(
+        object(), "A", [{"name": d["name"], "ip": ""} for d in devs]
+    )
+    assert res.gated == [] and len(res.preview) == 3
+    assert devices  # silence unused
+
+
+def test_gate_staleness_limit_never_exceeds_the_facade_limit(monkeypatch):
+    devices = _populate()
+    inventory_store.mark_full_sweep("A")
+    inventory_store.replace_adom("A", inventory_store.read_devices("A"), [], _old(200))
+    monkeypatch.setattr(
+        Config, "INVENTORY_MAX_AGE_SECS", 100
+    )  # facade would go live at 200 s
+    res = gate.select_devices(object(), "A", devices)
+    assert res.gated == [] and len(res.preview) == len(devices)

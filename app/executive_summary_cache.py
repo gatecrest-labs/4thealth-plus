@@ -738,6 +738,7 @@ def _run_hygiene_sweep(app) -> bool:
         by_type: dict[str, int] = dict.fromkeys(HYGIENE_CHECK_TYPES, 0)
         by_type["unused_objects"] = 0
         package_findings: list[dict] = []
+        oldest_data_at: str | None = None  # oldest cached package result served
 
         with make_client() as client:
             adom_names = _list_target_adoms(client)
@@ -770,6 +771,9 @@ def _run_hygiene_sweep(app) -> bool:
                     result = _package_hygiene(client, adom, pkg_path)
                     if result is None:
                         continue
+                    used_at = result.get("fetched_at")
+                    if used_at and (oldest_data_at is None or used_at < oldest_data_at):
+                        oldest_data_at = used_at
                     total_policies += result["policy_count"]
                     total_findings += result["score_findings"]
                     for f in result["findings"]:
@@ -827,6 +831,7 @@ def _run_hygiene_sweep(app) -> bool:
         from app.hygiene_rollup import build_details as _build_hygiene_details
 
         hygiene_details = _build_hygiene_details(package_findings)
+        sweep_done_at = datetime.now(UTC).isoformat()
         rule_hygiene_record = {
             "ran_at": datetime.now(UTC).isoformat(),
             "rule_findings_total": sum(by_type.values()),
@@ -865,7 +870,12 @@ def _run_hygiene_sweep(app) -> bool:
                             "rule_findings_total"
                         ],
                         "rule_findings_by_type": by_type,
-                        "collected_at": datetime.now(UTC).isoformat(),
+                        "collected_at": sweep_done_at,
+                        # With POLICY_STORE, unchanged packages are served from the
+                        # cache: the oldest result used (else this sweep's time).
+                        "data_as_of": min(
+                            oldest_data_at or sweep_done_at, sweep_done_at
+                        ),
                         "details": hygiene_details,
                     },
                     "status": "ok",
