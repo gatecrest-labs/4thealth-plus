@@ -1219,8 +1219,8 @@ function renderLicenseSection(data, adom) {
     <strong>License Status</strong>
     <div class="table-controls-right">
       <span style="color:var(--text-muted);font-size:.85em">${escHtml(lastUpdated)}${escHtml(cacheStatus)}</span>
-      <button class="btn btn-sm btn-ghost" id="licRenewalBtn" style="display:none">Renewal plan</button>
-      <button class="btn btn-sm btn-ghost" id="licRefreshBtn">&#8635; Refresh</button>
+      <button class="btn btn-sm btn-secondary" id="licRenewalBtn" style="display:none">Renewal plan</button>
+      <button class="btn btn-sm btn-secondary" id="licRefreshBtn">&#8635; Refresh</button>
     </div>
   </div>
   <div id="licRenewalOut" style="display:none;padding:0 1rem 1rem"></div>
