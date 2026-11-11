@@ -442,7 +442,13 @@ class SyntheticFMG:
                     body,
                     url,
                     [
-                        {"name": p, "type": "pkg", "oid": 5000 + i}
+                        {
+                            "name": p,
+                            "type": "pkg",
+                            "oid": 5000 + i,
+                            "scope member": self._pkg_scope(adom, p),
+                            "package settings": {},
+                        }
                         for i, p in enumerate(self._pkg_names(adom))
                     ],
                 )
