@@ -144,7 +144,9 @@ def api_query_explain():
     try:
         from app.zone_ai import explain_query
 
-        results = zdb.run_query(src_list, dst_list, service.strip() or None, verbose=True)
+        results = zdb.run_query(
+            src_list, dst_list, service.strip() or None, verbose=True
+        )
         narrative, error = explain_query(results, user=session.get("user"))
         return jsonify({"narrative": narrative, "narrative_error": error})
     except Exception as exc:

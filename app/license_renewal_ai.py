@@ -83,17 +83,19 @@ def build_renewal_buckets(all_devices: list, as_of: date | None = None) -> dict:
             dates.append(eos)
         if not tags:
             continue
-        by_adom.setdefault(d["adom"], []).append({
-            "device": d["device"],
-            "adom": d["adom"],
-            "tags": tags,
-            "license_status": d.get("status"),
-            "expires": expires.isoformat() if expires else None,
-            "days_until_expiry": days,
-            "platform": plat if eos is not None else None,
-            "hw_eos": eos.isoformat() if eos is not None else None,
-            "_key": min(dates),
-        })
+        by_adom.setdefault(d["adom"], []).append(
+            {
+                "device": d["device"],
+                "adom": d["adom"],
+                "tags": tags,
+                "license_status": d.get("status"),
+                "expires": expires.isoformat() if expires else None,
+                "days_until_expiry": days,
+                "platform": plat if eos is not None else None,
+                "hw_eos": eos.isoformat() if eos is not None else None,
+                "_key": min(dates),
+            }
+        )
 
     adoms = []
     for name, devs in by_adom.items():
@@ -102,8 +104,15 @@ def build_renewal_buckets(all_devices: list, as_of: date | None = None) -> dict:
         for x in devs:
             for t in x["tags"]:
                 counts[t] = counts.get(t, 0) + 1
-        adoms.append({"adom": name, "device_count": len(devs), "counts": counts,
-                      "devices": devs, "_key": devs[0]["_key"]})
+        adoms.append(
+            {
+                "adom": name,
+                "device_count": len(devs),
+                "counts": counts,
+                "devices": devs,
+                "_key": devs[0]["_key"],
+            }
+        )
     adoms.sort(key=lambda a: (a["_key"], a["adom"]))
     for a in adoms:
         a.pop("_key")
@@ -127,17 +136,24 @@ def build_renewal_plan(buckets: dict, user: str | None = None):
     for a in adoms_in:
         take = a["devices"][:left]
         left -= len(take)
-        adoms.append({
-            "adom": _clip(a["adom"]),
-            "device_count": a["device_count"],
-            "counts": a["counts"],
-            "devices": [{
-                "device": _clip(d["device"]), "tags": d["tags"],
-                "expires": d["expires"], "hw_eos": d["hw_eos"],
-                "platform": _clip(d["platform"]) if d["platform"] else None,
-            } for d in take],
-            "devices_not_shown": a["device_count"] - len(take),
-        })
+        adoms.append(
+            {
+                "adom": _clip(a["adom"]),
+                "device_count": a["device_count"],
+                "counts": a["counts"],
+                "devices": [
+                    {
+                        "device": _clip(d["device"]),
+                        "tags": d["tags"],
+                        "expires": d["expires"],
+                        "hw_eos": d["hw_eos"],
+                        "platform": _clip(d["platform"]) if d["platform"] else None,
+                    }
+                    for d in take
+                ],
+                "devices_not_shown": a["device_count"] - len(take),
+            }
+        )
     shown = sum(len(a["devices"]) for a in adoms)
     payload = {
         "as_of": buckets.get("as_of"),
@@ -145,4 +161,6 @@ def build_renewal_plan(buckets: dict, user: str | None = None):
         "adoms": adoms,
         "devices_not_shown": buckets.get("total_devices", 0) - shown,
     }
-    return safe_narrate(RENEWAL_PROMPT, payload, feature="license_renewal_plan", user=user)
+    return safe_narrate(
+        RENEWAL_PROMPT, payload, feature="license_renewal_plan", user=user
+    )

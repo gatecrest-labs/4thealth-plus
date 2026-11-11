@@ -55,10 +55,19 @@ def _strs(v) -> list:
 def _slim_rule(p) -> dict:
     if not isinstance(p, dict):
         return {}
-    out = {k: _clip(p.get(k)) for k in
-           ("policy_set", "from_zone", "to_zone", "matched_from_zone",
-            "matched_to_zone", "access_type", "severity")
-           if isinstance(p.get(k), (str, int, float))}
+    out = {
+        k: _clip(p.get(k))
+        for k in (
+            "policy_set",
+            "from_zone",
+            "to_zone",
+            "matched_from_zone",
+            "matched_to_zone",
+            "access_type",
+            "severity",
+        )
+        if isinstance(p.get(k), (str, int, float))
+    }
     out["services"] = _strs(p.get("services"))
     return out
 
@@ -80,13 +89,17 @@ def _slim_result(r: dict) -> dict:
 
 
 def explain_query(results, user: str | None = None):
-    rows = [r for r in (results if isinstance(results, list) else []) if isinstance(r, dict)]
+    rows = [
+        r for r in (results if isinstance(results, list) else []) if isinstance(r, dict)
+    ]
     shown = rows[:MAX_RESULTS]
     payload = {
         "results": [_slim_result(r) for r in shown],
         "results_not_shown": len(rows) - len(shown),
     }
-    return safe_narrate(EXPLAIN_PROMPT, payload, feature="zone_query_explain", user=user)
+    return safe_narrate(
+        EXPLAIN_PROMPT, payload, feature="zone_query_explain", user=user
+    )
 
 
 def _num(v):
@@ -95,10 +108,16 @@ def _num(v):
 
 def summarize_segmentation(report, user: str | None = None):
     rep = report if isinstance(report, dict) else {}
-    mism = [m for m in (rep.get("trust_mismatches") or [])
-            if isinstance(m, dict)] if isinstance(rep.get("trust_mismatches"), list) else []
-    pairs = [p for p in (rep.get("open_pairs") or [])
-             if isinstance(p, dict)] if isinstance(rep.get("open_pairs"), list) else []
+    mism = (
+        [m for m in (rep.get("trust_mismatches") or []) if isinstance(m, dict)]
+        if isinstance(rep.get("trust_mismatches"), list)
+        else []
+    )
+    pairs = (
+        [p for p in (rep.get("open_pairs") or []) if isinstance(p, dict)]
+        if isinstance(rep.get("open_pairs"), list)
+        else []
+    )
     pairs.sort(
         key=lambda p: (
             -(_num(p.get("policy_count")) or 0),
@@ -110,16 +129,22 @@ def summarize_segmentation(report, user: str | None = None):
     # Mismatches first: key order is preserved in the JSON the model reads.
     payload = {
         "trust_mismatches": [
-            {"from_zone": _clip(str(m.get("from_zone", ""))),
-             "to_zone": _clip(str(m.get("to_zone", ""))),
-             "from_trust": _num(m.get("from_trust")), "to_trust": _num(m.get("to_trust")),
-             "delta": _num(m.get("delta")), "policy_count": _num(m.get("policy_count"))}
+            {
+                "from_zone": _clip(str(m.get("from_zone", ""))),
+                "to_zone": _clip(str(m.get("to_zone", ""))),
+                "from_trust": _num(m.get("from_trust")),
+                "to_trust": _num(m.get("to_trust")),
+                "delta": _num(m.get("delta")),
+                "policy_count": _num(m.get("policy_count")),
+            }
             for m in mism
         ],
         "open_pairs": [
-            {"from_zone": _clip(str(p.get("from_zone", ""))),
-             "to_zone": _clip(str(p.get("to_zone", ""))),
-             "policy_count": _num(p.get("policy_count"))}
+            {
+                "from_zone": _clip(str(p.get("from_zone", ""))),
+                "to_zone": _clip(str(p.get("to_zone", ""))),
+                "policy_count": _num(p.get("policy_count")),
+            }
             for p in shown
         ],
         "open_pairs_not_shown": len(pairs) - len(shown),
@@ -129,4 +154,6 @@ def summarize_segmentation(report, user: str | None = None):
         "open_pair_count": _num(rep.get("open_pair_count")),
         "has_trust_levels": bool(rep.get("has_trust_levels")),
     }
-    return safe_narrate(SEGMENTATION_PROMPT, payload, feature="zone_segmentation_summary", user=user)
+    return safe_narrate(
+        SEGMENTATION_PROMPT, payload, feature="zone_segmentation_summary", user=user
+    )

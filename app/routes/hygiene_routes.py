@@ -802,9 +802,7 @@ def hygiene_rule_lookup_explain(adom: str):
             return jsonify({"error": f"{key} must be a non-negative integer"}), 400
         out[key] = val
     out["total"] = max(out["total"], rows_len)
-    searched = {
-        k: str(searched.get(k) or "")[:200] for k in ("src", "dst", "port")
-    }
+    searched = {k: str(searched.get(k) or "")[:200] for k in ("src", "dst", "port")}
     narrative, error = build_lookup_narrative(
         adom, searched, {"rows": rows, **out}, session.get("user")
     )

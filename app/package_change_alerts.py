@@ -166,7 +166,9 @@ def _validate_rule_fields(data: dict) -> None:
         raise ValueError("packages must be a list of package names")
     if data.get("format", "html") not in _VALID_FORMATS:
         raise ValueError(f"format must be one of {sorted(_VALID_FORMATS)}")
-    if "ai_summary_enabled" in data and not isinstance(data["ai_summary_enabled"], bool):
+    if "ai_summary_enabled" in data and not isinstance(
+        data["ai_summary_enabled"], bool
+    ):
         raise ValueError("ai_summary_enabled must be true or false")
 
 
@@ -369,8 +371,10 @@ def _ai_summary_html(
         )
         return "", msg
     return (
-        "<h3>AI Summary</h3>"
-        f"<p style='white-space:pre-wrap'>{html.escape(str(text or ''))}</p>",
+        (
+            "<h3>AI Summary</h3>"
+            f"<p style='white-space:pre-wrap'>{html.escape(str(text or ''))}</p>"
+        ),
         None,
     )
 
@@ -529,9 +533,7 @@ def _evaluate_rule(
             _send_email(
                 rule["email"],
                 f"[Package Change] {adom} / {pkg}",
-                build_email_html(
-                    rule["name"], adom, pkg, diffs, generated_at, ai_html
-                ),
+                build_email_html(rule["name"], adom, pkg, diffs, generated_at, ai_html),
                 attachments,
             )
             sent[pkg] = digest

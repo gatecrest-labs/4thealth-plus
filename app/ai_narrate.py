@@ -51,5 +51,5 @@ def safe_narrate(
 ) -> tuple[str | None, str | None]:
     try:
         return narrate_payload(system_prompt, payload, feature=feature, user=user), None
-    except Exception as exc:  # noqa: BLE001 - never let narration raise
+    except Exception as exc:
         return None, str(exc)

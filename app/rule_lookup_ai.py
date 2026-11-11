@@ -41,7 +41,11 @@ def _slim_match(match) -> dict:
     if not isinstance(match, dict):
         return out
     for fld in ("src", "dst", "port"):
-        names = (match.get(fld) or {}).get("names") if isinstance(match.get(fld), dict) else None
+        names = (
+            (match.get(fld) or {}).get("names")
+            if isinstance(match.get(fld), dict)
+            else None
+        )
         if not isinstance(names, dict):
             continue
         out[fld] = {
@@ -83,7 +87,9 @@ def build_lookup_narrative(
         "rows_not_shown": total - len(shown),
         "skipped_count": result.get("skipped_count") or 0,
     }
-    return safe_narrate(SYSTEM_PROMPT, payload, feature="rule_lookup_explain", user=user)
+    return safe_narrate(
+        SYSTEM_PROMPT, payload, feature="rule_lookup_explain", user=user
+    )
 
 
 # ── Natural-language input -> the three Rule Lookup fields ───────────────────
@@ -146,7 +152,9 @@ def parse_nl_query(text: str, user: str | None = None) -> dict:
         v = raw.get(f) if isinstance(raw, dict) else None
         out[f] = v.strip()[:100] if isinstance(v, str) else ""
     if not any(out.values()):
-        raise ValueError("Could not find a source, destination or port in that description")
+        raise ValueError(
+            "Could not find a source, destination or port in that description"
+        )
     for f in _NL_FIELDS:
         if out[f]:
             _nl_validate(f, out[f])
