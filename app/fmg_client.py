@@ -1716,7 +1716,10 @@ class FMGClient:
             data = self._post(body, timeout=120)
             result = data.get("result", [{}])[0]
             if result.get("status", {}).get("code", -1) != 0:
-                raise FMGError(f"FMG error on {url}: {result.get('status')}")
+                raise FMGError(
+                    f"FMG error on {url}: {result.get('status')}",
+                    code=result.get("status", {}).get("code"),
+                )
             page = result.get("data", [])
             if not isinstance(page, list):
                 if strict and page not in (None, {}):

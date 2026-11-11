@@ -364,3 +364,108 @@ def test_registered_jobs_and_boot_priority(monkeypatch):
         "policy_refresh_request_poll",
     }
     assert deferred == [("policy_cache", 3)]
+
+
+def test_first_empty_answer_for_a_never_collected_package_is_held_once():
+    synth, client = _make(adoms=1, packages=2)
+    adom = _adoms(client)[0]
+    real_get = client.get_policies
+    victim = client.get_policy_packages(adom)[0]["path"]
+    client.get_policies = lambda a, p: [] if p == victim else real_get(a, p)
+    first = policy_cache.refresh_once(client)
+    assert any(victim in f and "pending confirmation" in f for f in first["failed"])
+    assert (
+        policy_store.get_policies(adom, victim) is None
+    )  # not served as "collected, empty"
+    policy_cache.refresh_once(client)
+    assert (
+        policy_store.get_policies(adom, victim)["policies"] == []
+    )  # second answer agrees
+
+
+def test_first_empty_object_table_is_held_once():
+    synth, client = _make(adoms=1)
+    adom = _adoms(client)[0]
+    real = client.get_objects
+    client.get_objects = lambda a, kind, scope="all", strict=False: (
+        [] if (kind == "service" and scope == "local") else real(a, kind, scope, strict)
+    )
+    first = policy_cache.refresh_objects(client)
+    assert any("service" in f for f in first["failed"])
+    assert policy_store.get_objects(adom, "service") is None
+    policy_cache.refresh_objects(client)
+    assert policy_store.get_objects(adom, "service")["objects"] == []
+
+
+def test_first_empty_policy_block_and_empty_block_replacing_data_are_held_once():
+    synth, client = _make(adoms=1, packages=2, blocks=1)
+    adom = _adoms(client)[0]
+    real = client.get_pblock_policies
+    client.get_pblock_policies = lambda a, b, strict=False: []
+    first = policy_cache.refresh_once(client)
+    assert any("blk-0" in f and "pending confirmation" in f for f in first["failed"])
+    assert policy_store.get_block(adom, "blk-0") is None
+    client.get_pblock_policies = real
+    policy_cache.refresh_once(client)  # a good answer arrives
+    assert len(policy_store.get_block(adom, "blk-0")["policies"]) == 3
+    client.get_pblock_policies = lambda a, b, strict=False: []
+    for m in policy_store.block_meta(adom):
+        policy_store._set_fetched_at_for_test(
+            "policy_block",
+            (adom, m["block"]),
+            (datetime.now(UTC) - timedelta(hours=9)).isoformat(),
+        )
+    policy_cache.refresh_once(client)  # empty over non-empty: held, data kept
+    assert len(policy_store.get_block(adom, "blk-0")["policies"]) == 3
+    assert policy_store.get_block(adom, "blk-0")["status"] == "error"
+
+
+def test_first_empty_package_list_for_a_new_adom_is_held_once():
+    synth, client = _make(adoms=1)
+    adom = _adoms(client)[0]
+    real = client.get_policy_packages
+    client.get_policy_packages = lambda a, strict=False: []
+    first = policy_cache.refresh_once(client)
+    assert adom in "".join(first["failed"]) and policy_store.get_packages(adom) is None
+    policy_cache.refresh_once(client)
+    assert policy_store.get_packages(adom)["entries"] == []
+    client.get_policy_packages = real
+
+
+def test_global_objects_permission_denied_becomes_an_empty_flagged_table_not_a_forever_fallback():
+    from app import policies
+    from app.fmg_client import FMGError
+
+    synth, client = _make(adoms=1)
+    adom = _adoms(client)[0]
+    real = client.get_objects
+
+    def denied(a, kind, scope="all", strict=False):
+        if scope == "global":
+            raise FMGError("No permission", code=-11)
+        return real(a, kind, scope, strict)
+
+    client.get_objects = denied
+    result = policy_cache.refresh_objects(client)
+    assert (
+        result["failed"] == []
+    )  # a known, permanent condition, not a failure to retry hard
+    row = policy_store.get_objects("global", "address")
+    assert (
+        row["objects"] == []
+        and row["status"] == "error"
+        and "permission" in row["error"].lower()
+    )
+
+    class Boom:
+        def __getattr__(self, name):
+            def call(*a, **k):
+                raise AssertionError(f"live call {name}")
+
+            return call
+
+    Config.POLICY_MAX_AGE_SECS = 0
+    got = policies.objects(Boom(), adom, "address", "all")
+    assert (
+        got == policy_store.get_objects(adom, "address")["objects"]
+    )  # local only, from the store

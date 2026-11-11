@@ -270,8 +270,8 @@ def mark_block_error(adom: str, block: str, error: str) -> None:
 def block_meta(adom: str) -> list[dict]:
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT block, fetched_at, fingerprint, status, error FROM policy_block "
-            "WHERE adom=? ORDER BY block",
+            "SELECT block, fetched_at, fingerprint, status, error, policy_count "
+            "FROM policy_block WHERE adom=? ORDER BY block",
             (adom,),
         ).fetchall()
     return [
@@ -282,6 +282,7 @@ def block_meta(adom: str) -> list[dict]:
             "fingerprint": r[2],
             "status": r[3],
             "error": r[4],
+            "policy_count": r[5],
         }
         for r in rows
     ]
@@ -331,6 +332,16 @@ def touch_objects(scope_key: str, kind: str) -> None:
 
 def mark_objects_error(scope_key: str, kind: str, error: str) -> None:
     _mark_error("policy_objects", {"scope_key": scope_key, "kind": kind}, error)
+
+
+def object_state(scope_key: str, kind: str) -> dict | None:
+    """Status/error/fetched_at of an object table even when it never succeeded."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT fetched_at, status, error FROM policy_objects WHERE scope_key=? AND kind=?",
+            (scope_key, kind),
+        ).fetchone()
+    return {"fetched_at": row[0], "status": row[1], "error": row[2]} if row else None
 
 
 def objects_meta() -> list[dict]:

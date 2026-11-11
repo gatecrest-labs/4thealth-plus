@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 _CYCLE_SECONDS = 900
 _REQUESTS_PER_TICK = 20
 _EMPTY_PENDING = "empty answer pending confirmation"
+_NO_PERMISSION = -11  # FMG: the API token's admin profile lacks access
 _GLOBAL_KINDS = ("address", "addrgrp", "vip", "ippool")
 
 _running = threading.Lock()
@@ -58,6 +59,16 @@ def _non_forti(adoms) -> list[str]:
     ]
 
 
+def _should_hold(
+    items, *, never_collected: bool, had_data: bool, pending: bool
+) -> bool:
+    """Hold an EMPTY answer back once: for a table that has never been collected
+    (a transient empty reply must not be served as "collected, empty") or that
+    currently holds data (so one empty reply cannot wipe it). A second consecutive
+    empty answer, recorded as pending, is accepted."""
+    return not items and not pending and (never_collected or had_data)
+
+
 def _pending_confirmation(prev: dict | None) -> bool:
     return bool(
         prev
@@ -72,11 +83,11 @@ def _pending_confirmation(prev: dict | None) -> bool:
 def _fetch_package(client, adom: str, path: str, prev: dict | None):
     """Fetch and store one package. Returns ``("ok"|"kept", policies|None)``; raises on FMG failure."""
     policies = client.get_policies(adom, path)
-    if (
-        not policies
-        and prev
-        and (prev.get("policy_count") or 0) > 0
-        and not _pending_confirmation(prev)
+    if _should_hold(
+        policies,
+        never_collected=prev is None or prev.get("fetched_at") is None,
+        had_data=bool(prev and (prev.get("policy_count") or 0) > 0),
+        pending=_pending_confirmation(prev),
     ):
         policy_store.mark_policies_error(adom, path, _EMPTY_PENDING)
         return "kept", None
@@ -111,6 +122,15 @@ def _refresh_blocks(client, adom: str, new_refs: set[str], failed: list[str]) ->
             continue
         try:
             rules = client.get_pblock_policies(adom, block, strict=True)
+            if _should_hold(
+                rules,
+                never_collected=m is None or m.get("fetched_at") is None,
+                had_data=bool(m and (m.get("policy_count") or 0) > 0),
+                pending=_pending_confirmation(m),
+            ):
+                policy_store.mark_block_error(adom, block, _EMPTY_PENDING)
+                failed.append(f"{adom}/block:{block} ({_EMPTY_PENDING})")
+                continue
             fp = fingerprint_of(rules)
             if m and m.get("fingerprint") == fp:
                 policy_store.touch_block(adom, block)
@@ -134,8 +154,7 @@ def _refresh_adom(client, adom: str, stats: dict, failed: list[str]) -> None:
     previous = policy_store.get_packages(adom)
     if (
         not entries
-        and previous
-        and previous["entries"]
+        and (previous is None or previous["entries"])
         and adom not in _empty_list_seen
     ):
         _empty_list_seen.add(adom)
@@ -232,7 +251,12 @@ def _refresh_object(client, scope_key: str, kind: str, call_adom: str) -> str | 
         scope = "global" if scope_key == policy_store.GLOBAL_KEY else "local"
         items = client.get_objects(call_adom, kind, scope, True)
         prev = policy_store.get_objects(scope_key, kind)
-        if not items and prev and prev["objects"] and not _pending_confirmation(prev):
+        if _should_hold(
+            items,
+            never_collected=prev is None,
+            had_data=bool(prev and prev["objects"]),
+            pending=_pending_confirmation(policy_store.object_state(scope_key, kind)),
+        ):
             policy_store.mark_objects_error(scope_key, kind, _EMPTY_PENDING)
             return f"{scope_key}/{kind} ({_EMPTY_PENDING})"
         fp = fingerprint_of(items)
@@ -242,6 +266,22 @@ def _refresh_object(client, scope_key: str, kind: str, call_adom: str) -> str | 
             policy_store.put_objects(scope_key, kind, items, fp)
         return None
     except Exception as exc:
+        if (
+            scope_key == policy_store.GLOBAL_KEY
+            and getattr(exc, "code", None) == _NO_PERMISSION
+        ):
+            # The token's admin profile cannot read the global database. That is a
+            # standing condition, not a blip: store an empty table, flagged, so
+            # readers use the ADOM's own objects (as before) instead of going live
+            # on every read forever.
+            logger.warning(
+                "policy_cache: global %s objects denied (FMG -11): %s", kind, exc
+            )
+            policy_store.put_objects(scope_key, kind, [], fingerprint_of([]))
+            policy_store.mark_objects_error(
+                scope_key, kind, f"global objects unavailable (no permission): {exc}"
+            )
+            return None
         logger.warning("policy_cache: objects %s/%s failed: %s", scope_key, kind, exc)
         policy_store.mark_objects_error(scope_key, kind, str(exc))
         return f"{scope_key}/{kind}"

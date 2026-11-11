@@ -115,7 +115,7 @@ def pkg_settings(client, adom: str, pkg_path: str, fresh: bool = False) -> dict:
     if _is_system_adom(adom):
         return {}
     entry = _entry(adom, pkg_path)
-    if entry is not None:
+    if entry is not None and "package settings" in entry:
         return _hit(entry.get("package settings") or {})
     _fallback()
     return client.get_pkg_settings(adom, pkg_path)
@@ -127,7 +127,7 @@ def pkg_scope(client, adom: str, pkg_path: str, fresh: bool = False) -> list:
     if _is_system_adom(adom):
         return []
     entry = _entry(adom, pkg_path)
-    if entry is not None:
+    if entry is not None and ("scope member" in entry or "scope_member" in entry):
         scope = entry.get("scope member") or entry.get("scope_member") or []
         return _hit(scope if isinstance(scope, list) else [])
     _fallback()

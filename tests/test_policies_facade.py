@@ -316,3 +316,25 @@ def test_generation_none_when_never_collected_or_flag_off(monkeypatch, rig):
     assert policies.generation("FortiAnalyzer") is None
     monkeypatch.setattr(Config, "POLICY_STORE", False)
     assert policies.generation(adom) is None
+
+
+def test_package_entry_without_the_settings_or_scope_key_goes_live(rig):
+    """A stored list entry that omits the key is 'unknown', not 'empty': ask FMG."""
+    real, adom, _ = rig
+    policy_store.put_packages(adom, [{"name": "bare", "path": "bare"}])
+    spy = Spy(real)
+    policies.pkg_settings(spy, adom, "bare")
+    policies.pkg_scope(spy, adom, "bare")
+    assert spy.calls == ["get_pkg_settings", "get_pkg_scope_members"]
+    assert policies.counters()["fallbacks"] == 2
+
+
+def test_package_entry_with_empty_settings_and_scope_is_served_from_the_store(rig):
+    real, adom, _ = rig
+    policy_store.put_packages(
+        adom, [{"name": "p", "path": "p", "package settings": {}, "scope member": []}]
+    )
+    boom = Spy(boom=True)
+    assert policies.pkg_settings(boom, adom, "p") == {}
+    assert policies.pkg_scope(boom, adom, "p") == []
+    assert boom.calls == []
