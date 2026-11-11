@@ -99,6 +99,7 @@ import time as _time
 from datetime import UTC, datetime
 
 from app import boot_warmup, collector_store, hygiene_pkg_store, inventory
+from app import policies as policy_facade
 from app.config import Config
 
 logger = logging.getLogger(__name__)
@@ -648,61 +649,65 @@ def _compute_package_hygiene(policies: list[dict]) -> dict:
     }
 
 
-def _package_hygiene(client, adom: str, pkg_path: str) -> dict | None:
-    """One package's hygiene result, from the cache when ``POLICY_STORE`` allows.
+def _package_hygiene(
+    client, adom: str, pkg_path: str, state: dict | None = None
+) -> dict | None:
+    """One package's hygiene result.
 
-    A cached entry younger than the package's jittered TTL is reused without any
-    FMG call. Otherwise the policies are fetched; an unchanged fingerprint only
-    refreshes the entry's age. If the fetch fails, an entry younger than twice
-    the TTL is reused; anything older is skipped (None), as without the cache.
+    ``POLICY_STORE`` off: fetch the policies from FMG and compute, as always.
+    On: policies come from the policy store (the collector keeps it fresh). If the
+    store's fingerprint for the package equals the one the cached findings were
+    computed from, those findings are reused without loading the policy list at
+    all; otherwise the checks run once on the stored policies and the result is
+    cached under that fingerprint. ``state`` is ``policies.package_state(adom)``.
+    The result carries ``fetched_at``, the age of the data it is based on.
     """
-    use_cache = bool(Config.POLICY_STORE)
-    cached = None
-    if use_cache:
+    if not Config.POLICY_STORE:
         try:
-            cached = hygiene_pkg_store.get(adom, pkg_path)
-        except hygiene_pkg_store.HygienePkgStoreError as exc:
+            policy_list = client.get_policies(adom, pkg_path)
+        except Exception as exc:
             logger.warning(
-                "executive_summary_cache: hygiene cache unreadable, fetching: %s", exc
+                "executive_summary_cache: get_policies(%s, %s) failed: %s",
+                adom,
+                pkg_path,
+                exc,
             )
-            use_cache = False
-    ttl = hygiene_pkg_store.effective_ttl_seconds(adom, pkg_path) if use_cache else 0.0
-    if cached is not None and (cached["age_seconds"] or 0.0) < ttl:
-        return cached
+            return None
+        return _compute_package_hygiene(policy_list)
+
+    info = (state or {}).get(pkg_path)
+    cached = None
     try:
-        policies = client.get_policies(adom, pkg_path)
+        cached = hygiene_pkg_store.get(adom, pkg_path)
+    except hygiene_pkg_store.HygienePkgStoreError as exc:
+        logger.warning("executive_summary_cache: hygiene cache unreadable: %s", exc)
+    if info and cached and cached["fingerprint"] == info["fingerprint"]:
+        return {**cached, "fetched_at": info["fetched_at"]}
+    try:
+        policy_list = policy_facade.policies(client, adom, pkg_path)
     except Exception as exc:
         logger.warning(
-            "executive_summary_cache: get_policies(%s, %s) failed: %s",
-            adom,
-            pkg_path,
-            exc,
+            "executive_summary_cache: policies(%s, %s) failed: %s", adom, pkg_path, exc
         )
-        if cached is not None and (cached["age_seconds"] or 0.0) < 2 * ttl:
-            return cached
         return None
-    if not use_cache:
-        return _compute_package_hygiene(policies)
-    fingerprint = hygiene_pkg_store.fingerprint(policies)
+    result = _compute_package_hygiene(policy_list)
+    result["fetched_at"] = info["fetched_at"] if info else None
     try:
-        if cached is not None and cached["fingerprint"] == fingerprint:
-            hygiene_pkg_store.touch(adom, pkg_path)
-            return cached
-        result = _compute_package_hygiene(policies)
         hygiene_pkg_store.put(
             adom,
             pkg_path,
-            fingerprint=fingerprint,
+            fingerprint=info["fingerprint"]
+            if info
+            else hygiene_pkg_store.fingerprint(policy_list),
             policy_count=result["policy_count"],
             score_findings=result["score_findings"],
             findings=result["findings"],
             addr_refs=result["addr_refs"],
             svc_refs=result["svc_refs"],
         )
-        return result
     except hygiene_pkg_store.HygienePkgStoreError as exc:
         logger.warning("executive_summary_cache: hygiene cache write failed: %s", exc)
-        return cached if cached is not None else _compute_package_hygiene(policies)
+    return result
 
 
 def _run_hygiene_sweep(app) -> bool:
@@ -745,7 +750,7 @@ def _run_hygiene_sweep(app) -> bool:
 
             for adom in adom_names:
                 try:
-                    packages = client.get_policy_packages(adom)
+                    packages = policy_facade.packages(client, adom)
                 except Exception as exc:
                     logger.warning(
                         "executive_summary_cache: get_policy_packages(%s) failed: %s",
@@ -763,12 +768,13 @@ def _run_hygiene_sweep(app) -> bool:
                 adom_svc_refs: set[str] = set()
                 adom_had_policies = False
                 listed: set[str] = set()
+                state = policy_facade.package_state(adom)
                 for pkg in packages:
                     pkg_path = pkg.get("path", pkg.get("name", ""))
                     if not pkg_path:
                         continue
                     listed.add(pkg_path)
-                    result = _package_hygiene(client, adom, pkg_path)
+                    result = _package_hygiene(client, adom, pkg_path, state)
                     if result is None:
                         continue
                     used_at = result.get("fetched_at")
@@ -803,10 +809,10 @@ def _run_hygiene_sweep(app) -> bool:
                 if not adom_had_policies:
                     continue
                 try:
-                    addresses = client.get_address_objects(adom)
-                    addr_groups = client.get_address_groups(adom)
-                    services = client.get_service_objects(adom)
-                    svc_groups = client.get_service_groups(adom)
+                    addresses = policy_facade.objects(client, adom, "address")
+                    addr_groups = policy_facade.objects(client, adom, "addrgrp")
+                    services = policy_facade.objects(client, adom, "service")
+                    svc_groups = policy_facade.objects(client, adom, "svcgrp")
                     unused = find_unused_objects_from_refs(
                         adom_addr_refs,
                         adom_svc_refs,

@@ -16,6 +16,7 @@ import time as _time
 from datetime import UTC, datetime
 
 from app import boot_warmup, inventory
+from app import policies as policy_facade
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,8 @@ def _run_job(app):
             # ── Step 3: count policy rules — only ADOMs that have devices ─
             for adom in adoms_with_devices:
                 try:
-                    packages = client.get_policy_packages(adom)
+                    packages = policy_facade.packages(client, adom)
+                    stored_counts = policy_facade.package_counts(adom)
                     logger.info(
                         "summary_job: ADOM %s — %d packages to count",
                         adom,
@@ -147,7 +149,9 @@ def _run_job(app):
                         pkg_path = pkg.get("path", pkg.get("name", ""))
                         if not pkg_path:
                             continue
-                        count = client.get_policy_count(adom, pkg_path)
+                        count = stored_counts.get(pkg_path)
+                        if count is None:
+                            count = client.get_policy_count(adom, pkg_path)
                         rules_total += count
                         adom_rule_count += count
                     adom_rules[adom] = adom_rule_count

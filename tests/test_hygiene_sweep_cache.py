@@ -1,4 +1,8 @@
-"""Hygiene sweep reuses cached per-package results under POLICY_STORE (Phase 3, Task 5)."""
+"""Hygiene sweep equivalence with POLICY_STORE on and an empty policy store (falls back live).
+
+Phase 3 reused cached results by TTL inside the sweep; Phase 4 moved fetching, TTL and
+refetch scheduling to the collector (tests/test_policy_cache.py) and the sweep now reads
+the policy store (tests/test_policy_consumers_background.py)."""
 
 import copy
 from datetime import UTC, datetime, timedelta
@@ -71,32 +75,6 @@ def test_cold_cache_results_equal_flag_off_results(monkeypatch, rig):
     assert len(_cached_keys()) == 8  # 2 ADOMs x 4 packages cached
 
 
-def test_second_sweep_makes_no_policy_fetches_inside_ttl(monkeypatch, rig):
-    synth, _ = rig
-    first = _sweep(monkeypatch, True)
-    synth.calls.clear()
-    second = _sweep(monkeypatch, True)
-    assert _policy_fetches(synth) == 0
-    assert second == first
-
-
-def test_expired_entries_are_refetched_and_unchanged_fingerprint_is_touched_only(
-    monkeypatch, rig
-):
-    synth, _ = rig
-    first = _sweep(monkeypatch, True)
-    _age_all(BASE * 1.3)  # past every package's jittered TTL
-    synth.calls.clear()
-    puts = []
-    real_put = hps.put
-    with patch.object(hps, "put", lambda *a, **k: (puts.append(1), real_put(*a, **k))):
-        again = _sweep(monkeypatch, True)
-    assert _policy_fetches(synth) == 8
-    assert puts == []  # nothing changed: touched, not rewritten
-    assert again == first
-    assert all(hps.get(a, p)["age_seconds"] < 60 for a, p in _cached_keys())
-
-
 def test_changed_policy_is_detected_by_fingerprint_and_findings_update(
     monkeypatch, rig
 ):
@@ -137,28 +115,6 @@ def test_deleted_package_disappears_within_one_sweep(monkeypatch, rig):
     assert after["rule_count_total"] < _sweep(monkeypatch, False)["rule_count_total"]
 
 
-def test_failed_refetch_reuses_entry_under_2x_ttl_else_skips(monkeypatch, rig):
-    _, client = rig
-    first = _sweep(monkeypatch, True)
-    real_get = client.get_policies
-
-    def failing(adom, pkg):
-        raise RuntimeError("fmg down")
-
-    _age_all(BASE * 1.3)  # expired (> TTL) but younger than 2 x TTL for every package
-    client.get_policies = failing
-    reused = _sweep(monkeypatch, True)
-    assert reused == first
-    _age_all(BASE * 16)  # older than 2 x the largest TTL
-    skipped = _sweep(monkeypatch, True)
-    client.get_policies = real_get
-    assert skipped["rule_count_total"] == 0
-    assert (
-        skipped["hygiene_score"] != first["hygiene_score"]
-        or first["hygiene_score"] is None
-    )
-
-
 def test_mixed_fresh_and_cached_totals_equal_full_refetch_totals(monkeypatch, rig):
     _sweep(monkeypatch, True)
     keys = _cached_keys()
@@ -195,39 +151,3 @@ def test_unreadable_store_falls_back_to_fetching(monkeypatch, rig):
     for fn in ("get", "put", "touch", "delete_missing"):
         monkeypatch.setattr(hps, fn, broken)
     assert _sweep(monkeypatch, True) == legacy
-
-
-def test_refetch_load_is_spread(monkeypatch):
-    synth = SyntheticFMG(
-        adoms=1, devices=5, packages_per_adom=60, rules_per_package=5, seed=2
-    )
-    client = FMGClient(host="fmg.example", token="t")
-    client._post = synth.post
-    monkeypatch.setattr("app.fmg_helpers.make_client", lambda: client)
-    monkeypatch.setattr(Config, "HYGIENE_PACKAGE_TTL_HOURS", 6)
-    _sweep(monkeypatch, True)
-    _age_all(BASE * 0.9)  # inside the jitter band: some expired, most not
-    synth.calls.clear()
-    _sweep(monkeypatch, True)
-    refetched = _policy_fetches(synth)
-    assert 0 < refetched < 60
-
-
-def test_rule_hygiene_reports_the_age_of_the_data_it_used(monkeypatch, rig):
-    monkeypatch.setattr(Config, "POLICY_STORE", True)
-    assert esc._run_hygiene_sweep(object()) is True
-    fresh = esc.get_summary()["rule_hygiene"]
-    assert fresh["data_as_of"] <= fresh["collected_at"]
-    assert (
-        datetime.fromisoformat(fresh["collected_at"])
-        - datetime.fromisoformat(fresh["data_as_of"])
-    ).total_seconds() < 120
-
-    _age_all(3 * 3600)  # entries 3 h old, still inside every package's TTL
-    assert esc._run_hygiene_sweep(object()) is True
-    cached = esc.get_summary()["rule_hygiene"]
-    lag = (
-        datetime.fromisoformat(cached["collected_at"])
-        - datetime.fromisoformat(cached["data_as_of"])
-    ).total_seconds()
-    assert 3 * 3600 - 120 <= lag <= 3 * 3600 + 120  # oldest entry used is ~3 h old

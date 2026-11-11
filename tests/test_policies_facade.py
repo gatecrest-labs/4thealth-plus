@@ -243,3 +243,44 @@ def test_system_adoms_still_live_when_flag_off(monkeypatch, rig):
     assert policies.packages(OnlyPackages(), "FortiCarrier") == [
         {"name": "p", "path": "p"}
     ]
+
+
+def test_package_state_has_fingerprint_age_and_count_for_fresh_rows(rig):
+    real, adom, path = rig
+    state = policies.package_state(adom)
+    assert set(state) == {p["path"] for p in real.get_policy_packages(adom)}
+    row = state[path]
+    meta = {m["pkg"]: m for m in policy_store.package_meta(adom)}[path]
+    assert row["fingerprint"] == meta["fingerprint"] and row["fingerprint"]
+    # 12 rules + 1 policy-block reference rule per package in this fixture
+    assert row["policy_count"] == len(real.get_policies(adom, path)) == 13
+    assert row["fetched_at"] and 0 <= row["age_seconds"] < 60
+
+
+def test_package_state_skips_stale_and_never_collected_rows(rig):
+    _, adom, path = rig
+    policy_store._set_fetched_at_for_test("policy_pkg", (adom, path), _old(100 * 3600))
+    policy_store.mark_policies_error(adom, "ghost", "never fetched")
+    state = policies.package_state(adom)
+    assert path not in state and "ghost" not in state and state
+
+
+def test_package_state_empty_when_flag_off_or_system_adom_or_store_error(
+    monkeypatch, rig
+):
+    _, adom, _ = rig
+    assert policies.package_state("FortiAnalyzer") == {}
+
+    def broken(*a, **k):
+        raise policy_store.PolicyStoreError("io")
+
+    monkeypatch.setattr(policy_store, "package_meta", broken)
+    assert policies.package_state(adom) == {}
+    monkeypatch.setattr(Config, "POLICY_STORE", False)
+    assert policies.package_state(adom) == {}
+
+
+def test_package_counts_equal_client_policy_count(rig):
+    real, adom, path = rig
+    counts = policies.package_counts(adom)
+    assert counts[path] == real.get_policy_count(adom, path)

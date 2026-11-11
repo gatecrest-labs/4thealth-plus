@@ -199,6 +199,42 @@ def objects(client, adom: str, kind: str, scope: str = "all") -> list[dict]:
     return live(adom, scope=scope)
 
 
+# ── per-package state (no blobs loaded) ──────────────────────────────────────
+
+
+def package_state(adom: str) -> dict[str, dict]:
+    """``{package path: {fingerprint, fetched_at, age_seconds, policy_count, status}}``
+    for the ADOM's packages that have fresh stored data; ``{}`` when the layer is
+    off, the ADOM is a system ADOM or the store is unreadable. No policy blob is
+    loaded, so a sweep can tell cheaply which packages are unchanged."""
+    if not _enabled() or _is_system_adom(adom):
+        return {}
+    try:
+        meta = policy_store.package_meta(adom)
+    except policy_store.PolicyStoreError as exc:
+        _store_error(exc)
+        return {}
+    return {
+        m["pkg"]: {
+            k: m[k]
+            for k in (
+                "fingerprint",
+                "fetched_at",
+                "age_seconds",
+                "policy_count",
+                "status",
+            )
+        }
+        for m in meta
+        if m["fetched_at"] and _fresh(m["age_seconds"])
+    }
+
+
+def package_counts(adom: str) -> dict[str, int]:
+    """``{package path: rule count}`` from the store (see ``package_state``)."""
+    return {path: row["policy_count"] for path, row in package_state(adom).items()}
+
+
 # ── freshness ────────────────────────────────────────────────────────────────
 
 
