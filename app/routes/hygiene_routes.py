@@ -761,6 +761,51 @@ def hygiene_rule_lookup_refresh(adom: str):
     return jsonify({"status": "refreshing"}), 202
 
 
+@bp.route("/api/hygiene/rule-lookup/ai-status")
+@tab_required("rule_hygiene")
+def hygiene_rule_lookup_ai_status():
+    from app.ai_narrate import ai_enabled
+
+    return jsonify({"available": ai_enabled()})
+
+
+@bp.route("/api/hygiene/adoms/<adom>/rule-lookup/explain", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_rule_lookup_explain(adom: str):
+    """Narrate a Rule Lookup result the client already holds. No search, no cache."""
+    from app.ai_narrate import ai_enabled
+    from app.rule_lookup_ai import build_lookup_narrative
+
+    if err := check_adom_access(adom):
+        return err
+    if adom.lower().startswith("forti"):
+        return jsonify({"error": "Unknown ADOM"}), 404
+    if not ai_enabled():
+        return jsonify({"error": "AI Assist is not enabled"}), 503
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+    searched = data.get("searched")
+    rows = data.get("rows")
+    if not isinstance(searched, dict):
+        return jsonify({"error": "searched must be an object"}), 400
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        return jsonify({"error": "rows must be a list of objects"}), 400
+    out = {}
+    for key in ("skipped_count", "total"):
+        val = data.get(key, 0)
+        if isinstance(val, bool) or not isinstance(val, int) or val < 0:
+            return jsonify({"error": f"{key} must be a non-negative integer"}), 400
+        out[key] = val
+    searched = {
+        k: str(searched.get(k) or "")[:200] for k in ("src", "dst", "port")
+    }
+    narrative, error = build_lookup_narrative(
+        adom, searched, {"rows": rows, **out}, session.get("user")
+    )
+    return jsonify({"narrative": narrative, "narrative_error": error})
+
+
 # ── API: object expansion maps (deferred, called after policy table renders) ──
 
 

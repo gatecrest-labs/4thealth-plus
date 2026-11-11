@@ -6,6 +6,7 @@ All notable changes to 4THealth+ are documented in this file.
 
 ### AI features expansion
 - **Added:** shared `app/ai_narrate.py` helper used by the new AI features.
+- **Added: Rule Lookup Explain results.** A button on Rule Lookup results (shown only when AI Assist is on) narrates which rules would allow or deny the searched flow, flags broader/overlap matches as less certain and notes that all/negated rules were not evaluated. It sends the first 25 rows already on the page; no search or cache access.
 
 ### Scale foundations for 1,000+ FortiGates (all layers default off)
 Four layer flags (`INVENTORY_CACHE`, `POLICY_STORE`, `AUDIT_SNAPSHOTS`, `JOB_QUEUE`) switch each area from live FortiManager reads to data the collector keeps in the shared SQLite store. With a flag off, behaviour is unchanged. Measured on a synthetic 1,000-device fleet, background FortiManager calls fell from 3,887.8 to 434.5 per hour (8.9x), and interactive Rule Review, Rule Lookup, hygiene, object lookups, Device Review and PSIRT workaround checks make no per-request FortiManager calls. Design: `docs/superpowers/specs/2026-11-10-scale-1000-fortigates-design.md`; results per phase: `docs/superpowers/measurements/`.

@@ -141,12 +141,14 @@
   <div class="obj-lookup-result-header">
     <span id="rlSummary" class="obj-lookup-summary"></span>
     <div class="hygiene-export-row">
+      <button class="btn btn-sm" id="rlExplainBtn" style="display:none" title="Explain these results with AI">Explain results</button>
       <button class="btn btn-sm" id="rlRefreshBtn" title="Rebuild the cached rules for this ADOM">&#8635; Refresh data</button>
       <button class="btn btn-sm" id="rlExportCsv">&#8659; CSV</button>
       <button class="btn btn-sm" id="rlExportJson">&#8659; JSON</button>
       <button class="btn btn-sm" id="rlExportPdf">&#8659; PDF</button>
     </div>
   </div>
+  <div id="rlExplain" class="rl-banner" style="display:none;white-space:pre-wrap"></div>
   <div id="rlAsOf" class="text-muted" style="font-size:.78rem;margin:.25rem 0"></div>
   <div id="rlPortOnlyBanner" class="rl-banner" style="display:none">
     <span id="rlPortOnlyText"></span>
