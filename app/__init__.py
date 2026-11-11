@@ -62,6 +62,13 @@ def start_all_schedulers(app: Flask) -> None:
 
         init_inventory_scheduler(app)
 
+    # Policy/object store refresh (POLICY_STORE): packages, policies, blocks, objects.
+    if not app.config.get("_POLICY_CACHE_STARTED"):
+        app.config["_POLICY_CACHE_STARTED"] = True
+        from app.policy_cache import init_scheduler as init_policy_scheduler
+
+        init_policy_scheduler(app)
+
     if not app.config.get("_SUMMARY_STARTED"):
         app.config["_SUMMARY_STARTED"] = True
         from app.summary_job import init_scheduler

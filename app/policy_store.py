@@ -353,6 +353,14 @@ def objects_meta() -> list[dict]:
     ]
 
 
+def known_adoms() -> set[str]:
+    """ADOMs that currently have any package or package-list row."""
+    with _conn() as conn:
+        out = {r[0] for r in conn.execute("SELECT DISTINCT adom FROM policy_adom_pkgs")}
+        out |= {r[0] for r in conn.execute("SELECT DISTINCT adom FROM policy_pkg")}
+    return out
+
+
 # ── ADOM-level cleanup ───────────────────────────────────────────────────────
 
 

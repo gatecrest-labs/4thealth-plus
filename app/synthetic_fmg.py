@@ -65,6 +65,7 @@ class SyntheticFMG:
         address_groups: int = 300,
         service_objects: int = 150,
         vip_objects: int = 100,
+        blocks_per_package: int = 0,
     ):
         self.adom_count = adoms
         self.device_count = devices
@@ -78,6 +79,9 @@ class SyntheticFMG:
         self.address_groups = address_groups
         self.service_objects = service_objects
         self.vip_objects = vip_objects
+        # Policy-block reference rules appended to every package (0 = none); the
+        # block names are per ADOM so many packages share the same few blocks.
+        self.blocks_per_package = blocks_per_package
 
         self.calls: Counter[str] = Counter()
         self.unsupported: Counter[str] = Counter()
@@ -172,8 +176,33 @@ class SyntheticFMG:
 
     # ---- generators --------------------------------------------------------
 
+    def _block_rules(self, adom: str, block: str) -> list[dict]:
+        return [
+            {
+                "policyid": i + 1,
+                "name": f"{block}-rule-{i + 1}",
+                "srcintf": ["port1"],
+                "dstintf": ["port2"],
+                "srcaddr": [f"addr-{i}"],
+                "dstaddr": ["all"],
+                "service": ["HTTPS"],
+                "action": 1,
+                "status": 1,
+                "schedule": ["always"],
+                "logtraffic": 2,
+                "comments": "",
+            }
+            for i in range(3)
+        ]
+
     def _policies(self, adom: str, pkg: str) -> list[dict]:
         rng = random.Random(f"{self.seed}:{adom}:{pkg}")
+        rules = self._plain_policies(adom, pkg, rng)
+        for i in range(self.blocks_per_package):
+            rules.append({"policyid": 9000 + i, "_policy_block": f"blk-{i}"})
+        return rules
+
+    def _plain_policies(self, adom: str, pkg: str, rng) -> list[dict]:
         return [
             {
                 "policyid": i + 1,
@@ -441,6 +470,11 @@ class SyntheticFMG:
                 if pkg not in self._pkg_names(adom):
                     return None
                 return _ok(body, url, self._page(first, self._policies(adom, pkg)))
+            if parts[4] == "pblock" and parts[-2:] == ["firewall", "policy"]:
+                block = "/".join(parts[5:-2])
+                if not block.startswith("blk-"):
+                    return None
+                return _ok(body, url, self._page(first, self._block_rules(adom, block)))
             if parts[4:6] == ["_package", "status"] and len(parts) in (6, 7, 8):
                 return self._package_status(body, url, adom, parts)
             if parts[4:7] == ["obj", "firewall", "address"] and len(parts) == 7:
