@@ -354,7 +354,10 @@ async function runAnalysis() {
       const resp = await fetch('/api/audit-review/run/device', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ adom, device, checks, check_params: checkParams }),
+        body:    JSON.stringify({
+          adom, device, checks, check_params: checkParams,
+          live: !!(document.getElementById('drLive') || {}).checked,
+        }),
       });
       if (resp.status === 401) { location.href = '/login'; return; }
       const data = await resp.json();
@@ -539,7 +542,7 @@ function renderTable() {
   const tbody = document.getElementById('drTbody');
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No results match the current filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="${window._auditSnapshots ? 7 : 6}" style="text-align:center;color:var(--text-muted)">No results match the current filters.</td></tr>';
     document.getElementById('drPager').innerHTML    = '';
     document.getElementById('drSummary').textContent = buildSummary(rows);
     return;
@@ -584,11 +587,18 @@ function renderTable() {
       <td>${scopeHtml}</td>
       <td><code>${esc(row.ip || '—')}</code></td>
       <td>${detailHtml}</td>
+      ${window._auditSnapshots ? `<td style="font-size:.8rem;white-space:nowrap" title="${esc(row.source || '')}">${esc(asOf(row.collected_at))}${row.source === 'live' ? ' <span class="dr-vdom-badge">live</span>' : ''}</td>` : ''}
     </tr>`;
   }).join('');
 
   document.getElementById('drSummary').textContent = buildSummary(rows);
   renderPager(rows.length);
+}
+
+function asOf(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return isNaN(d) ? '—' : d.toLocaleString();
 }
 
 function buildSummary(rows) {
@@ -640,6 +650,7 @@ function exportCsv() {
     '',
   ].join('\r\n');
   const cols = ['Device', 'Check', 'Result', 'Interface/Scope', 'IP Address', 'Detail/Protocols'];
+  if (window._auditSnapshots) cols.push('Data as of', 'Source');
   const body = [cols.join(','), ...rows.map(r => [
     r.device,
     r.check || '',
@@ -649,6 +660,7 @@ function exportCsv() {
     r.type === 'system'
       ? (r.detail || '')
       : visibleProtocols(r).map(p => p.name).join(' '),
+    ...(window._auditSnapshots ? [r.collected_at || '', r.source || ''] : []),
   ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\r\n');
   download(`device-review-${meta.adom || 'export'}.csv`, header + body, 'text/csv');
 }

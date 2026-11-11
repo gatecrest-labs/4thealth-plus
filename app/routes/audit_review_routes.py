@@ -38,8 +38,9 @@ import datetime
 
 from flask import Blueprint, jsonify, render_template, request, session
 
-from app import device_data, inventory, registry
+from app import audit_data, device_data, inventory, registry
 from app.app_logger import app_log
+from app.config import Config
 from app.decorators import check_adom_access, tab_required
 from app.device_review import _CHECKS_BY_KEY, CHECKS_META, run_checks
 from app.fmg_client import FMGError
@@ -125,6 +126,42 @@ def _fetch_device_data(
     return device_data.fetch_device_data(client, adom, device, data_keys, device_meta)
 
 
+def _review_device(
+    client,
+    adom: str,
+    name: str,
+    needed: set[str],
+    device_meta: dict | None,
+    check_keys: list[str] | None,
+    check_params: dict,
+    live: bool = False,
+) -> tuple[list[dict], str | None, str | None]:
+    """Run the checks for one device; returns (rows, collected_at, source).
+
+    With ``AUDIT_SNAPSHOTS`` off this is the legacy live path and rows carry no
+    provenance (collected_at/source are None). With it on, data comes from
+    ``audit_data`` and every row is stamped with the age and origin of the data
+    its check actually used.
+    """
+    if not Config.AUDIT_SNAPSHOTS:
+        data = _fetch_device_data(client, adom, name, needed, device_meta)
+        return run_checks(name, data, check_keys, check_params), None, None
+    dd = audit_data.device_data(client, adom, name, needed, device_meta, live=live)
+    keys = check_keys if check_keys is not None else [c["key"] for c in CHECKS_META]
+    rows: list[dict] = []
+    for key in keys:
+        entry = _CHECKS_BY_KEY.get(key)
+        if not entry:
+            continue
+        used = {k: dd.per_key[k] for k in entry.get("data_keys", []) if k in dd.per_key}
+        stamp, source = audit_data.summarise(used)
+        for row in run_checks(name, dd.data, [key], check_params):
+            row["collected_at"] = stamp
+            row["source"] = source
+            rows.append(row)
+    return rows, dd.collected_at, dd.source
+
+
 # ── API: single-device run (used by the per-device progress loop) ─────────────
 
 
@@ -147,6 +184,7 @@ def device_review_run_one():
         check_keys = [k for k in check_keys if k in valid_keys]
 
     needed = _needed_data_keys(check_keys)
+    live = bool(data.get("live"))
 
     try:
         with make_client() as client:
@@ -154,17 +192,32 @@ def device_review_run_one():
             device_meta: dict = {}
             if "device_meta" in needed:
                 try:
-                    device_meta = client.get_device(adom, device) or {}
+                    if Config.AUDIT_SNAPSHOTS:
+                        device_meta = inventory.device(client, adom, device) or {}
+                    else:
+                        device_meta = client.get_device(adom, device) or {}
                 except Exception:
                     device_meta = {}
-            device_data = _fetch_device_data(client, adom, device, needed, device_meta)
+            rows, collected_at, source = _review_device(
+                client,
+                adom,
+                device,
+                needed,
+                device_meta,
+                check_keys,
+                check_params,
+                live,
+            )
     except FMGError as exc:
         return upstream_api_error("audit_review", exc)
     except Exception as exc:
         return internal_api_error("audit_review", exc)
 
-    rows = run_checks(device, device_data, check_keys, check_params)
-    return jsonify({"device": device, "rows": rows})
+    out = {"device": device, "rows": rows}
+    if Config.AUDIT_SNAPSHOTS:
+        out["collected_at"] = collected_at
+        out["source"] = source
+    return jsonify(out)
 
 
 # ── Scheduler entry point (session-free) ─────────────────────────────────────
@@ -175,6 +228,7 @@ def bulk_device_review_adom(
     checks: list[str] | None,
     check_params: dict,
     max_workers: int = 4,
+    live: bool = False,
 ) -> list[dict]:
     """Run device review checks against all devices in an ADOM.
 
@@ -204,11 +258,21 @@ def bulk_device_review_adom(
         ip = dev.get("ip", dev.get("mgmt_ip", ""))
         try:
             with make_client() as c:
-                device_data = _fetch_device_data(c, adom, name, needed, dev)
-            rows = run_checks(
-                name, device_data, checks if checks else None, check_params
-            )
-            return {"device": name, "ip": ip, "rows": rows, "error": None}
+                rows, collected_at, source = _review_device(
+                    c,
+                    adom,
+                    name,
+                    needed,
+                    dev,
+                    checks if checks else None,
+                    check_params,
+                    live,
+                )
+            res = {"device": name, "ip": ip, "rows": rows, "error": None}
+            if Config.AUDIT_SNAPSHOTS:
+                res["collected_at"] = collected_at
+                res["source"] = source
+            return res
         except Exception as exc:
             app_log(
                 "ERROR",
@@ -251,6 +315,7 @@ def device_review_run():
             return jsonify({"error": "No valid check keys provided"}), 400
 
     needed = _needed_data_keys(check_keys)
+    live = bool(data.get("live"))
 
     try:
         with make_client() as client:
@@ -287,14 +352,15 @@ def device_review_run():
                 continue
             reviewed.append(name)
             try:
-                device_data = (
-                    _fetch_device_data(client, adom, name, needed, dev)
-                    if client
-                    else {}
-                )
+                if client:
+                    dev_rows, _at, _src = _review_device(
+                        client, adom, name, needed, dev, check_keys, check_params, live
+                    )
+                else:
+                    dev_rows = run_checks(name, {}, check_keys, check_params)
             except Exception:
-                device_data = {}
-            rows.extend(run_checks(name, device_data, check_keys, check_params))
+                dev_rows = run_checks(name, {}, check_keys, check_params)
+            rows.extend(dev_rows)
     finally:
         if _client_ctx is not None:
             _client_ctx.__exit__(None, None, None)

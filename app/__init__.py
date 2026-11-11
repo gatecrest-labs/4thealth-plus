@@ -373,6 +373,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "csrf_token": ensure_csrf_token(),
             "inventory_cache_enabled": bool(Config.INVENTORY_CACHE),
             "policy_store_enabled": bool(Config.POLICY_STORE),
+            "audit_snapshots_enabled": bool(Config.AUDIT_SNAPSHOTS),
         }
 
     return app

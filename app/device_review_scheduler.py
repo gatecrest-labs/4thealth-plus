@@ -638,6 +638,42 @@ def _build_ai_narrative_html(
     return html, None
 
 
+def _has_provenance(results: list[dict]) -> bool:
+    return any("collected_at" in r for d in results for r in d.get("rows", []))
+
+
+def _oldest_data_note(results: list[dict]) -> str:
+    """HTML note stating how old the oldest device data in a run is (snapshots on)."""
+    stamps = [
+        r["collected_at"]
+        for d in results
+        for r in d.get("rows", [])
+        if r.get("collected_at")
+    ]
+    if not stamps:
+        return ""
+    oldest = min(stamps)
+    try:
+        then = datetime.datetime.fromisoformat(oldest)
+        if then.tzinfo is None:
+            then = then.replace(tzinfo=datetime.UTC)
+        days = int(
+            (datetime.datetime.now(datetime.UTC) - then).total_seconds() // 86400
+        )
+    except ValueError:
+        days = 0
+    age = (
+        "less than a day old"
+        if days < 1
+        else f"{days} day{'s' if days != 1 else ''} old"
+    )
+    return (
+        "<p style='font-family:sans-serif;color:#6b7280'>"
+        f"Data as of {_esc(oldest[:16].replace('T', ' '))} UTC (oldest device data, {age}). "
+        "Findings reflect the last collected device configuration, not a live read.</p>"
+    )
+
+
 def _build_summary_html(
     adom: str,
     results: list[dict],
@@ -691,6 +727,7 @@ def _build_summary_html(
 <p style="font-family:sans-serif;color:#6b7280">Generated: {generated_at}</p>
 <p style="font-family:sans-serif">Devices scanned: {len(results)}</p>
 {error_note}
+{_oldest_data_note(results)}
 {ai_narrative_html}
 {check_summary_html}
 {host_summary_html}
@@ -816,7 +853,11 @@ def _build_attachment_dr(
                 ]
             )
         w.writerow([])
-        w.writerow(["Device", "Check", "Result", "Interface", "VDOM", "IP", "Detail"])
+        prov = _has_provenance(results)
+        w.writerow(
+            ["Device", "Check", "Result", "Interface", "VDOM", "IP", "Detail"]
+            + (["Data as of", "Source"] if prov else [])
+        )
         for row in all_rows:
             w.writerow(
                 [
@@ -828,6 +869,11 @@ def _build_attachment_dr(
                     row.get("ip", ""),
                     _fmt_detail(row),
                 ]
+                + (
+                    [row.get("collected_at") or "", row.get("source") or ""]
+                    if prov
+                    else []
+                )
             )
         return {
             "filename": f"device_review_{safe_adom}_{date_str}.csv",
@@ -873,6 +919,7 @@ def _build_pdf_html_dr(
         )
 
     # ── Findings rows ─────────────────────────────────────────────────────────
+    prov = _has_provenance(results)
     rows_html = ""
     for row in all_rows:
         color = _RESULT_COLOR.get(row.get("result", ""), "#374151")
@@ -887,7 +934,13 @@ def _build_pdf_html_dr(
             f"<td>{_esc(row.get('vdom', ''))}</td>"
             f"<td>{_esc(row.get('ip', ''))}</td>"
             f"<td>{_esc(_fmt_detail(row))}</td>"
-            f"</tr>\n"
+            + (
+                f"<td>{_esc(row.get('collected_at') or '')}</td>"
+                f"<td>{_esc(row.get('source') or '')}</td>"
+                if prov
+                else ""
+            )
+            + "</tr>\n"
         )
 
     # ── Check Summary table ───────────────────────────────────────────────────
@@ -946,6 +999,8 @@ def _build_pdf_html_dr(
         f"<td style='padding:4px 8px;text-align:center'>{grand_total}</td></tr>\n"
     )
 
+    prov_headers = "<th>Data as of</th><th>Source</th>" if prov else ""
+
     return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8">
@@ -1002,7 +1057,7 @@ def _build_pdf_html_dr(
   <thead>
     <tr>
       <th>Device</th><th>Check</th><th>Result</th>
-      <th>Interface</th><th>VDOM</th><th>IP</th><th>Detail</th>
+      <th>Interface</th><th>VDOM</th><th>IP</th><th>Detail</th>{prov_headers}
     </tr>
   </thead>
   <tbody id="dr-findings-tbody">{rows_html}</tbody>

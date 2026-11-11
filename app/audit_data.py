@@ -57,7 +57,7 @@ class DeviceData:
     per_key: dict[str, dict] = field(default_factory=dict)
 
 
-def _summarise(per_key: dict[str, dict]) -> tuple[str | None, str]:
+def summarise(per_key: dict[str, dict]) -> tuple[str | None, str]:
     if not per_key:
         return None, "inventory"
     sources = {v["source"] for v in per_key.values()}
@@ -110,7 +110,7 @@ def device_data(
             _bump("fallbacks", len(missing))
     if "device_meta" in keys:
         data["device_meta"] = device_meta or {}
-    collected_at, source = _summarise(per_key)
+    collected_at, source = summarise(per_key)
     if not per_key:
         collected_at = device_meta_as_of
     return DeviceData(
