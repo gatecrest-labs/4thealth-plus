@@ -24,7 +24,7 @@ const SECTIONS = [
   <li><strong>Map (Beta)</strong> — interactive geographic map of all managed FortiGate devices, colour-coded by ADOM with zoom-based clustering.</li>
 </ul>
 <h3>AI Assist</h3>
-<p>Several tabs offer an optional AI Assist mode — Rule Validation, Config-Delta, and Audit Review (CIS results, Hygiene Analysis findings, and PSIRT advisory extraction all have their own AI touchpoint) — plus an AI trend summary on the Admin page. All are off by default and gated by a single <strong>Admin → AI Assist</strong> toggle. In every case the AI only explains an already-computed result; it never decides a verdict, a check outcome, or a trend by itself — those are always computed deterministically first.</p>
+<p>Several tabs offer an optional AI Assist mode — Rule Validation, Config-Delta, Device Versions (license renewal plan), and Audit Review (CIS results, Hygiene Analysis findings, and PSIRT advisory extraction all have their own AI touchpoint) — plus an AI trend summary on the Admin page. All are off by default and gated by a single <strong>Admin → AI Assist</strong> toggle. In every case the AI only explains an already-computed result; it never decides a verdict, a check outcome, or a trend by itself — those are always computed deterministically first.</p>
 <h3>Status Colours</h3>
 <div class="help-status-list">
   <span class="status-dot green"></span> <span><strong>Green</strong> — device is reachable and all metrics are within normal thresholds.</span>
@@ -107,6 +107,9 @@ const SECTIONS = [
   <li>A status line above the chart shows when the cache was last updated (e.g. <em>Last updated: 4m ago</em>). A spinner indicates the cache is still warming.</li>
   <li>Click <strong>↻ Refresh</strong> (next to the status line or the page-level button) to trigger an immediate background refresh.</li>
 </ul>
+
+<h3>Renewal Plan</h3>
+<p><em>If AI Assist is enabled (Admin → AI Assist):</em> click <strong>Renewal plan</strong> in the License Status section for the devices whose license has expired or expires within 90 days, or whose hardware reaches end-of-support within 12 months, grouped by ADOM with the most urgent first, plus an AI-written suggested renewal order and batching. Pricing and contract terms are not part of the data and are never stated.</p>
 
 <h3>Drilling into a Version (All ADOMs)</h3>
 <ul>

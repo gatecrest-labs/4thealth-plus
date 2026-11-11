@@ -494,6 +494,10 @@ sweep result.
 - `GET  /api/devices/all/license` — fleet-wide `all_devices`, ADOM-access filtered
 - `POST /api/devices/all/license/refresh` — trigger an immediate sweep (non-blocking)
 - `GET  /api/adoms/<adom>/license` — `all_devices` filtered to one ADOM (`check_adom_access` enforced)
+- `GET  /api/devices/all/license/ai-status` — `{available}` (the `ai_assist_enabled` flag)
+- `POST /api/devices/all/license/renewal-plan` — body `{adom?}`; returns `{buckets, narrative, narrative_error}`. See below.
+
+**Renewal plan (AI Assist):** `app/license_renewal_ai.py::build_renewal_buckets(all_devices, lifecycle, as_of)` is deterministic: per-ADOM groups ordered by the soonest of license expiry / hardware EOS, devices tagged `expired|<=30|<=60|<=90|eos_12m`. `lifecycle` is `[{device, adom, platform}]` built from `pending_status_cache` (the same platform source as the executive summary's `_lifecycle_counts`) matched with `app.model_eos.hw_eos_date`; `eos_12m` is applied only to platforms in the EOS table. `build_renewal_plan()` narrates at most 40 devices (+ counts for the rest; feature tag `license_renewal_plan`). The route always returns the buckets; with AI off it skips the LLM (`narrative` and `narrative_error` both null). Without `adom` it is filtered to accessible ADOMs like `/devices/all/license`; with `adom`, `check_adom_access`. The "Renewal plan" button in License Status is hidden unless the status route says available; output is on-screen only (no export).
 
 **FortiGuard Subscriptions table on the Firewalls tab:** the same
 `parse_license_payload()` `subscriptions` dict is also rendered as a table

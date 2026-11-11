@@ -142,3 +142,8 @@ def hw_eos_within(
         return None
     as_of = as_of or datetime.datetime.now(tz=datetime.UTC).date()
     return eos_date <= _add_months(as_of, months)
+
+
+def hw_eos_date(model: str) -> datetime.date | None:
+    """The model's end-of-support date, or None if it isn't in the table."""
+    return _HW_EOS.get(_normalize(model))

@@ -1219,9 +1219,11 @@ function renderLicenseSection(data, adom) {
     <strong>License Status</strong>
     <div class="table-controls-right">
       <span style="color:var(--text-muted);font-size:.85em">${escHtml(lastUpdated)}${escHtml(cacheStatus)}</span>
+      <button class="btn btn-sm btn-ghost" id="licRenewalBtn" style="display:none">Renewal plan</button>
       <button class="btn btn-sm btn-ghost" id="licRefreshBtn">&#8635; Refresh</button>
     </div>
   </div>
+  <div id="licRenewalOut" style="display:none;padding:0 1rem 1rem"></div>
   <div style="padding:1rem">
     ${devices.length === 0
       ? `<p style="color:var(--text-muted)">${data.status === 'pending' ? 'Cache is warming up — check back in a moment.' : 'No devices found.'}</p>`
@@ -1258,12 +1260,66 @@ function renderLicenseSection(data, adom) {
     });
   });
 
+  initRenewalPlan(adom);
+
   // Wire refresh button
   document.getElementById('licRefreshBtn').addEventListener('click', () => {
     fetch('/api/devices/all/license/refresh', { method: 'POST' })
       .then(r => { if (!r.ok) throw new Error(r.status); })
       .then(() => setTimeout(() => loadLicenseStatus(currentAdom), 2000))
       .catch(err => console.warn('License refresh failed:', err));
+  });
+}
+
+/* ── Renewal plan (AI Assist) — button hidden unless the status route says
+   available === true; any error fails closed. Output via textContent only. */
+function initRenewalPlan(adom) {
+  const btn = document.getElementById('licRenewalBtn');
+  const out = document.getElementById('licRenewalOut');
+  if (!btn || !out) return;
+  fetch('/api/devices/all/license/ai-status')
+    .then(r => r.ok ? r.json() : { available: false })
+    .then(d => { if (d && d.available === true) btn.style.display = ''; })
+    .catch(() => {});
+
+  btn.addEventListener('click', () => {
+    out.style.display = '';
+    out.textContent = 'Building renewal plan…';
+    btn.disabled = true;
+    const csrf = document.querySelector('meta[name="csrf-token"]');
+    const headers = { 'Content-Type': 'application/json' };
+    if (csrf) headers['X-CSRF-Token'] = csrf.content;
+    fetch('/api/devices/all/license/renewal-plan', {
+      method: 'POST', headers, body: JSON.stringify(adom ? { adom } : {}),
+    })
+      .then(r => r.json().then(j => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        out.textContent = '';
+        if (!ok) { out.textContent = (j && j.error) || 'Request failed'; return; }
+        const adoms = (j.buckets && j.buckets.adoms) || [];
+        if (!adoms.length) { out.textContent = 'No devices with an expired or expiring license or nearing end-of-support.'; return; }
+        const add = (tag, text, style) => {
+          const el = document.createElement(tag);
+          el.textContent = text;
+          if (style) el.style.cssText = style;
+          out.appendChild(el);
+        };
+        if (j.narrative) add('div', j.narrative, 'white-space:pre-wrap;margin-bottom:.75rem');
+        else if (j.narrative_error) add('div', 'AI plan unavailable: ' + j.narrative_error, 'color:var(--danger);margin-bottom:.75rem');
+        adoms.forEach(a => {
+          add('strong', `${a.adom} (${a.device_count} device${a.device_count === 1 ? '' : 's'})`);
+          const ul = document.createElement('ul');
+          a.devices.forEach(d => {
+            const li = document.createElement('li');
+            li.textContent = `${d.device} — ${d.tags.join(', ')}` +
+              (d.expires ? ` — license ${d.expires}` : '') + (d.hw_eos ? ` — hardware EOS ${d.hw_eos}` : '');
+            ul.appendChild(li);
+          });
+          out.appendChild(ul);
+        });
+      })
+      .catch(err => { out.textContent = 'Request failed: ' + String(err); })
+      .finally(() => { btn.disabled = false; });
   });
 }
 
