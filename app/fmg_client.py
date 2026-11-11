@@ -11,8 +11,10 @@ import threading
 import time
 import warnings
 
-import requests
 import urllib3
+
+from app import fmg_access, fmg_metrics
+from app.config import Config
 
 try:  # POSIX only; the app runs on Linux/macOS
     import fcntl
@@ -186,6 +188,57 @@ def _adom_preview_lock(base_url: str, adom: str, wait_secs: float | None = None)
 _CONF_STATUS_MAP = {0: "unknown", 1: "insync", 2: "outofsync"}
 # db_status: whether FMG DB has been modified since the last install
 _DB_STATUS_MAP = {0: "unknown", 1: "nomod", 2: "modified"}
+
+
+def _status_int(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def normalize_sync_status(devices: list) -> list:
+    """Copies of *devices* with ``conf_status``/``db_status`` as strings.
+
+    Pure: the input (e.g. rows held by the inventory store) is never mutated.
+    Non-dict entries are skipped, unknown values become ``"unknown"``.
+    """
+    result = []
+    for d in devices:
+        if not isinstance(d, dict):
+            continue
+        out = dict(d)
+        out["conf_status"] = _CONF_STATUS_MAP.get(
+            _status_int(d.get("conf_status", 0)), "unknown"
+        )
+        out["db_status"] = _DB_STATUS_MAP.get(
+            _status_int(d.get("db_status", 0)), "unknown"
+        )
+        result.append(out)
+    return result
+
+
+def pkg_status_for(rows: list, device: str, vdom_names: list) -> str:
+    """Package status for one device from ADOM-wide ``_package/status`` rows.
+
+    Same answer as ``FMGClient.get_device_pkg_status``: ``"modified"`` if any
+    listed VDOM is modified/conflict, ``"nomod"`` if any is installed, else
+    ``""`` (unassigned, missing or unknown).
+    """
+    wanted = set(vdom_names)
+    found_nomod = False
+    for row in rows:
+        if not isinstance(row, dict) or row.get("dev") != device:
+            continue
+        if row.get("vdom") not in wanted:
+            continue
+        status = row.get("status", "")
+        if status in ("modified", "conflict"):
+            return "modified"
+        if status == "installed":
+            found_nomod = True
+    return "nomod" if found_nomod else ""
+
 
 _SUMMARY_KEYWORDS = [
     (["firewall policy", "firewall policy6"], "firewall_policy"),
@@ -422,6 +475,42 @@ class FMGError(Exception):
         self.code = code
 
 
+def _rpc_ok(data) -> bool:
+    """True unless any ``result[].status.code`` in an FMG JSON-RPC reply is non-zero."""
+    try:
+        return all(
+            (r.get("status") or {}).get("code", 0) == 0 for r in data.get("result", [])
+        )
+    except Exception:
+        return True
+
+
+_OBJECT_PATHS = {
+    "address": "obj/firewall/address",
+    "addrgrp": "obj/firewall/addrgrp",
+    "vip": "obj/firewall/vip",
+    "ippool": "obj/firewall/ippool",
+    "service": "obj/firewall/service/custom",
+    "svcgrp": "obj/firewall/service/group",
+}
+_GLOBAL_OBJECT_KINDS = frozenset({"address", "addrgrp", "vip", "ippool"})
+
+
+def _object_urls(adom: str, kind: str, scope: str) -> list[str]:
+    """URLs holding *kind* objects for *scope* (local ADOM first, then global)."""
+    path = _OBJECT_PATHS[kind]
+    urls = []
+    if scope in ("all", "local"):
+        urls.append(f"/pm/config/adom/{adom}/{path}")
+    if scope in ("all", "global") and kind in _GLOBAL_OBJECT_KINDS:
+        urls.append(f"/pm/config/global/{path}")
+    return urls
+
+
+def _as_fmg_error(exc: Exception) -> "FMGError":
+    return exc if isinstance(exc, FMGError) else FMGError(str(exc))
+
+
 class FMGClient:
     def __init__(
         self,
@@ -440,10 +529,13 @@ class FMGClient:
         self.timeout = timeout
         self.session = None
         self._req_id = 0
-        self._http = requests.Session()
+        self._http = fmg_access.get_session(verify_ssl)
         self._version: FMGVersion | None = None
         # op name -> {url, code, message} for failures a method swallowed.
         self.degraded: dict[str, dict] = {}
+        # Per-thread stack of lists collecting transport-level proxy failures
+        # (see capture_proxy_failures).
+        self._capture = threading.local()
         # Opt-in traffic capture for building test fixtures (see fmg_recorder).
         self._recorder = None
         record_file = os.environ.get("FMG_RECORD_FILE")
@@ -472,19 +564,61 @@ class FMGClient:
         self._req_id += 1
         return self._req_id
 
-    def _post(self, body: dict) -> dict:
+    def _post(self, body: dict, timeout: int | None = None) -> dict:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-        resp = self._http.post(
-            self.base_url,
-            json=body,
-            verify=self.verify_ssl,
-            timeout=self.timeout,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        method = str(body.get("method", ""))
+        retries = max(0, Config.FMG_RETRIES or 0)
+        call_seconds = 0.0  # last HTTP attempt only: no slot wait, no backoff
+        ok = False
+        attempt = 0
+        waited_total = 0.0
+        try:
+            while True:
+                attempt += 1
+                try:
+                    with fmg_access.slot() as waited:
+                        waited_total += waited
+                        attempt_started = time.monotonic()
+                        try:
+                            resp = self._http.post(
+                                self.base_url,
+                                json=body,
+                                verify=self.verify_ssl,
+                                timeout=timeout
+                                if timeout is not None
+                                else self.timeout,
+                                headers=headers,
+                            )
+                        finally:
+                            call_seconds = time.monotonic() - attempt_started
+                        resp.raise_for_status()
+                    data = resp.json()
+                    ok = _rpc_ok(data)
+                    break
+                except Exception as exc:
+                    status = getattr(
+                        getattr(exc, "response", None), "status_code", None
+                    )
+                    if attempt <= retries and fmg_access.is_retryable(
+                        method, exc, status
+                    ):
+                        fmg_access.sleep(fmg_access.backoff_delay(attempt))
+                        continue
+                    raise
+        finally:
+            first = (body.get("params") or [{}])[0]
+            fmg_metrics.record(
+                method,
+                first.get("url", "") if isinstance(first, dict) else "",
+                call_seconds,
+                ok,
+            )
+            fmg_metrics.record_access(
+                max(0, attempt - 1), waited_total, fmg_access.peak_inflight()
+            )
+            fmg_metrics.flush()
         if self._recorder is not None:
             self._recorder.record(body, data)
         return data
@@ -534,7 +668,6 @@ class FMGClient:
 
     def __exit__(self, *_):
         self.logout()
-        self._http.close()
 
     def _get(self, url: str) -> dict:
         body = {
@@ -592,25 +725,17 @@ class FMGClient:
 
     def get_devices_with_sync_status(self, adom: str) -> list:
         """Return devices in an ADOM with normalized conf_status and db_status strings."""
-        raw = self._get(f"/dvmdb/adom/{adom}/device") or []
-        result = []
-        for d in raw:
-            if not isinstance(d, dict):
-                continue
-            cs_int = d.get("conf_status", 0)
-            try:
-                cs_int = int(cs_int)
-            except (TypeError, ValueError):
-                cs_int = 0
-            d["conf_status"] = _CONF_STATUS_MAP.get(cs_int, "unknown")
-            db_int = d.get("db_status", 0)
-            try:
-                db_int = int(db_int)
-            except (TypeError, ValueError):
-                db_int = 0
-            d["db_status"] = _DB_STATUS_MAP.get(db_int, "unknown")
-            result.append(d)
-        return result
+        return normalize_sync_status(self._get(f"/dvmdb/adom/{adom}/device") or [])
+
+    def get_adom_package_status(self, adom: str) -> list:
+        """Package install status for every device/VDOM in an ADOM, in one call.
+
+        GET /pm/config/adom/<adom>/_package/status returns
+        ``[{dev, vdom, pkg, status, ...}]`` (confirmed on FMG 8.0.2); the per-device
+        URL it replaces cost one call per device per VDOM.
+        """
+        data = self._get(f"/pm/config/adom/{adom}/_package/status")
+        return data if isinstance(data, list) else []
 
     def get_install_preview(self, adom: str, device: str) -> str:
         """Trigger FMG install preview for device, poll until done, return raw CLI diff text.
@@ -880,6 +1005,35 @@ class FMGClient:
 
             return "\n".join(raw_parts)
 
+    @contextlib.contextmanager
+    def capture_proxy_failures(self):
+        """Collect transport-level failures of ``_proxy`` calls made in this thread.
+
+        Yields a list that gains one text per failure: an exception from the
+        transport, an FMG RPC error, or a device FMG could not reach ("No tunnel").
+        An HTTP 4xx/5xx *from the device* is an answer, not a failure. The
+        device getters swallow errors and return ``{}``/``[]``; a caller that
+        stores their output (device snapshots) uses this to tell "the device has
+        nothing configured" from "we could not ask". Captures nest: an inner
+        capture's failures also reach the outer one.
+        """
+        stack = getattr(self._capture, "stack", None)
+        if stack is None:
+            stack = self._capture.stack = []
+        failures: list[str] = []
+        stack.append(failures)
+        try:
+            yield failures
+        finally:
+            stack.pop()
+            if stack:
+                stack[-1].extend(failures)
+
+    def _note_proxy_failure(self, text: str) -> None:
+        stack = getattr(self._capture, "stack", None)
+        if stack:
+            stack[-1].append(text)
+
     def _proxy(self, adom: str, device: str, resource: str) -> dict:
         body = {
             "id": self._next_id(),
@@ -897,10 +1051,18 @@ class FMGClient:
         }
         if self.session:
             body["session"] = self.session
-        data = self._post(body)
+        try:
+            data = self._post(body)
+        except Exception as exc:
+            self._note_proxy_failure(f"{type(exc).__name__}: {exc}")
+            raise
         result = data.get("result", [{}])[0]
         rpc_code = result.get("status", {}).get("code", -1)
         raw = result.get("data", {})
+        if rpc_code != 0:
+            self._note_proxy_failure(
+                f"FMG RPC error {rpc_code}: {result.get('status', {}).get('message', '')}"
+            )
 
         # FMG proxy envelope:
         #   result[0].data → list of per-device dicts
@@ -927,6 +1089,10 @@ class FMGClient:
             and wrapper_status.get("code", 0) != 0
             and "response" not in device_wrapper
         ):
+            self._note_proxy_failure(
+                f"device unreachable via FMG ({wrapper_status.get('code')}): "
+                f"{str(wrapper_status.get('message', '')).strip()}"
+            )
             return {
                 "rpc_code": rpc_code,
                 "http_status": 502,
@@ -958,6 +1124,15 @@ class FMGClient:
             payload = response.get("results", response)
         else:
             payload = response
+
+        # A device answering 4xx/5xx to a config read (e.g. 403 for the API admin
+        # profile, 500 when busy) has not told us its configuration: record it so
+        # a snapshot never stores the error body as the config. Only a missing HA
+        # status (404 on a standalone unit) is a legitimate "not configured".
+        if http_status >= 400 and not (
+            http_status == 404 and "system/ha-status" in resource
+        ):
+            self._note_proxy_failure(f"device HTTP {http_status} for {resource}")
 
         return {"rpc_code": rpc_code, "http_status": http_status, "payload": payload}
 
@@ -1086,18 +1261,23 @@ class FMGClient:
                 found_nomod = True
         return "nomod" if found_nomod else ""
 
-    def get_policy_packages(self, adom: str) -> list:
+    def get_policy_packages(self, adom: str, strict: bool = False) -> list:
         """Return all policy packages in an ADOM, recursing into folder subobj lists.
 
         Each returned dict has 'name' (display name) and 'path' (the slash-joined
         folder/package string needed for API calls, e.g. 'MyFolder/MyPackage').
+        ``strict=True`` raises ``FMGError`` instead of returning ``[]`` on failure.
         """
         try:
             data = self._get(f"/pm/pkg/adom/{adom}")
             if not isinstance(data, list):
+                if strict and data not in ({}, None):
+                    raise FMGError(f"unexpected package list shape for ADOM {adom}")
                 return []
             return self._flatten_packages(data, prefix="")
-        except Exception:
+        except Exception as exc:
+            if strict:
+                raise _as_fmg_error(exc) from exc
             return []
 
     @staticmethod
@@ -1118,22 +1298,25 @@ class FMGClient:
                 result.append({**item, "path": f"{prefix}{name}"})
         return result
 
-    def get_pkg_settings(self, adom: str, pkg_path: str) -> dict:
+    def get_pkg_settings(self, adom: str, pkg_path: str, strict: bool = False) -> dict:
         """Return the 'package settings' dict for a policy package.
 
         The last component of pkg_path is the package name; the leading parts
         are folder names.  The API path for the package object itself is:
           /pm/pkg/adom/<adom>/<folder1>/<folder2>/.../<pkg_name>
-        Returns {} on any error.
+        Returns {} on any error (``strict=True`` raises ``FMGError`` instead).
         """
         try:
             data = self._get(f"/pm/pkg/adom/{adom}/{pkg_path}")
-            if isinstance(data, dict):
+            if isinstance(data, dict) and data:
                 return data.get("package settings") or {}
-            if isinstance(data, list) and data:
+            if isinstance(data, list) and data and isinstance(data[0], dict):
                 return data[0].get("package settings") or {}
-        except Exception:
-            pass
+            if strict:
+                raise FMGError(f"package {pkg_path} not found in ADOM {adom}")
+        except Exception as exc:
+            if strict:
+                raise _as_fmg_error(exc) from exc
         return {}
 
     def get_policies(self, adom: str, pkg_path: str) -> list:
@@ -1306,23 +1489,30 @@ class FMGClient:
         except Exception:
             return 0
 
-    def get_pkg_scope_members(self, adom: str, pkg_path: str) -> list:
+    def get_pkg_scope_members(
+        self, adom: str, pkg_path: str, strict: bool = False
+    ) -> list:
         """Return the list of devices/groups this policy package is installed on.
 
         Each entry is typically {"name": "FW01", "vdom": "root"}.
-        Returns [] on error or when the package has no explicit scope.
+        Returns [] on error or when the package has no explicit scope
+        (``strict=True`` raises ``FMGError`` on error or a missing package).
         """
         try:
             data = self._get(f"/pm/pkg/adom/{adom}/{pkg_path}")
             if isinstance(data, list) and data:
                 data = data[0]
-            if not isinstance(data, dict):
+            if not isinstance(data, dict) or (strict and not data):
+                if strict:
+                    raise FMGError(f"package {pkg_path} not found in ADOM {adom}")
                 return []
             scope = data.get("scope member") or data.get("scope_member") or []
             if isinstance(scope, list):
                 return scope
             return []
-        except Exception:
+        except Exception as exc:
+            if strict:
+                raise _as_fmg_error(exc) from exc
             return []
 
     def get_device_group_names(self, adom: str) -> set[str]:
@@ -1559,7 +1749,7 @@ class FMGClient:
                 continue
         return servers
 
-    def _get_paged(self, url: str, page_size: int = 1000) -> list:
+    def _get_paged(self, url: str, page_size: int = 1000, strict: bool = False) -> list:
         """Paginated GET for endpoints that may return large lists.
 
         Sends range=[offset, page_size] until a short page is returned.
@@ -1576,23 +1766,17 @@ class FMGClient:
             }
             if self.session:
                 body["session"] = self.session
-            headers = {"Content-Type": "application/json", "Accept": "application/json"}
-            if self.token:
-                headers["Authorization"] = f"Bearer {self.token}"
-            resp = self._http.post(
-                self.base_url,
-                json=body,
-                verify=self.verify_ssl,
-                timeout=120,
-                headers=headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+            data = self._post(body, timeout=120)
             result = data.get("result", [{}])[0]
             if result.get("status", {}).get("code", -1) != 0:
-                raise FMGError(f"FMG error on {url}: {result.get('status')}")
+                raise FMGError(
+                    f"FMG error on {url}: {result.get('status')}",
+                    code=result.get("status", {}).get("code"),
+                )
             page = result.get("data", [])
             if not isinstance(page, list):
+                if strict and page not in (None, {}):
+                    raise FMGError(f"unexpected data shape from {url}")
                 break
             all_items.extend(page)
             if len(page) < page_size:
@@ -1600,81 +1784,71 @@ class FMGClient:
             offset += page_size
         return all_items
 
-    def get_address_objects(self, adom: str, scope: str = "all") -> list:
+    def get_objects(
+        self, adom: str, kind: str, scope: str = "all", strict: bool = False
+    ) -> list:
+        """Firewall objects of one *kind* (see ``_OBJECT_PATHS``) for an ADOM.
+
+        ``scope`` is ``local`` (the ADOM), ``global`` (the shared database) or
+        ``all`` (local then global). Services have no global pool. By default a
+        failed read is swallowed and contributes nothing; with ``strict=True`` any
+        FMG error, exception or unexpected shape raises ``FMGError`` so a caller
+        that stores the result can tell "empty" from "failed".
+        """
+        results: list = []
+        for url in _object_urls(adom, kind, scope):
+            try:
+                if kind in ("service", "svcgrp") and not strict:
+                    data = self._get(url)  # legacy: single un-paged read
+                    results.extend(data if isinstance(data, list) else [])
+                else:
+                    # The default path calls _get_paged exactly as before (callers and
+                    # tests patch it with a one-argument function).
+                    results.extend(
+                        self._get_paged(url, strict=True)
+                        if strict
+                        else self._get_paged(url)
+                    )
+            except Exception as exc:
+                if strict:
+                    raise _as_fmg_error(exc) from exc
+        return results
+
+    def get_address_objects(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
         """Return firewall address objects filtered by scope: 'local', 'global', or 'all'."""
-        urls = []
-        if scope in ("all", "local"):
-            urls.append(f"/pm/config/adom/{adom}/obj/firewall/address")
-        if scope in ("all", "global"):
-            urls.append("/pm/config/global/obj/firewall/address")
-        results: list = []
-        for url in urls:
-            try:
-                results.extend(self._get_paged(url))
-            except Exception:
-                pass
-        return results
+        return self.get_objects(adom, "address", scope, strict)
 
-    def get_address_groups(self, adom: str, scope: str = "all") -> list:
+    def get_address_groups(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
         """Return firewall address groups filtered by scope: 'local', 'global', or 'all'."""
-        urls = []
-        if scope in ("all", "local"):
-            urls.append(f"/pm/config/adom/{adom}/obj/firewall/addrgrp")
-        if scope in ("all", "global"):
-            urls.append("/pm/config/global/obj/firewall/addrgrp")
-        results: list = []
-        for url in urls:
-            try:
-                results.extend(self._get_paged(url))
-            except Exception:
-                pass
-        return results
+        return self.get_objects(adom, "addrgrp", scope, strict)
 
-    def get_service_objects(self, adom: str, scope: str = "all") -> list:
+    def get_service_objects(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
         """Return all custom service objects in an ADOM (services have no global pool)."""
-        if scope == "global":
-            return []
-        try:
-            data = self._get(f"/pm/config/adom/{adom}/obj/firewall/service/custom")
-            return data if isinstance(data, list) else []
-        except Exception:
-            return []
+        return self.get_objects(adom, "service", scope, strict)
 
-    def get_service_groups(self, adom: str, scope: str = "all") -> list:
+    def get_service_groups(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
         """Return all service groups in an ADOM (service groups have no global pool)."""
-        if scope == "global":
-            return []
-        try:
-            data = self._get(f"/pm/config/adom/{adom}/obj/firewall/service/group")
-            return data if isinstance(data, list) else []
-        except Exception:
-            return []
+        return self.get_objects(adom, "svcgrp", scope, strict)
 
-    def get_vip_objects(self, adom: str) -> list:
-        """Return all firewall VIP objects in an ADOM plus the global database."""
-        results: list = []
-        for url in (
-            f"/pm/config/adom/{adom}/obj/firewall/vip",
-            "/pm/config/global/obj/firewall/vip",
-        ):
-            try:
-                results.extend(self._get_paged(url))
-            except Exception:
-                pass
-        return results
+    def get_vip_objects(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
+        """Return firewall VIP objects: the ADOM's, the global database's, or both."""
+        return self.get_objects(adom, "vip", scope, strict)
 
-    def get_ippool_objects(self, adom: str) -> list:
-        """Return all firewall IP pool objects in an ADOM plus the global database."""
-        results: list = []
-        for url in (
-            f"/pm/config/adom/{adom}/obj/firewall/ippool",
-            "/pm/config/global/obj/firewall/ippool",
-        ):
-            try:
-                results.extend(self._get_paged(url))
-            except Exception:
-                pass
-        return results
+    def get_ippool_objects(
+        self, adom: str, scope: str = "all", strict: bool = False
+    ) -> list:
+        """Return firewall IP pool objects: the ADOM's, the global database's, or both."""
+        return self.get_objects(adom, "ippool", scope, strict)
 
     def get_device_vip_objects(self, device: str, vdom: str = "root") -> list:
         """Return VIP objects from a specific device/vdom via the per-device DB path.

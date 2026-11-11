@@ -1,0 +1,21 @@
+{
+  "adoms": 5,
+  "db_bytes": 2109440,
+  "errors": [],
+  "objects_seconds": 0.12,
+  "packages": 400,
+  "read_p50_ms": 1.0,
+  "read_p95_ms": 6.02,
+  "readers": 2,
+  "reads": 2094,
+  "rule_lookup": {
+    "adom": "Ent-1",
+    "build_seconds": 0.303,
+    "fmg_calls": 0,
+    "peak_mb": 31.8,
+    "rules": 24000,
+    "status": "ok"
+  },
+  "rules_per_package": 300,
+  "write_seconds": 2.02
+}

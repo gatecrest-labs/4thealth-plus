@@ -19,6 +19,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Flask
 
+from app import boot_warmup, inventory
+
 logger = logging.getLogger(__name__)
 
 _lock = threading.RLock()
@@ -99,7 +101,7 @@ def _run_refresh(app: Flask) -> None:
             from app.fmg_helpers import format_fortios_version, make_client
 
             with make_client() as client:
-                raw_adoms = client.get_adoms()
+                raw_adoms = inventory.adoms(client)
                 adom_names = [
                     a.get("name", "")
                     for a in raw_adoms
@@ -110,7 +112,7 @@ def _run_refresh(app: Flask) -> None:
 
                 for adom in adom_names:
                     try:
-                        raw = client.get_devices_with_sync_status(adom)
+                        raw = inventory.devices_with_sync_status(client, adom)
                     except Exception as exc:
                         logger.warning(
                             "pending_status_cache: get_devices(%s) failed: %s",
@@ -154,10 +156,12 @@ def _run_refresh(app: Flask) -> None:
                             }
                         )
 
-                    def _fetch_pkg(entry: dict, _adom: str = adom) -> tuple[str, str]:
+                    pkg_lookup = inventory.pkg_status_lookup(client, adom)
+
+                    def _fetch_pkg(entry: dict, _lookup=pkg_lookup) -> tuple[str, str]:
                         try:
-                            return entry["name"], client.get_device_pkg_status(
-                                _adom, entry["name"], entry["_vdom_list"]
+                            return entry["name"], _lookup(
+                                entry["name"], entry["_vdom_list"]
                             )
                         except Exception:
                             return entry["name"], ""
@@ -260,7 +264,7 @@ def init_scheduler(app: Flask) -> None:
     """Register a recurring APScheduler job and run the first fetch immediately."""
     from apscheduler.schedulers.background import BackgroundScheduler
 
-    refresh_now(app)
+    boot_warmup.defer("pending_status_cache", lambda: _run_refresh(app), 2)
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(

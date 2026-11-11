@@ -38,8 +38,9 @@ import datetime
 
 from flask import Blueprint, jsonify, render_template, request, session
 
-from app import registry
+from app import audit_data, device_data, inventory, registry
 from app.app_logger import app_log
+from app.config import Config
 from app.decorators import check_adom_access, tab_required
 from app.device_review import _CHECKS_BY_KEY, CHECKS_META, run_checks
 from app.fmg_client import FMGError
@@ -76,7 +77,7 @@ def device_review_devices(adom: str):
         return err
     try:
         with make_client() as client:
-            raw = client.get_devices(adom)
+            raw = inventory.devices(client, adom)
         seen: set[str] = set()
         devices = []
         for d in raw:
@@ -122,86 +123,43 @@ def _fetch_device_data(
     client, adom: str, device: str, data_keys: set[str], device_meta: dict | None = None
 ) -> dict:
     """Fetch only the device data blobs required by the selected checks."""
-    data: dict = {}
-    if "interfaces" in data_keys:
-        try:
-            data["interfaces"] = client.get_device_interfaces_all_vdoms(adom, device)
-        except Exception:
-            data["interfaces"] = []
-    if "ntp" in data_keys:
-        try:
-            data["ntp"] = client.get_device_ntp(adom, device)
-        except Exception:
-            data["ntp"] = {}
-    if "syslog" in data_keys:
-        try:
-            data["syslog"] = client.get_device_syslog(adom, device)
-        except Exception:
-            data["syslog"] = []
-    if "admins" in data_keys:
-        try:
-            data["admins"] = client.get_device_admins(adom, device)
-        except Exception:
-            data["admins"] = []
-    if "system_global" in data_keys:
-        try:
-            data["system_global"] = client.get_device_system_global(adom, device)
-        except Exception:
-            data["system_global"] = {}
-    if "password_policy" in data_keys:
-        try:
-            data["password_policy"] = client.get_device_password_policy(adom, device)
-        except Exception:
-            data["password_policy"] = {}
-    if "log_disk" in data_keys:
-        try:
-            data["log_disk"] = client.get_device_log_disk(adom, device)
-        except Exception:
-            data["log_disk"] = {}
-    if "log_faz" in data_keys:
-        try:
-            data["log_faz"] = client.get_device_log_faz(adom, device)
-        except Exception:
-            data["log_faz"] = []
-    if "dns" in data_keys:
-        try:
-            data["dns"] = client.get_device_dns(adom, device)
-        except Exception:
-            data["dns"] = {}
-    if "snmp_community" in data_keys:
-        try:
-            data["snmp_community"] = client.get_device_snmp_community(adom, device)
-        except Exception:
-            data["snmp_community"] = []
-    if "snmp_sysinfo" in data_keys:
-        try:
-            data["snmp_sysinfo"] = client.get_device_snmp_sysinfo(adom, device)
-        except Exception:
-            data["snmp_sysinfo"] = {}
-    if "snmp_users" in data_keys:
-        try:
-            data["snmp_users"] = client.get_device_snmp_users(adom, device)
-        except Exception:
-            data["snmp_users"] = []
-    if "ha_status" in data_keys:
-        try:
-            data["ha_status"] = client.get_device_ha_status(adom, device)
-        except Exception:
-            data["ha_status"] = {}
-    if "ipsec_phase1" in data_keys:
-        try:
-            data["ipsec_phase1"] = client.get_device_ipsec_phase1(adom, device)
-        except Exception:
-            data["ipsec_phase1"] = []
-    if "ipsec_phase2" in data_keys:
-        try:
-            data["ipsec_phase2"] = client.get_device_ipsec_phase2(adom, device)
-        except Exception:
-            data["ipsec_phase2"] = []
-    # device_meta is passed in from the caller (already fetched from device list)
-    if "device_meta" in data_keys:
-        data["device_meta"] = device_meta or {}
-    return data
+    return device_data.fetch_device_data(client, adom, device, data_keys, device_meta)
+
+
+def _review_device(
+    client,
+    adom: str,
+    name: str,
+    needed: set[str],
+    device_meta: dict | None,
+    check_keys: list[str] | None,
+    check_params: dict,
+    live: bool = False,
+) -> tuple[list[dict], str | None, str | None]:
+    """Run the checks for one device; returns (rows, collected_at, source).
+
+    With ``AUDIT_SNAPSHOTS`` off this is the legacy live path and rows carry no
+    provenance (collected_at/source are None). With it on, data comes from
+    ``audit_data`` and every row is stamped with the age and origin of the data
+    its check actually used.
+    """
+    if not Config.AUDIT_SNAPSHOTS:
+        data = _fetch_device_data(client, adom, name, needed, device_meta)
+        return run_checks(name, data, check_keys, check_params), None, None
+    dd = audit_data.device_data(client, adom, name, needed, device_meta, live=live)
+    keys = check_keys if check_keys is not None else [c["key"] for c in CHECKS_META]
+    rows: list[dict] = []
+    for key in keys:
+        entry = _CHECKS_BY_KEY.get(key)
+        if not entry:
+            continue
+        used = {k: dd.per_key[k] for k in entry.get("data_keys", []) if k in dd.per_key}
+        stamp, source = audit_data.summarise(used)
+        for row in run_checks(name, dd.data, [key], check_params):
+            row["collected_at"] = stamp
+            row["source"] = source
+            rows.append(row)
+    return rows, dd.collected_at, dd.source
 
 
 # ── API: single-device run (used by the per-device progress loop) ─────────────
@@ -226,6 +184,7 @@ def device_review_run_one():
         check_keys = [k for k in check_keys if k in valid_keys]
 
     needed = _needed_data_keys(check_keys)
+    live = bool(data.get("live"))
 
     try:
         with make_client() as client:
@@ -233,17 +192,32 @@ def device_review_run_one():
             device_meta: dict = {}
             if "device_meta" in needed:
                 try:
-                    device_meta = client.get_device(adom, device) or {}
+                    if Config.AUDIT_SNAPSHOTS:
+                        device_meta = inventory.device(client, adom, device) or {}
+                    else:
+                        device_meta = client.get_device(adom, device) or {}
                 except Exception:
                     device_meta = {}
-            device_data = _fetch_device_data(client, adom, device, needed, device_meta)
+            rows, collected_at, source = _review_device(
+                client,
+                adom,
+                device,
+                needed,
+                device_meta,
+                check_keys,
+                check_params,
+                live,
+            )
     except FMGError as exc:
         return upstream_api_error("audit_review", exc)
     except Exception as exc:
         return internal_api_error("audit_review", exc)
 
-    rows = run_checks(device, device_data, check_keys, check_params)
-    return jsonify({"device": device, "rows": rows})
+    out = {"device": device, "rows": rows}
+    if Config.AUDIT_SNAPSHOTS:
+        out["collected_at"] = collected_at
+        out["source"] = source
+    return jsonify(out)
 
 
 # ── Scheduler entry point (session-free) ─────────────────────────────────────
@@ -254,6 +228,7 @@ def bulk_device_review_adom(
     checks: list[str] | None,
     check_params: dict,
     max_workers: int = 4,
+    live: bool = False,
 ) -> list[dict]:
     """Run device review checks against all devices in an ADOM.
 
@@ -269,7 +244,7 @@ def bulk_device_review_adom(
 
     try:
         with make_client() as client:
-            all_devices = client.get_devices(adom)
+            all_devices = inventory.devices(client, adom)
     except Exception as exc:
         app_log(
             "ERROR",
@@ -283,11 +258,21 @@ def bulk_device_review_adom(
         ip = dev.get("ip", dev.get("mgmt_ip", ""))
         try:
             with make_client() as c:
-                device_data = _fetch_device_data(c, adom, name, needed, dev)
-            rows = run_checks(
-                name, device_data, checks if checks else None, check_params
-            )
-            return {"device": name, "ip": ip, "rows": rows, "error": None}
+                rows, collected_at, source = _review_device(
+                    c,
+                    adom,
+                    name,
+                    needed,
+                    dev,
+                    checks if checks else None,
+                    check_params,
+                    live,
+                )
+            res = {"device": name, "ip": ip, "rows": rows, "error": None}
+            if Config.AUDIT_SNAPSHOTS:
+                res["collected_at"] = collected_at
+                res["source"] = source
+            return res
         except Exception as exc:
             app_log(
                 "ERROR",
@@ -307,6 +292,86 @@ def bulk_device_review_adom(
 
 
 # ── API: bulk run checks ──────────────────────────────────────────────────────
+
+
+def compute_device_review(
+    adom: str,
+    devices: list[str],
+    check_keys: list[str] | None,
+    check_params: dict,
+    live: bool = False,
+    progress=None,
+    should_cancel=None,
+) -> dict:
+    """Run Device Review for an ADOM and return the bulk-run payload.
+
+    Shared by ``POST /api/audit-review/run`` and the job queue. ``progress(done,
+    total, name)`` and ``should_cancel()`` are optional; a cancelled run returns
+    what it has with ``cancelled: True``. Raises on an inventory/FMG failure.
+    """
+    needed = _needed_data_keys(check_keys)
+    with make_client() as client:
+        all_devices = inventory.devices(client, adom)
+
+    if devices:
+        device_set = {d.lower() for d in devices}
+        all_devices = [
+            d
+            for d in all_devices
+            if isinstance(d, dict) and d.get("name", "").lower() in device_set
+        ]
+    all_devices = [d for d in all_devices if isinstance(d, dict) and d.get("name")]
+
+    rows = []
+    reviewed = []
+    cancelled = False
+
+    try:
+        _client_ctx = make_client()
+        client = _client_ctx.__enter__()
+    except Exception:
+        client = None
+        _client_ctx = None
+
+    try:
+        for dev in all_devices:
+            if should_cancel is not None and should_cancel():
+                cancelled = True
+                break
+            name = dev.get("name", "")
+            reviewed.append(name)
+            try:
+                if client:
+                    dev_rows, _at, _src = _review_device(
+                        client, adom, name, needed, dev, check_keys, check_params, live
+                    )
+                else:
+                    dev_rows = run_checks(name, {}, check_keys, check_params)
+            except Exception:
+                dev_rows = run_checks(name, {}, check_keys, check_params)
+            rows.extend(dev_rows)
+            if progress is not None:
+                progress(len(reviewed), len(all_devices), name)
+    finally:
+        if _client_ctx is not None:
+            _client_ctx.__exit__(None, None, None)
+
+    run_at = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    checks_run = (
+        check_keys if check_keys is not None else [c["key"] for c in CHECKS_META]
+    )
+    out = {
+        "adom": adom,
+        "run_at": run_at,
+        "devices_reviewed": reviewed,
+        "device_count": len(reviewed),
+        "checks_run": checks_run,
+        "total": len(rows),
+        "rows": rows,
+    }
+    if cancelled:
+        out["cancelled"] = True
+    return out
 
 
 @bp.route("/api/audit-review/run", methods=["POST"])
@@ -329,71 +394,15 @@ def device_review_run():
         if not check_keys:
             return jsonify({"error": "No valid check keys provided"}), 400
 
-    needed = _needed_data_keys(check_keys)
-
     try:
-        with make_client() as client:
-            all_devices = client.get_devices(adom)
+        payload = compute_device_review(
+            adom, devices, check_keys, check_params, bool(data.get("live"))
+        )
     except FMGError as exc:
         return upstream_api_error("audit_review", exc)
     except Exception as exc:
         return internal_api_error("audit_review", exc)
-
-    if devices:
-        device_set = {d.lower() for d in devices}
-        all_devices = [
-            d
-            for d in all_devices
-            if isinstance(d, dict) and d.get("name", "").lower() in device_set
-        ]
-
-    rows = []
-    reviewed = []
-
-    try:
-        _client_ctx = make_client()
-        client = _client_ctx.__enter__()
-    except Exception:
-        client = None
-        _client_ctx = None
-
-    try:
-        for dev in all_devices:
-            if not isinstance(dev, dict):
-                continue
-            name = dev.get("name", "")
-            if not name:
-                continue
-            reviewed.append(name)
-            try:
-                device_data = (
-                    _fetch_device_data(client, adom, name, needed, dev)
-                    if client
-                    else {}
-                )
-            except Exception:
-                device_data = {}
-            rows.extend(run_checks(name, device_data, check_keys, check_params))
-    finally:
-        if _client_ctx is not None:
-            _client_ctx.__exit__(None, None, None)
-
-    run_at = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
-    checks_run = (
-        check_keys if check_keys is not None else [c["key"] for c in CHECKS_META]
-    )
-
-    return jsonify(
-        {
-            "adom": adom,
-            "run_at": run_at,
-            "devices_reviewed": reviewed,
-            "device_count": len(reviewed),
-            "checks_run": checks_run,
-            "total": len(rows),
-            "rows": rows,
-        }
-    )
+    return jsonify(payload)
 
 
 # ── AI Summary ─────────────────────────────────────────────────────────────

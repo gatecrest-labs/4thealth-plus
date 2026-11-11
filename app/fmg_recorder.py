@@ -218,7 +218,7 @@ class ReplayTransport:
             )
             self._by_url.setdefault(_url_key(ex["request"]), []).append(ex["response"])
 
-    def post(self, body: dict) -> dict:
+    def post(self, body: dict, timeout: int | None = None) -> dict:
         key = _request_key(body)
         answers = self._answers.get(key)
         if not answers and _url_key(body)[1] in self._loose:

@@ -46,7 +46,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, render_template, request, session
 
-from app import registry
+from app import inventory, registry
 from app.decorators import check_adom_access, tab_required
 from app.fmg_client import FMGError, parse_preview_diff
 from app.fmg_helpers import make_client
@@ -114,19 +114,43 @@ def _evict_old_tasks() -> None:
 # ── Bulk preview helper (used by scheduler + browser export) ─────────────────
 
 
-def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
-    """Fetch install-preview diffs for every device in *adom* in parallel.
+class PreviewResults(list):
+    """``bulk_preview_adom`` results; ``full_sweep`` is True when gating was bypassed."""
+
+    full_sweep = False
+
+
+_BUDGET_ERROR = "time budget exhausted before this device was previewed"
+
+
+def bulk_preview_adom(
+    adom: str, max_workers: int = 10, budget_seconds: float | None = None
+) -> list[dict]:
+    """Fetch install-preview diffs for devices in *adom* in parallel.
 
     Returns a list of result dicts — one per device — in the same shape the
     browser bulk-export uses:
       {"device", "ip", "status": "ok"|"no_changes"|"error",
        "summary", "vdoms", "raw", "error"}
+
+    With ``INVENTORY_CACHE`` on (and ``CONFIG_DELTA_GATING`` not off), devices
+    whose cached conf/db/package status is clean are not previewed: they appear
+    with ``status "no_changes"``, ``gated True`` and ``cached_as_of``. Anything
+    pending, unknown or stale is previewed, and a full sweep previews every
+    device every ``CONFIG_DELTA_FULL_SWEEP_HOURS``. ``budget_seconds`` (default
+    ``CONFIG_DELTA_JOB_BUDGET_SECS`` when gating is on) bounds the run: devices
+    not reached come back as ``status "error"``, never as clean.
     """
+    import datetime as _dt
+    import time as _time
+
+    from app import config_delta_gate
+    from app.config import Config
     from app.fmg_client import parse_preview_diff
     from app.fmg_helpers import make_client
 
     with make_client() as client:
-        raw_devices = client.get_devices_with_sync_status(adom)
+        raw_devices = inventory.devices_with_sync_status(client, adom)
 
     seen: set[str] = set()
     devices = []
@@ -139,6 +163,18 @@ def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
         seen.add(name)
         devices.append({"name": name, "ip": d.get("ip", d.get("mgmt_ip", ""))})
 
+    gating = config_delta_gate.gating_enabled()
+    if gating:
+        with make_client() as client:
+            selection = config_delta_gate.select_devices(client, adom, devices)
+    else:
+        selection = config_delta_gate.GateResult(preview=list(devices))
+    to_preview = selection.preview
+
+    if budget_seconds is None and gating:
+        budget_seconds = float(Config.CONFIG_DELTA_JOB_BUDGET_SECS or 0) or None
+    deadline = _time.monotonic() + budget_seconds if budget_seconds else None
+
     # FMG's install-preview staging context is ADOM-scoped: a new
     # install/package call from any concurrent worker replaces the previous
     # device's staged context, causing preview/result to return an empty diff.
@@ -147,6 +183,17 @@ def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
     # pool needs no lock of its own; fast read-only calls still run in parallel.
 
     def _preview_one(dev: dict) -> dict:
+        if deadline is not None and _time.monotonic() > deadline:
+            return {
+                "device": dev["name"],
+                "ip": dev["ip"],
+                "status": "error",
+                "pkg_status": "",
+                "summary": {},
+                "vdoms": [],
+                "raw": "",
+                "error": _BUDGET_ERROR,
+            }
         try:
             with make_client() as client:
                 raw = client.get_install_preview(adom, dev["name"])
@@ -203,11 +250,36 @@ def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
                 "error": str(exc),
             }
 
-    results = []
+    results = PreviewResults()
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(_preview_one, d): d for d in devices}
+        futures = {pool.submit(_preview_one, d): d for d in to_preview}
         for fut in as_completed(futures):
             results.append(fut.result())
+
+    as_of = (
+        _dt.datetime.now(_dt.UTC) - _dt.timedelta(seconds=selection.status_age_s or 0)
+    ).isoformat()
+    for dev in selection.gated:
+        results.append(
+            {
+                "device": dev["name"],
+                "ip": dev["ip"],
+                "status": "no_changes",
+                "pkg_status": dev.get("pkg_status", ""),
+                "summary": {},
+                "vdoms": [],
+                "raw": "",
+                "error": None,
+                "gated": True,
+                "cached_as_of": as_of,
+            }
+        )
+
+    results.full_sweep = selection.full_sweep
+    # Only a complete, error-free sweep resets the 24 h clock: a budget skip or an
+    # FMG outage (every preview errored) must not defer the next full sweep.
+    if selection.full_sweep and not any(r["status"] == "error" for r in results):
+        config_delta_gate.mark_full_sweep_done(adom)
     return results
 
 
@@ -228,7 +300,7 @@ def pending_changes_page():
 def pending_changes_adoms():
     try:
         with make_client() as client:
-            raw = client.get_adoms()
+            raw = inventory.adoms(client)
         items = [
             {"name": a.get("name", a.get("adom", "")), "desc": a.get("desc", "")}
             for a in raw
@@ -266,7 +338,7 @@ def pending_changes_devices(adom: str):
 
         # Cache cold (first startup) — fall back to live fetch
         with make_client() as client:
-            raw = client.get_devices_with_sync_status(adom)
+            raw = inventory.devices_with_sync_status(client, adom)
 
             seen: set[str] = set()
             base_devices = []
@@ -314,11 +386,11 @@ def pending_changes_devices(adom: str):
                     }
                 )
 
+            pkg_lookup = inventory.pkg_status_lookup(client, adom)
+
             def _fetch_pkg(entry: dict) -> tuple[str, str]:
                 try:
-                    return entry["name"], client.get_device_pkg_status(
-                        adom, entry["name"], entry["_vdom_list"]
-                    )
+                    return entry["name"], pkg_lookup(entry["name"], entry["_vdom_list"])
                 except Exception:
                     return entry["name"], ""
 

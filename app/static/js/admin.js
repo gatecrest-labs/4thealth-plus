@@ -3264,6 +3264,50 @@ async function runFmgSelftest() {
 
 document.getElementById('btnFmgSelftest')?.addEventListener('click', runFmgSelftest);
 
+function renderFmgMetricsTable(title, snap) {
+  if (!snap) return `<h4>${escH(title)}</h4><p class="text-muted">No data.</p>`;
+  const rows = Object.entries(snap.by_url || {})
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([url, m]) => `<tr>
+      <td><code>${escH(url)}</code></td>
+      <td>${m.count}</td>
+      <td>${m.errors}</td>
+      <td>${(m.p50_s * 1000).toFixed(0)} ms</td>
+      <td>${(m.p95_s * 1000).toFixed(0)} ms</td>
+    </tr>`).join('');
+  const a = snap.access || {};
+  const avgWaitMs = a.calls_waited ? (a.wait_seconds / a.calls_waited) * 1000 : 0;
+  const accessLine = `<p class="text-muted" style="margin:.25rem 0">Retries: ${a.retries || 0} · calls that waited for a slot: ${a.calls_waited || 0} (avg ${avgWaitMs.toFixed(0)} ms) · peak in-flight: ${a.peak_inflight || 0}</p>`;
+  return `<h4>${escH(title)} <span class="text-muted" style="font-weight:normal">— ${snap.total} calls, ${snap.errors} errors since ${escH(snap.since || '')}</span></h4>
+    ${accessLine}
+    <div class="table-wrapper"><table class="data-table">
+      <thead><tr><th>Call</th><th>Count</th><th>Errors</th><th>p50</th><th>p95</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="5" class="text-muted">No calls recorded.</td></tr>'}</tbody>
+    </table></div>`;
+}
+
+async function loadFmgMetrics() {
+  const out = document.getElementById('fmgMetricsResult');
+  if (!out) return;
+  out.innerHTML = '<span class="loading-placeholder">Loading…</span>';
+  try {
+    const resp = await fetch('/admin/api/fmg-metrics');
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      out.innerHTML = `<span style="color:#991b1b">${escH(body.error || 'Failed (HTTP ' + resp.status + ')')}</span>`;
+      return;
+    }
+    out.innerHTML =
+      (body.note ? `<p class="text-muted">${escH(body.note)}</p>` : '') +
+      renderFmgMetricsTable('Collector', body.collector) +
+      renderFmgMetricsTable('Web', body.web);
+  } catch (err) {
+    out.innerHTML = `<span style="color:#991b1b">${escH(String(err))}</span>`;
+  }
+}
+
+document.getElementById('btnFmgMetrics')?.addEventListener('click', loadFmgMetrics);
+
 async function pcaTestRule(ruleId) {
   const resp = await fetch(`/admin/api/package-alerts/rules/${ruleId}/test`, {
     method: 'POST', headers: { 'X-CSRF-Token': getCSRF() },

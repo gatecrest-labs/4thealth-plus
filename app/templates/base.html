@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="csrf-token" content="{{ csrf_token }}" />
   <title>{% block title %}4THealth+{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=11" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=12" />
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -34,6 +34,10 @@
     {% endif %}
   </nav>
   <div class="topbar-right">
+    {% set _fresh_page = inventory_cache_enabled and request.endpoint in ('dashboard.index', 'dashboard.firewalls', 'dashboard.versions', 'map.map_page') %}
+    {% if _fresh_page %}
+    <span id="invFreshness" class="inv-freshness" data-admin="{{ 1 if current_role == 'admin' else 0 }}" hidden></span>
+    {% endif %}
     <span class="nav-user">{{ session.get('user') }}</span>
     <button class="btn btn-sm btn-ghost" id="helpBtn" title="Help &amp; Guide">&#10067;</button>
     <button class="btn btn-sm btn-ghost" id="themeToggle" title="Toggle light/dark mode">&#9788;</button>
@@ -91,6 +95,9 @@
   window._helpAllowedTabs = {{ allowed_tabs | list | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/help.js') }}?v=9"></script>
+{% if inventory_cache_enabled and request.endpoint in ('dashboard.index', 'dashboard.firewalls', 'dashboard.versions', 'map.map_page') %}
+<script src="{{ url_for('static', filename='js/freshness.js') }}?v=1"></script>
+{% endif %}
 {% endif %}
 {% block scripts %}{% endblock %}
 </body>

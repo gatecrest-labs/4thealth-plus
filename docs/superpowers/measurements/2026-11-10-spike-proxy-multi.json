@@ -1,0 +1,45 @@
+{
+  "device_sample": 1,
+  "fmg_version": "FMGVersion(8.0.2, build=198)",
+  "max_targets_tested": 1,
+  "multi": {
+    "per_target": [
+      {
+        "http_status": null,
+        "status_code": 0
+      }
+    ],
+    "response_bytes": 497,
+    "rpc_code": 0,
+    "seconds": 0.1562,
+    "targets_requested": 1,
+    "targets_returned": 1
+  },
+  "resource": "/api/v2/monitor/system/status",
+  "single": {
+    "per_target": [
+      {
+        "http_status": null,
+        "status_code": 0
+      }
+    ],
+    "response_bytes": 497,
+    "rpc_code": 0,
+    "seconds": 0.3453,
+    "targets_requested": 1,
+    "targets_returned": 1
+  },
+  "with_unreachable": {
+    "per_target": [
+      {
+        "http_status": null,
+        "status_code": 0
+      }
+    ],
+    "response_bytes": 497,
+    "rpc_code": 0,
+    "seconds": 0.2373,
+    "targets_requested": 2,
+    "targets_returned": 1
+  }
+}

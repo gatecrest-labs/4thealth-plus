@@ -21,6 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from app import inventory
+from app import policies as policy_facade
 from app.app_logger import app_log
 from app.atomic_io import atomic_write_json
 
@@ -328,7 +330,7 @@ def _fetch_package(adom: str, pkg: dict) -> dict:
         with _make_client() as client:
             result["rules"] = [
                 _norm_rule(r)
-                for r in client.get_policies(adom, pkg_path)
+                for r in policy_facade.policies(client, adom, pkg_path)
                 if isinstance(r, dict)
             ]
     except Exception as exc:
@@ -364,10 +366,10 @@ def _fetch_device_vips(adom: str, dev_name: str) -> list[dict]:
 def collect_nat_data(adom: str, max_workers: int = 4) -> dict:
     """Fetch VIPs, IP pools and every package's rules for an ADOM."""
     with _make_client() as client:
-        packages = client.get_policy_packages(adom) or []
-        shared_vips = client.get_vip_objects(adom) or []
-        pools = client.get_ippool_objects(adom) or []
-        devices = client.get_devices(adom) or []
+        packages = policy_facade.packages(client, adom) or []
+        shared_vips = policy_facade.objects(client, adom, "vip") or []
+        pools = policy_facade.objects(client, adom, "ippool") or []
+        devices = inventory.devices(client, adom) or []
 
     dev_names = [
         d.get("name", "") for d in devices if isinstance(d, dict) and d.get("name")
@@ -716,7 +718,8 @@ def _execute_job(job_id: str) -> None:
         _send_email(
             email,
             f"4THealth NAT Report — {adom} — {generated_at[:10]}",
-            _build_summary_html(adom, rows, errors, generated_at, stats),
+            policy_facade.age_note_html(adom)
+            + _build_summary_html(adom, rows, errors, generated_at, stats),
             [{"filename": filename, "data": blob, "mimetype": mimetype}],
         )
         record["emails_sent"] = 1
@@ -756,7 +759,7 @@ def _group_members(adom: str) -> dict:
     from app.rule_policy_scheduler import _build_addr_catalog
 
     with _make_client() as client:
-        groups = client.get_address_groups(adom, scope="all") or []
+        groups = policy_facade.objects(client, adom, "addrgrp", "all") or []
     return _build_addr_catalog([], groups)
 
 

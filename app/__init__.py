@@ -21,6 +21,7 @@ _BLUEPRINT_MODULES = [
     "app.routes.external_api_routes",
     "app.routes.backup_routes",
     "app.routes.sync_routes",
+    "app.routes.job_routes",
     # "app.routes.my_new_module",  ← add future modules here
 ]
 
@@ -55,6 +56,34 @@ def start_all_schedulers(app: Flask) -> None:
     Flask's debug-mode reloader), since the "should this process run
     schedulers at all" decision is made once, by the caller.
     """
+    # Inventory first: every other cache reads from it when INVENTORY_CACHE is on.
+    if not app.config.get("_INVENTORY_CACHE_STARTED"):
+        app.config["_INVENTORY_CACHE_STARTED"] = True
+        from app.inventory_cache import init_scheduler as init_inventory_scheduler
+
+        init_inventory_scheduler(app)
+
+    # Device audit snapshots (AUDIT_SNAPSHOTS): rolling per-device config capture.
+    if not app.config.get("_SNAPSHOT_CACHE_STARTED"):
+        app.config["_SNAPSHOT_CACHE_STARTED"] = True
+        from app.snapshot_cache import init_scheduler as init_snapshot_scheduler
+
+        init_snapshot_scheduler(app)
+
+    # Job queue (JOB_QUEUE): runs queued Device Review / Hygiene jobs (collector only).
+    if not app.config.get("_JOB_RUNNER_STARTED"):
+        app.config["_JOB_RUNNER_STARTED"] = True
+        from app.job_runner import init_scheduler as init_job_scheduler
+
+        init_job_scheduler(app)
+
+    # Policy/object store refresh (POLICY_STORE): packages, policies, blocks, objects.
+    if not app.config.get("_POLICY_CACHE_STARTED"):
+        app.config["_POLICY_CACHE_STARTED"] = True
+        from app.policy_cache import init_scheduler as init_policy_scheduler
+
+        init_policy_scheduler(app)
+
     if not app.config.get("_SUMMARY_STARTED"):
         app.config["_SUMMARY_STARTED"] = True
         from app.summary_job import init_scheduler
@@ -326,6 +355,12 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     groups.KNOWN_TABS = registry.known_tabs()
 
+    import logging as _logging
+
+    from app import fmg_access
+
+    fmg_access.warn_if_password_auth(_logging.getLogger("app.fmg_access"))
+
     # Start background jobs — guard against re-registration on Flask debug reload.
     if _schedulers_enabled(app.config):
         start_all_schedulers(app)
@@ -344,6 +379,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             "allowed_tabs": allowed,
             "nav_registry": registry.get_registry(),
             "csrf_token": ensure_csrf_token(),
+            "inventory_cache_enabled": bool(Config.INVENTORY_CACHE),
+            "policy_store_enabled": bool(Config.POLICY_STORE),
+            "audit_snapshots_enabled": bool(Config.AUDIT_SNAPSHOTS),
+            "job_queue_enabled": bool(Config.JOB_QUEUE),
         }
 
     return app

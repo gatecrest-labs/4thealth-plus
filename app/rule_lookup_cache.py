@@ -22,6 +22,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
+from app import policies as policy_facade
+from app.config import Config
 from app.fmg_helpers import make_client
 from app.hygiene import _action, _status
 from app.planner.matching import ServiceCatalog
@@ -105,13 +107,15 @@ def _fetch_package(adom: str, pkg: dict) -> tuple[list[dict], list[str]]:
     rules: list[dict] = []
     errors: list[str] = []
     with make_client() as client:
-        for p in client.get_policies(adom, pkg_path):
+        for p in policy_facade.policies(client, adom, pkg_path):
             if not isinstance(p, dict):
                 continue
             block = str(p.get("_policy_block") or "").strip()
             if block:
                 try:
-                    block_rules = client.get_pblock_policies(adom, block, strict=True)
+                    block_rules = policy_facade.pblock_policies(
+                        client, adom, block, strict=True
+                    )
                 except Exception as exc:
                     errors.append(
                         f"{pkg.get('name')}: policy block {block} failed: {exc}"
@@ -128,13 +132,16 @@ def _fetch_package(adom: str, pkg: dict) -> tuple[list[dict], list[str]]:
 def _build_adom(adom: str) -> dict:
     from app.routes.hygiene_routes import build_addr_resolver
 
+    # Read the generation first: a store update during the build then triggers a
+    # rebuild on the next search instead of being missed.
+    generation = policy_facade.generation(adom)
     with make_client() as client:
-        all_pkgs = client.get_policy_packages(adom)
-        addr_objects = client.get_address_objects(adom, scope="all") or []
-        addr_groups = client.get_address_groups(adom, scope="all") or []
-        vip_objects = client.get_vip_objects(adom) or []
-        svc_objects = client.get_service_objects(adom, scope="all") or []
-        svc_groups = client.get_service_groups(adom, scope="all") or []
+        all_pkgs = policy_facade.packages(client, adom)
+        addr_objects = policy_facade.objects(client, adom, "address", "all") or []
+        addr_groups = policy_facade.objects(client, adom, "addrgrp", "all") or []
+        vip_objects = policy_facade.objects(client, adom, "vip", "all") or []
+        svc_objects = policy_facade.objects(client, adom, "service", "all") or []
+        svc_groups = policy_facade.objects(client, adom, "svcgrp", "all") or []
 
     pkgs = [
         p
@@ -173,6 +180,10 @@ def _build_adom(adom: str) -> dict:
             },
         ),
         "package_errors": package_errors,
+        # "store" when the policy store backs this index; it is then rebuilt only
+        # when the stored content changes (see app.policies.generation).
+        "source": "store" if Config.POLICY_STORE and generation else "fmg",
+        "generation": generation,
     }
 
 

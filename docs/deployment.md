@@ -323,6 +323,62 @@ sudo journalctl -u 4thealth -f
 > unit entirely — the one web process then runs every scheduler itself, as
 > it always did before this split (the old single-process behaviour).
 
+#### Scale settings (1,000+ FortiGates)
+
+These apply to **both** units (set them in `/opt/4thealth/.env`, which both read):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `COLLECTOR_DB_PATH` | `/opt/4thealth/collector_state.db` | Shared SQLite store the collector writes and web reads. Web workers also write a small FMG-metrics snapshot (about every 30 s, off the request path). Must be on **local disk** (not NFS) and writable by the `4thealth` user. |
+| `COLLECTOR_DB_JOURNAL` | `WAL` | `WAL` or `DELETE`. Use `DELETE` only if the proof below reports `UNSAFE` for WAL on your filesystem. |
+| `FMG_METRICS` | `on` | Set `off` to disable FMG call metrics entirely (no counters, no snapshot writes). |
+| `FMG_MAX_INFLIGHT` | collector 8, web worker 4 | Per-process cap on concurrent FortiManager requests (total <= 16 with two web workers). `0` = unlimited. FMG handles a few concurrent proxy calls well; more does not make sweeps faster (lab: 4 workers gave ~1.3x). |
+| `FMG_SLOT_WAIT_SECS` | `60` | Seconds a call waits for a free in-flight slot before failing with a clear timeout error (`0` = wait forever). |
+| `FMG_RETRIES` | `2` | Extra attempts with jittered backoff on connection failures, 5xx and timeouts for read (`get`) calls only; write-like `exec` calls are retried only when the connection was never established. `0` disables. |
+| `INVENTORY_CACHE` | off | Phase 2 layer. On: the **collector** fetches ADOMs, devices, VDOMs, HA, conn/conf/db status and per-VDOM package status once per ADOM into the shared store; every dashboard cache and device/ADOM list reads it instead of calling FortiManager. Set it in the shared `.env` and restart **both** units. Rollback: set it off and restart. |
+| `INVENTORY_REFRESH_SECS` | `300` | How often the collector refreshes the inventory (about 132 FMG calls/hour at 5 ADOMs; raise to 600 to halve it). |
+| `INVENTORY_MAX_AGE_SECS` | unset (3 x refresh) | A reader falls back to one live FMG call for an ADOM whose cached data is older than this (or missing). Fallbacks are counted. |
+| `INVENTORY_PARALLEL_ADOMS` | `4` | ADOMs the collector fetches in parallel (the FMG in-flight cap still applies). |
+| `CONFIG_DELTA_GATING` | `on` | With `INVENTORY_CACHE` on, scheduled Config-Delta runs preview only devices whose cached conf/db/package status is pending, unknown or stale (clean devices are listed as "not re-previewed"). `off` previews everything. Clicking one device in the UI is always a live preview. |
+| `CONFIG_DELTA_FULL_SWEEP_HOURS` | `24` | Every device is previewed at least this often, because `conf_status` can lag the real device. This bounds how long a missed change can go unnoticed (this plus the inventory age, up to ~10 min). |
+| `CONFIG_DELTA_JOB_BUDGET_SECS` | `3600` | A gated run stops previewing after this long; devices not reached are reported as errors (never as clean) so Package Change Alerts leave their state untouched. `0` = no limit. |
+| `POLICY_STORE` | off | Phase 3+4 layer. On: the **collector** keeps every ADOM's policy packages, policies, policy blocks and firewall objects in the shared store (refreshing each package about every 6 h, objects hourly); Rule Review, Rule Lookup, Object/NAT lookups, Where-Used, Hygiene, the unused-object finder, the executive hygiene sweep, summary rule counts and the scheduled Rule Hygiene / Rule Policy / NAT reports read it with no FortiManager calls. Per-device reads (hit counts, per-device VIPs, interfaces), Package Change Alerts and the Rule Validation planner stay live. Set it in the shared `.env`, restart **both** units. Rollback: set it off and restart. |
+| `POLICY_PACKAGE_TTL_HOURS` | `6` (or `HYGIENE_PACKAGE_TTL_HOURS` if set) | How long a package is considered current; jittered x0.75..x1.25 per package so refetches spread over time. |
+| `POLICY_OBJECTS_REFRESH_MINUTES` | `60` | How often the collector refetches firewall objects (the shared global objects are fetched once per cycle, not per ADOM). |
+| `POLICY_MAX_AGE_SECS` | `0` (= 2 x 1.25 x TTL, 15 h) | A reader serves a stored row up to this age; older or missing rows cost one live FMG call (counted). |
+| `POLICY_PARALLEL_FETCH` | `4` | Packages the collector fetches in parallel (the FMG in-flight cap still applies). |
+| `POLICY_REFRESH_MIN_INTERVAL_SECS` | `30` | Minimum time between Refresh requests for the same package. |
+| `HYGIENE_PACKAGE_TTL_HOURS` | `6` | TTL for a cached package result, jittered x0.75..x1.25 per package so refetches spread over time. If a refetch fails an entry younger than twice its TTL is reused, otherwise the package is skipped as before. Hygiene numbers can therefore be up to about this old. |
+| `AUDIT_SNAPSHOTS` | off | Phase 5 layer. On: the **collector** keeps a configuration snapshot of every device (15 data keys: interfaces, NTP, syslog, admins, global settings, SNMP, HA, IPsec, ...), capturing one rolling batch every `AUDIT_SNAPSHOT_BATCH_MINUTES` so each device is refreshed within `AUDIT_SNAPSHOT_WINDOW_DAYS`; Device Review (interactive and scheduled) and the PSIRT workaround checks then read the store with no per-device FortiManager calls. Rows show **Data as of** and **Source**; a **Live (read devices now)** checkbox bypasses the store. Set it in the shared `.env`, restart **both** units. Rollback: set it off and restart. |
+| `AUDIT_SNAPSHOT_WINDOW_DAYS` | 7 | Every device is re-captured within this many days. 1 = daily refresh (about 840 calls/hour more at 1,000 devices). |
+| `AUDIT_SNAPSHOT_MAX_AGE_HOURS` | window x 24 + 24 | A snapshot older than this is not served; that key is read live instead. |
+| `AUDIT_SNAPSHOT_WORKERS`, `AUDIT_SNAPSHOT_BATCH_MINUTES`, `AUDIT_SNAPSHOT_REVISION_CHECK_MINUTES` | 2, 10, 60 | Capture concurrency, batch cadence, and how often FortiManager's config revisions are checked to refresh changed devices early. |
+| `JOB_QUEUE` | off | Phase 6 layer. On: Device Review's **Run Review** and Hygiene Analysis's **Run Analysis** become server-side jobs the **collector** executes (web only enqueues and polls), so they survive a closed tab or reload (the page resumes the Device Review job), do not pin a web thread, and show progress and a Cancel button. Set it in the shared `.env`, restart **both** units. Rollback: set it off and restart (queued jobs are abandoned; the interactive endpoints are unchanged). |
+| `JOB_MAX_RUNNING`, `JOB_MAX_QUEUED_PER_USER` | 2, 5 | Jobs the collector runs at once; queued jobs one user may hold (HTTP 429 beyond it). |
+| `JOB_MAX_RESULT_BYTES`, `JOB_RETENTION_DAYS` | 20 MB, 7 | A larger (compressed) result fails the job with a clear message; finished jobs and results are deleted after this many days. |
+
+With `INVENTORY_CACHE` on, the collector starts the inventory refresh first and holds every other cache's first refresh until it finishes (or 120 s), then staggers them 15 s apart with up to 10 s jitter, so a restart no longer hits FortiManager all at once. Web workers never call FortiManager at boot. `forti*` system ADOMs are not inventoried (same convention as every ADOM list); the Firewalls search skips them while the layer is on.
+
+The Dashboard, Firewalls, Versions and Map pages show a **Data as of** badge (top bar) fed by `GET /api/inventory/status`: green when every ADOM is current, amber when some are older than `INVENTORY_MAX_AGE_SECS`, red when a refresh failed. Admins get a Refresh button (`POST /api/inventory/refresh`, at most once a minute; the collector picks the request up within about 10 s).
+
+Check the inventory is fresh: `curl -sk -b <session> https://<host>/api/inventory/status` or look at the badge; in the Admin FMG metrics table the `get /dvmdb/adom/{adom}/device` line should show roughly one call per ADOM every refresh period from the collector and none from web workers.
+
+Use an **FMG API token** (`FMG_API_TOKEN`), not username/password, at this scale: password auth opens a real FortiManager admin session per client and FortiManager caps them.
+
+Verify the shared store on the real server once, as the app user:
+
+```bash
+sudo -u 4thealth /opt/4thealth/.venv/bin/python /opt/4thealth/scripts/verify_shared_store.py \
+    --db /opt/4thealth/proof.db --seconds 10
+```
+
+Expect two `SAFE` lines (WAL and DELETE). FMG call counts, errors and latency for both units are shown in **Admin -> API Self-Test -> FMG Call Metrics**.
+
+> **Mac/Docker test rig (not production):** `docker-compose.rig.yml` runs the
+> web and collector containers against a synthetic 1,000-device FortiManager
+> (`mkdir -p data && docker compose -f docker-compose.yml -f docker-compose.rig.yml up -d --build`).
+> Production uses the two systemd units above, not containers.
+
 ### 2.7 Smoke Test (before Nginx)
 
 ```bash
@@ -451,3 +507,34 @@ sudo systemctl status 4thealth
 | New/changed `pyproject.toml` dependency | Yes | Yes |
 | Template or JS/CSS changes | No | No (served directly) |
 | New gitignored config file (`.example.json`) | No | No (copy manually, configure via UI) |
+
+
+#### Policy store: freshness, size and the one-time check (Phase 4)
+
+Policy data is up to about 7.5 h old unless someone clicks **Refresh** next to a package in Rule Review or Audit Review (the collector refetches it within ~10 s; throttled per package). Rule Lookup shows `data_as_of`; scheduled reports that rest on data older than 15 minutes say so at the top of the email. Expect the shared database to grow by about 15-40 MB at 400 packages of 300 rules (policy blobs are zlib-compressed).
+
+Before going live, run the load check once on the production host as the app user, next to the shared-store proof:
+
+```
+sudo -u 4thealth /opt/4thealth/.venv/bin/python scripts/verify_policy_store_load.py \
+    --db /opt/4thealth/policy-load-proof.db --adoms 5 --packages 80 --rules 300 --readers 2
+```
+
+It writes a synthetic fleet through the collector code path while separate reader processes query the same file, then prints database size, write time, read p50/p95 and the Rule Lookup index build time; it must end with `OK: no errors` (exit status 0). It needs no FortiManager and the proof database can be deleted afterwards.
+
+#### Device snapshots: staleness, size and the one-time check (Phase 5)
+
+A Device Review or PSIRT verdict from snapshots reflects the device as last captured: up to the window plus one day old (8 days by default), except that a device whose FortiManager config revision is newer than its snapshot is refreshed within about an hour. Every row says how old its data is, scheduled reports state the oldest data at the top, and the **Live** checkbox reads the current configuration on demand (slower; it loads FortiManager). An unreachable device keeps its last snapshot and is retried with exponential backoff (15 minutes, doubling, capped at a day). The Audit Review header shows "Snapshots cover N of M devices". Expect about 4 MB of database growth per 1,000 devices.
+
+Run the load check once on the production host as the app user, next to the other two proofs:
+
+```
+sudo -u 4thealth /opt/4thealth/.venv/bin/python scripts/verify_snapshot_load.py \
+    --db /opt/4thealth/snapshot-load-proof.db --readers 2
+```
+
+It must end with `OK: no errors`; it needs no FortiManager and the proof database can be deleted afterwards. The first capture of a large fleet takes about a day (never-captured devices go first); until a device is captured its data is read live.
+
+#### Job queue: behaviour to know (Phase 6)
+
+A user sees and cancels only their own jobs (admin sees all); a job for an ADOM the user can no longer access is hidden. Cancel is cooperative: a running Device Review stops before the next device and keeps the partial result (`cancelled`), a queued job is cancelled at once. If the collector restarts, jobs that were running are marked failed ("collector restarted") rather than resumed; the user re-runs them. A Device Review result is about 9 KB of JSON per device with all checks (1.8 MB for 200 devices); the 20 MB cap applies to the compressed result, so it leaves room for well over a thousand devices in one run. Check the queue end to end on the host with `scripts/verify_job_queue.py`.

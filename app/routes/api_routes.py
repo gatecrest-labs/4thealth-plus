@@ -5,8 +5,14 @@ import re
 
 from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 
+from app import inventory
 from app.config import Config
-from app.decorators import admin_required, check_adom_access, tab_required
+from app.decorators import (
+    admin_required,
+    check_adom_access,
+    login_required,
+    tab_required,
+)
 from app.fmg_client import PROXY_ENDPOINTS, FMGClient, FMGError
 from app.fmg_helpers import expand_ha_members
 from app.fmg_helpers import make_client as _make_client
@@ -492,7 +498,7 @@ def adom_license(adom: str):
 def adoms():
     try:
         with _make_client() as client:
-            raw = client.get_adoms()
+            raw = inventory.adoms(client)
         items = [
             {"name": a.get("name", a.get("adom", "")), "desc": a.get("desc", "")}
             for a in raw
@@ -528,7 +534,7 @@ def devices(adom: str):
         return err
     try:
         with _make_client() as client:
-            raw = client.get_devices(adom)
+            raw = inventory.devices(client, adom)
         result = []
         for d in raw:
             if not isinstance(d, dict):
@@ -593,7 +599,7 @@ def adom_units(adom: str):
         return err
     try:
         with _make_client() as client:
-            raw = client.get_devices(adom)
+            raw = inventory.devices(client, adom)
         result = []
         for d in raw:
             if not isinstance(d, dict):
@@ -960,7 +966,7 @@ def search():
             session.get("user", ""), ad_groups=session.get("ad_groups", [])
         )
         with _make_client() as client:
-            adoms_raw = client.get_adoms()
+            adoms_raw = inventory.adoms(client)
             adom_names = [
                 a.get("name", "")
                 for a in adoms_raw
@@ -971,7 +977,7 @@ def search():
                 adom_names = [a for a in adom_names if a in allowed]
             matches = []
             for adom in adom_names:
-                devices_raw = client.get_devices(adom)
+                devices_raw = inventory.devices(client, adom)
                 for d in devices_raw:
                     if not isinstance(d, dict):
                         continue
@@ -997,3 +1003,214 @@ def search():
         return jsonify(matches)
     except Exception as exc:
         return internal_api_error("api", exc)
+
+
+# ── Inventory freshness (F8) ─────────────────────────────────────────────────
+
+_REFRESH_MIN_INTERVAL_S = 60
+
+
+@bp.route("/inventory/status")
+@login_required
+def inventory_status():
+    """Per-ADOM age/state of the cached inventory, filtered to the user's ADOMs."""
+    from app import inventory, inventory_store
+
+    body = {
+        "enabled": bool(Config.INVENTORY_CACHE),
+        "refresh_seconds": Config.INVENTORY_REFRESH_SECS,
+        "max_age_seconds": inventory_store.max_age_seconds(),
+        "adoms": [],
+    }
+    if not Config.INVENTORY_CACHE:
+        return jsonify(body)
+    rows = inventory.freshness()
+    if session.get("role") != "admin":
+        from app.groups import get_allowed_adoms
+
+        allowed = get_allowed_adoms(
+            session.get("user", ""), ad_groups=session.get("ad_groups", [])
+        )
+        if allowed is not None:
+            rows = [r for r in rows if r["adom"] in allowed]
+    body["adoms"] = rows
+    return jsonify(body)
+
+
+@bp.route("/inventory/refresh", methods=["POST"])
+@admin_required
+def inventory_refresh():
+    """Ask the collector for an immediate inventory refresh (throttled)."""
+    import math
+
+    from app import inventory_store
+
+    if not Config.INVENTORY_CACHE:
+        return jsonify({"error": "Inventory cache is not enabled"}), 503
+    try:
+        accepted = inventory_store.request_refresh(_REFRESH_MIN_INTERVAL_S)
+        if accepted:
+            return jsonify({"requested": True}), 202
+        age = inventory_store.refresh_request_age_seconds() or 0.0
+    except inventory_store.InventoryStoreError as exc:
+        return internal_api_error("api", exc)
+    wait = max(1, math.ceil(_REFRESH_MIN_INTERVAL_S - age))
+    resp = jsonify({"error": "Refresh requested too recently", "retry_after": wait})
+    resp.headers["Retry-After"] = str(wait)
+    return resp, 429
+
+
+# ── Policy store freshness (F8) ──────────────────────────────────────────────
+
+
+@bp.route("/policy-store/status")
+@login_required
+@tab_required("rule_hygiene", "audit_review")
+def policy_store_status():
+    """Per-package freshness of the policy store for one ADOM (no policy content)."""
+    from app import policy_store
+
+    adom = (request.args.get("adom") or "").strip()
+    if not adom:
+        return jsonify({"error": "adom is required"}), 400
+    if err := check_adom_access(adom):
+        return err
+    body = {
+        "enabled": bool(Config.POLICY_STORE),
+        "adom": adom,
+        "packages": [],
+        "objects": None,
+    }
+    if not Config.POLICY_STORE:
+        return jsonify(body)
+    try:
+        limit = policy_store.max_age_seconds()
+        body["packages"] = [
+            {
+                "pkg": m["pkg"],
+                "fetched_at": m["fetched_at"],
+                "age_seconds": m["age_seconds"],
+                "policy_count": m["policy_count"],
+                "status": m["status"],
+                "stale": m["age_seconds"] is None or m["age_seconds"] > limit,
+            }
+            for m in policy_store.package_meta(adom)
+        ]
+        rows = [
+            m
+            for m in policy_store.objects_meta()
+            if m["scope_key"] in (adom, policy_store.GLOBAL_KEY) and m["fetched_at"]
+        ]
+        if rows:
+            oldest = max(rows, key=lambda m: m["age_seconds"] or 0.0)
+            body["objects"] = {
+                "fetched_at": oldest["fetched_at"],
+                "age_seconds": oldest["age_seconds"],
+                "stale": (oldest["age_seconds"] or 0.0) > limit,
+            }
+    except policy_store.PolicyStoreError as exc:
+        return internal_api_error("api", exc)
+    return jsonify(body)
+
+
+# ── Device snapshot coverage (Phase 5) ───────────────────────────────────────
+
+
+@bp.route("/audit-snapshots/status")
+@login_required
+@tab_required("audit_review")
+def audit_snapshots_status():
+    """Coverage of the device configuration snapshots for one ADOM (no config content)."""
+    from datetime import UTC, datetime
+
+    from app import snapshot_store
+
+    adom = (request.args.get("adom") or "").strip()
+    if not adom:
+        return jsonify({"error": "adom is required"}), 400
+    if err := check_adom_access(adom):
+        return err
+    window_days = Config.AUDIT_SNAPSHOT_WINDOW_DAYS
+    limit = snapshot_store.max_age_seconds()
+    body = {
+        "enabled": bool(Config.AUDIT_SNAPSHOTS),
+        "adom": adom,
+        "window_days": window_days,
+        "max_age_hours": round(limit / 3600),
+        "devices_total": 0,
+        "devices_captured": 0,
+        "coverage_pct": 0.0,
+        "devices_stale": 0,
+        "devices_unreachable": 0,
+        "oldest_at": None,
+        "newest_at": None,
+    }
+    if not Config.AUDIT_SNAPSHOTS:
+        return jsonify(body)
+    try:
+        rows = snapshot_store.device_meta_rows(adom)
+    except snapshot_store.SnapshotStoreError as exc:
+        return internal_api_error("api", exc)
+    try:
+        with _make_client() as client:
+            total = len(inventory.devices(client, adom))
+    except Exception:
+        total = len(rows)
+    now = datetime.now(UTC)
+    captured = [r for r in rows if r["keys"] > 0 and r["oldest_key_at"]]
+    stale = 0
+    for r in captured:
+        try:
+            then = datetime.fromisoformat(r["oldest_key_at"])
+            if then.tzinfo is None:
+                then = then.replace(tzinfo=UTC)
+            if (now - then).total_seconds() > limit:
+                stale += 1
+        except ValueError:
+            stale += 1
+    stamps = sorted(r["oldest_key_at"] for r in captured)
+    body.update(
+        devices_total=max(total, len(captured)),
+        devices_captured=len(captured),
+        coverage_pct=round(100.0 * len(captured) / total, 1) if total else 0.0,
+        devices_stale=stale,
+        devices_unreachable=sum(
+            1 for r in rows if r["has_unreachable"] or r["fail_count"] > 0
+        ),
+        oldest_at=stamps[0] if stamps else None,
+        newest_at=stamps[-1] if stamps else None,
+    )
+    return jsonify(body)
+
+
+@bp.route("/policy-store/refresh", methods=["POST"])
+@login_required
+@tab_required("rule_hygiene", "audit_review")
+def policy_store_refresh():
+    """Ask the collector to refetch one package now (served within ~10 s, throttled)."""
+    import math
+
+    from app import policy_store
+
+    data = request.get_json(silent=True) or {}
+    adom = (data.get("adom") or "").strip()
+    pkg = (data.get("pkg") or "").strip()
+    if not adom or not pkg:
+        return jsonify({"error": "adom and pkg are required"}), 400
+    if err := check_adom_access(adom):
+        return err
+    if not Config.POLICY_STORE:
+        return jsonify({"error": "Policy store is not enabled"}), 503
+    interval = Config.POLICY_REFRESH_MIN_INTERVAL_SECS
+    try:
+        if pkg not in {m["pkg"] for m in policy_store.package_meta(adom)}:
+            return jsonify({"error": "Unknown package"}), 404
+        if policy_store.request_package_refresh(adom, pkg, interval):
+            return jsonify({"requested": True}), 202
+        age = policy_store.refresh_request_age_seconds(adom, pkg) or 0.0
+    except policy_store.PolicyStoreError as exc:
+        return internal_api_error("api", exc)
+    wait = max(1, math.ceil(interval - age))
+    resp = jsonify({"error": "Refresh requested too recently", "retry_after": wait})
+    resp.headers["Retry-After"] = str(wait)
+    return resp, 429

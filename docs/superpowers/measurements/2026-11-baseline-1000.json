@@ -1,0 +1,114 @@
+{
+  "adoms": 5,
+  "calls_per_hour": 3887.75,
+  "devices": 1000,
+  "inventory_downloads_per_cycle": 7,
+  "proxy_calls": {
+    "/api/v2/monitor/license/status": 1000
+  },
+  "sweeps": {
+    "adom_cache": {
+      "by_url": {
+        "get /dvmdb/adom": 1
+      },
+      "calls": 1,
+      "calls_per_hour": 2.0,
+      "interval_min": 30,
+      "seconds": 0.0
+    },
+    "device_backup_cache": {
+      "by_url": {
+        "get /dvmdb/adom": 1,
+        "get /dvmdb/adom/{adom}/device": 5,
+        "get /dvmdb/adom/{adom}/revision": 5
+      },
+      "calls": 11,
+      "calls_per_hour": 0.4583333333333333,
+      "interval_min": 1440,
+      "seconds": 0.01
+    },
+    "exec_device_sweep": {
+      "by_url": {
+        "get /dvmdb/adom": 1,
+        "get /dvmdb/adom/{adom}/device": 5,
+        "get /sys/status": 1
+      },
+      "calls": 7,
+      "calls_per_hour": 28.0,
+      "interval_min": 15,
+      "seconds": 0.06
+    },
+    "exec_hygiene_sweep": {
+      "by_url": {
+        "get /dvmdb/adom": 1,
+        "get /pm/config/adom/{adom}/obj/firewall/address": 15,
+        "get /pm/config/adom/{adom}/obj/firewall/addrgrp": 5,
+        "get /pm/config/adom/{adom}/obj/firewall/service/custom": 5,
+        "get /pm/config/adom/{adom}/obj/firewall/service/group": 5,
+        "get /pm/config/adom/{adom}/pkg/{pkg}/firewall/policy": 400,
+        "get /pm/config/global/obj/firewall/address": 5,
+        "get /pm/config/global/obj/firewall/addrgrp": 5,
+        "get /pm/pkg/adom/{adom}": 5
+      },
+      "calls": 446,
+      "calls_per_hour": 446.0,
+      "interval_min": 60,
+      "seconds": 30.3
+    },
+    "license_status_cache": {
+      "by_url": {
+        "exec /sys/proxy/json": 1000,
+        "get /dvmdb/adom": 1,
+        "get /dvmdb/adom/{adom}/device": 5
+      },
+      "calls": 1006,
+      "calls_per_hour": 41.916666666666664,
+      "interval_min": 1440,
+      "seconds": 0.04
+    },
+    "map_cache": {
+      "by_url": {
+        "get /dvmdb/adom": 1,
+        "get /dvmdb/adom/{adom}/device": 5
+      },
+      "calls": 6,
+      "calls_per_hour": 0.25,
+      "interval_min": 1440,
+      "seconds": 0.01
+    },
+    "pending_status_cache": {
+      "by_url": {
+        "get /dvmdb/adom": 1,
+        "get /dvmdb/adom/{adom}/device": 5,
+        "get /pm/config/adom/{adom}/_package/status/{device}/{vdom}": 1664
+      },
+      "calls": 1670,
+      "calls_per_hour": 3340.0,
+      "interval_min": 30,
+      "seconds": 0.04
+    },
+    "summary_job": {
+      "by_url": {
+        "get /dvmdb/adom": 1,
+        "get /dvmdb/adom/{adom}/device": 5,
+        "get /pm/config/adom/{adom}/pkg/{pkg}/firewall/policy": 400,
+        "get /pm/pkg/adom/{adom}": 5
+      },
+      "calls": 411,
+      "calls_per_hour": 17.125,
+      "interval_min": 1440,
+      "seconds": 0.47
+    },
+    "versions_cache": {
+      "by_url": {
+        "get /dvmdb/adom": 1,
+        "get /dvmdb/adom/{adom}/device": 5
+      },
+      "calls": 6,
+      "calls_per_hour": 12.0,
+      "interval_min": 30,
+      "seconds": 0.01
+    }
+  },
+  "unsupported": {}
+}

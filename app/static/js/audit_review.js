@@ -344,6 +344,18 @@ async function runAnalysis() {
 
   showProgress(0, deviceList.length, deviceList[0]);
 
+  if (window._jobQueue) {
+    try {
+      const res = await runJob('device_review', {
+        adom, devices: deviceList, checks, check_params: checkParams,
+        live: !!(document.getElementById('drLive') || {}).checked,
+      }, (done, total, msg) => showProgress(done, total, msg),
+      { ui: 'dr', adom, checks, checkParams });
+      if (res) jobRowsToCollected(res, collectedRows, reviewed, resultsByDevice);
+    } catch (e) {
+      showError(e.message);
+    }
+  } else
   for (let i = 0; i < deviceList.length; i++) {
     if (_abortRun) break;
 
@@ -354,7 +366,10 @@ async function runAnalysis() {
       const resp = await fetch('/api/audit-review/run/device', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ adom, device, checks, check_params: checkParams }),
+        body:    JSON.stringify({
+          adom, device, checks, check_params: checkParams,
+          live: !!(document.getElementById('drLive') || {}).checked,
+        }),
       });
       if (resp.status === 401) { location.href = '/login'; return; }
       const data = await resp.json();
@@ -371,7 +386,11 @@ async function runAnalysis() {
     }
   }
 
-  showProgress(deviceList.length, deviceList.length, '');
+  renderRunResults(adom, collectedRows, reviewed, resultsByDevice, checks, checkParams, deviceList.length);
+}
+
+function renderRunResults(adom, collectedRows, reviewed, resultsByDevice, checks, checkParams, total) {
+  showProgress(total, total, '');
 
   const runAt = new Date().toLocaleString();
   allRows  = collectedRows;
@@ -410,6 +429,7 @@ async function runAnalysis() {
   if (_abortRun) label += ' (cancelled)';
   document.getElementById('drLastRunLabel').textContent = label;
 
+  const cancelBtn = document.getElementById('drCancelBtn');
   document.getElementById('drRunBtn').disabled        = false;
   cancelBtn.style.display  = 'none';
   cancelBtn.disabled       = false;
@@ -539,7 +559,7 @@ function renderTable() {
   const tbody = document.getElementById('drTbody');
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No results match the current filters.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${window._auditSnapshots ? 7 : 6}" style="text-align:center;color:var(--text-muted)">No results match the current filters.</td></tr>`;
     document.getElementById('drPager').innerHTML    = '';
     document.getElementById('drSummary').textContent = buildSummary(rows);
     return;
@@ -584,11 +604,18 @@ function renderTable() {
       <td>${scopeHtml}</td>
       <td><code>${esc(row.ip || '—')}</code></td>
       <td>${detailHtml}</td>
+      ${window._auditSnapshots ? `<td style="font-size:.8rem;white-space:nowrap" title="${esc(row.source || '')}">${esc(asOf(row.collected_at))}${row.source === 'live' ? ' <span class="dr-vdom-badge">live</span>' : ''}</td>` : ''}
     </tr>`;
   }).join('');
 
   document.getElementById('drSummary').textContent = buildSummary(rows);
   renderPager(rows.length);
+}
+
+function asOf(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return isNaN(d) ? '—' : d.toLocaleString();
 }
 
 function buildSummary(rows) {
@@ -640,6 +667,7 @@ function exportCsv() {
     '',
   ].join('\r\n');
   const cols = ['Device', 'Check', 'Result', 'Interface/Scope', 'IP Address', 'Detail/Protocols'];
+  if (window._auditSnapshots) cols.push('Data as of', 'Source');
   const body = [cols.join(','), ...rows.map(r => [
     r.device,
     r.check || '',
@@ -649,6 +677,7 @@ function exportCsv() {
     r.type === 'system'
       ? (r.detail || '')
       : visibleProtocols(r).map(p => p.name).join(' '),
+    ...(window._auditSnapshots ? [r.collected_at || '', r.source || ''] : []),
   ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\r\n');
   download(`device-review-${meta.adom || 'export'}.csv`, header + body, 'text/csv');
 }
@@ -784,6 +813,7 @@ document.getElementById('drRunBtn').addEventListener('click', runAnalysis);
 
 document.getElementById('drCancelBtn').addEventListener('click', function () {
   _abortRun = true;
+  cancelCurrentJob();
   this.disabled    = true;
   this.textContent = 'Cancelling…';
 });
@@ -901,15 +931,23 @@ async function runHygieneAnalysis() {
   document.getElementById('hygieneRunning').style.display = '';
 
   try {
-    const resp = await fetch('/api/hygiene/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adom, package: pkg, path, checks: checked }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) {
-      showHygieneError(data.error || 'Analysis failed.');
-      return;
+    let data;
+    if (window._jobQueue) {
+      data = await runJob('hygiene_run', { adom, package: pkg, path, checks: checked },
+        (done, total, msg) => { document.getElementById('hygieneRunning').textContent = 'Analysing… ' + (msg || ''); },
+        { ui: 'hygiene' });
+      if (!data) return;  // cancelled
+    } else {
+      const resp = await fetch('/api/hygiene/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adom, package: pkg, path, checks: checked }),
+      });
+      data = await resp.json();
+      if (!resp.ok) {
+        showHygieneError(data.error || 'Analysis failed.');
+        return;
+      }
     }
 
     allFindings        = data.findings || [];
@@ -1690,3 +1728,129 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('logUsageRunBtn').addEventListener('click', runLogUsageCheck);
   document.getElementById('logUsageExportCsvBtn').addEventListener('click', exportLogUsageCsv);
 });
+
+
+// ── Snapshot coverage badge (only present when snapshots are enabled) ──────────
+async function loadSnapshotBadge(adom) {
+  const el = document.getElementById('drSnapshotBadge');
+  if (!el || !adom) return;
+  try {
+    const r = await fetch('/api/audit-snapshots/status?adom=' + encodeURIComponent(adom));
+    if (!r.ok) { el.textContent = ''; return; }
+    const d = await r.json();
+    if (!d.enabled) { el.textContent = ''; return; }
+    let age = '';
+    if (d.oldest_at) {
+      const hrs = Math.max(0, Math.round((Date.now() - new Date(d.oldest_at)) / 3600000));
+      age = hrs >= 48 ? `, oldest ${Math.round(hrs / 24)} days ago` : `, oldest ${hrs} h ago`;
+    }
+    el.textContent = `Snapshots cover ${d.devices_captured} of ${d.devices_total} devices${age}`
+      + (d.devices_stale ? ` · ${d.devices_stale} stale` : '')
+      + (d.devices_unreachable ? ` · ${d.devices_unreachable} unreachable` : '');
+    el.style.color = (d.devices_stale || d.devices_unreachable || d.coverage_pct < 100)
+      ? '#ca8a04' : '';
+  } catch (_e) { el.textContent = ''; }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('drAdom');
+  if (sel) sel.addEventListener('change', () => loadSnapshotBadge(sel.value));
+});
+
+
+/* ── Server-side jobs (only when window._jobQueue is set) ───────────────────── */
+let _currentJobId = null;
+const JOB_KEY = 'fourthealthJob';
+
+function jobCsrf() {
+  const m = document.querySelector('meta[name="csrf-token"]');
+  return m ? m.content : '';
+}
+
+function cancelCurrentJob() {
+  if (!_currentJobId) return;
+  fetch('/api/jobs/' + _currentJobId + '/cancel', {
+    method: 'POST', headers: { 'X-CSRF-Token': jobCsrf() },
+  }).catch(() => {});
+}
+
+function rememberJob(info) {
+  try { localStorage.setItem(JOB_KEY, JSON.stringify(info)); } catch (_) {}
+}
+function forgetJob() {
+  try { localStorage.removeItem(JOB_KEY); } catch (_) {}
+}
+
+/* Submit a job and poll until it ends. Resolves the result (null if cancelled
+   with no result); throws with a short message on failure. */
+async function runJob(kind, body, onProgress, meta) {
+  const resp = await fetch('/api/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': jobCsrf() },
+    body: JSON.stringify({ kind, ...body }),
+  });
+  if (resp.status === 401) { location.href = '/login'; return null; }
+  const created = await resp.json();
+  if (!resp.ok) throw new Error(created.error || 'Could not start the job');
+  _currentJobId = created.id;
+  rememberJob({ id: created.id, kind, user: window._jobUser || '', ...meta });
+  return pollJob(created.id, onProgress);
+}
+
+async function pollJob(id, onProgress) {
+  _currentJobId = id;
+  try {
+    for (;;) {
+      const r = await fetch('/api/jobs/' + id);
+      if (r.status === 401) { location.href = '/login'; return null; }
+      if (r.status === 404) { forgetJob(); throw new Error('The job is no longer available'); }
+      const j = await r.json();
+      if (onProgress) onProgress(j.done || 0, j.total || 0, j.message || '');
+      if (j.status === 'done') { forgetJob(); return j.result; }
+      if (j.status === 'cancelled') { forgetJob(); return j.result || null; }
+      if (j.status === 'failed') { forgetJob(); throw new Error(j.error || 'The job failed'); }
+      await new Promise(res => setTimeout(res, 2000));
+    }
+  } finally {
+    _currentJobId = null;
+  }
+}
+
+function jobRowsToCollected(res, collectedRows, reviewed, resultsByDevice) {
+  const byDevice = new Map();
+  (res.devices_reviewed || []).forEach(d => byDevice.set(d, []));
+  (res.rows || []).forEach(r => {
+    if (!byDevice.has(r.device)) byDevice.set(r.device, []);
+    byDevice.get(r.device).push(r);
+  });
+  byDevice.forEach((rows, device) => {
+    collectedRows.push(...rows);
+    reviewed.push(device);
+    resultsByDevice.push({ device, rows, error: null });
+  });
+}
+
+/* A page reload during a Device Review job resumes it instead of losing it. */
+async function resumeJobOnLoad() {
+  if (!window._jobQueue) return;
+  let info = null;
+  try { info = JSON.parse(localStorage.getItem(JOB_KEY) || 'null'); } catch (_) {}
+  if (!info || info.kind !== 'device_review' || !info.id) return;
+  if ((info.user || '') !== (window._jobUser || '')) { forgetJob(); return; }
+  document.getElementById('drRunBtn').disabled = true;
+  const cancelBtn = document.getElementById('drCancelBtn');
+  cancelBtn.style.display = '';
+  document.getElementById('drRunning').style.display = '';
+  try {
+    const res = await pollJob(info.id, (d, t, m) => showProgress(d, t, m));
+    const rows = [], reviewed = [], byDev = [];
+    if (res) jobRowsToCollected(res, rows, reviewed, byDev);
+    renderRunResults(info.adom, rows, reviewed, byDev, info.checks || [], info.checkParams || {}, reviewed.length);
+  } catch (e) {
+    showError(e.message);
+    document.getElementById('drRunBtn').disabled = false;
+    cancelBtn.style.display = 'none';
+    document.getElementById('drRunning').style.display = 'none';
+    hideProgress();
+  }
+}
+document.addEventListener('DOMContentLoaded', resumeJobOnLoad);

@@ -94,3 +94,8 @@ graphify-out/
 
 # Superpowers git worktree scratch space (internal — not project content)
 .worktrees/
+
+# Scale work: shared data dir and SQLite sidecars
+data/
+*.db-wal
+*.db-shm

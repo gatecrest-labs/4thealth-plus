@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from app import policies as policy_facade
 from app.app_logger import app_log
 from app.atomic_io import atomic_write_json
 
@@ -53,9 +54,17 @@ def _send_email(to, subject, body_html, attachments):
     send_email(to, subject, body_html, attachments)
 
 
-def _bulk_policy_adom(adom, packages, include_global, live_hits, max_workers=4):
-    """Thin wrapper around bulk_policy_adom — monkeypatched in tests."""
-    return bulk_policy_adom(adom, packages, include_global, live_hits, max_workers)
+def _bulk_policy_adom(
+    adom, packages, include_global, live_hits, max_workers=4, **kwargs
+):
+    """Thin wrapper around bulk_policy_adom — monkeypatched in tests.
+
+    ``fresh=True`` bypasses the policy store (Package Change Alerts: the report
+    must contain the change that triggered the alert).
+    """
+    return bulk_policy_adom(
+        adom, packages, include_global, live_hits, max_workers, **kwargs
+    )
 
 
 # ── Validation ────────────────────────────────────────────────────────────────
@@ -493,6 +502,7 @@ def _policy_for_pkg(
     pkg: dict,
     catalogs: dict,
     live_hits: bool,
+    fresh: bool = False,
 ) -> dict:
     """Fetch and process all rules for a single policy package.
 
@@ -526,7 +536,7 @@ def _policy_for_pkg(
 
     try:
         with _make_client() as client:
-            rules_raw = client.get_policies(adom, pkg_path)
+            rules_raw = policy_facade.policies(client, adom, pkg_path, fresh=fresh)
             hit_map: dict = {}
             hit_source_label = "na"
 
@@ -647,6 +657,7 @@ def bulk_policy_adom(
     include_global: bool,
     live_hits: bool,
     max_workers: int = 4,
+    fresh: bool = False,
 ) -> tuple:
     """Fetch rule data for all (or named) packages in an ADOM.
 
@@ -655,12 +666,22 @@ def bulk_policy_adom(
     each worker opens its own client.
     """
     with _make_client() as client:
-        all_pkgs = client.get_policy_packages(adom)
-        addr_objects = client.get_address_objects(adom, scope="all") or []
-        addr_groups = client.get_address_groups(adom, scope="all") or []
-        vip_objects = client.get_vip_objects(adom) or []
-        svc_objects = client.get_service_objects(adom, scope="all") or []
-        svc_groups = client.get_service_groups(adom, scope="all") or []
+        all_pkgs = policy_facade.packages(client, adom, fresh=fresh)
+        addr_objects = (
+            policy_facade.objects(client, adom, "address", "all", fresh=fresh) or []
+        )
+        addr_groups = (
+            policy_facade.objects(client, adom, "addrgrp", "all", fresh=fresh) or []
+        )
+        vip_objects = (
+            policy_facade.objects(client, adom, "vip", "all", fresh=fresh) or []
+        )
+        svc_objects = (
+            policy_facade.objects(client, adom, "service", "all", fresh=fresh) or []
+        )
+        svc_groups = (
+            policy_facade.objects(client, adom, "svcgrp", "all", fresh=fresh) or []
+        )
 
     # Build catalogs once — workers use them read-only
     addr_catalog = _build_addr_catalog(addr_objects + vip_objects, addr_groups)
@@ -692,7 +713,7 @@ def bulk_policy_adom(
 
     with ThreadPoolExecutor(max_workers=actual_workers) as executor:
         futures = [
-            executor.submit(_policy_for_pkg, adom, pkg, catalogs, live_hits)
+            executor.submit(_policy_for_pkg, adom, pkg, catalogs, live_hits, fresh)
             for pkg in valid_pkgs
         ]
         results = [f.result() for f in futures]
@@ -1189,7 +1210,9 @@ def _execute_job(job_id: str) -> None:
         )
 
         attachments = _build_all_attachments(bulk_result, job)
-        summary_html = _build_summary_html(adom, results, skipped, gen_at)
+        summary_html = policy_facade.age_note_html(adom) + _build_summary_html(
+            adom, results, skipped, gen_at
+        )
 
         total_batch_emails = 0
         if attachments:

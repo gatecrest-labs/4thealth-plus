@@ -1,0 +1,23 @@
+{
+  "concurrent": {
+    "count": 30,
+    "seconds": {
+      "max": 0.8019203341100365,
+      "p50": 0.5199662285158411,
+      "p95": 0.7957559579517692
+    },
+    "wall_seconds": 4.0211,
+    "workers": 4
+  },
+  "device_sample": 1,
+  "fmg_version": "FMGVersion(8.0.2, build=198)",
+  "resource": "/api/v2/monitor/system/status",
+  "sequential": {
+    "count": 30,
+    "seconds": {
+      "max": 0.45167345902882516,
+      "p50": 0.1638891875045374,
+      "p95": 0.36044154106639326
+    }
+  }
+}

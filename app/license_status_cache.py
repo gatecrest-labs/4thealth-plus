@@ -44,6 +44,7 @@ import time as _time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+from app import boot_warmup, inventory
 from app.atomic_io import atomic_write_json
 from app.license_status import parse_license_payload
 
@@ -196,7 +197,7 @@ def compute_expiring_soon(all_devices: list[dict], as_of: date | None = None) ->
 def _list_target_adoms(client) -> list[str]:
     """Return non-forti* ADOM names — same convention as every other
     ADOM-enumerating sweep in this codebase (see CLAUDE.md)."""
-    adoms_raw = client.get_adoms()
+    adoms_raw = inventory.adoms(client)
     return [
         a.get("name", "")
         for a in adoms_raw
@@ -251,7 +252,7 @@ def _run_sweep(app) -> bool:
             adom_names = _list_target_adoms(client)
             for adom in adom_names:
                 try:
-                    devices = client.get_devices(adom) or []
+                    devices = inventory.devices(client, adom) or []
                 except Exception as exc:
                     logger.warning(
                         "license_status_cache: get_devices(%s) failed: %s", adom, exc
@@ -408,11 +409,6 @@ def init_scheduler(app):
             "license_status_cache: skipping startup sweep — last sweep is still fresh"
         )
     else:
-        threading.Thread(
-            target=_run_sweep,
-            args=[app],
-            name="license_status_cache_startup",
-            daemon=True,
-        ).start()
+        boot_warmup.defer("license_status_cache", lambda: _run_sweep(app), 3)
 
     return scheduler

@@ -62,6 +62,12 @@
   <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
     <button class="btn btn-primary" id="drRunBtn" disabled>&#9654; Run Review</button>
     <button class="btn btn-secondary" id="drCancelBtn" style="display:none">&#9632; Cancel</button>
+    {% if audit_snapshots_enabled %}
+    <span id="drSnapshotBadge" class="text-muted" style="font-size:.82rem" title="Device configuration snapshots collected in the background"></span>
+    <label class="text-muted" style="font-size:.85rem" title="Read the devices now instead of using the collected snapshots (slower, loads FortiManager)">
+      <input type="checkbox" id="drLive" /> Live (read devices now)
+    </label>
+    {% endif %}
     <span id="drRunning" class="text-muted" style="display:none;font-style:italic">Analysing…</span>
     <span id="drError" class="text-danger" style="display:none"></span>
   </div>
@@ -141,6 +147,7 @@
           <th>Interface / Scope</th>
           <th>IP Address</th>
           <th>Protocols / Detail</th>
+          {% if audit_snapshots_enabled %}<th>Data as of</th>{% endif %}
         </tr>
       </thead>
       <tbody id="drTbody"></tbody>
@@ -164,6 +171,7 @@
     <select id="hygienePackage" class="form-select" disabled>
       <option value="">— select package —</option>
     </select>
+    {% if policy_store_enabled %}<span id="hygieneFreshness" class="inv-freshness" hidden></span>{% endif %}
   </div>
 
   <div class="hygiene-selector-row" style="margin-top:.75rem">
@@ -466,6 +474,12 @@
 /* Check definitions injected from server — used by JS to build param inputs */
 const CHECK_DEFS = {{ dr_checks | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/audit_review.js') }}?v=1"></script>
+{% if audit_snapshots_enabled %}<script>window._auditSnapshots = true;</script>{% endif %}
+{% if job_queue_enabled %}<script>window._jobQueue = true; window._jobUser = {{ (session.get('user') or '') | tojson }};</script>{% endif %}
+<script src="{{ url_for('static', filename='js/audit_review.js') }}?v=4"></script>
 <script src="{{ url_for('static', filename='js/psirt.js') }}?v=1"></script>
+{% if policy_store_enabled %}
+<script>window._policyFreshness = [{adom: 'hygieneAdom', pkg: 'hygienePackage', mount: 'hygieneFreshness'}];</script>
+<script src="{{ url_for('static', filename='js/policy_freshness.js') }}?v=1"></script>
+{% endif %}
 {% endblock %}

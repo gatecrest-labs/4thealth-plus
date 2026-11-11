@@ -22,7 +22,8 @@ import json as _json
 
 from flask import Blueprint, current_app, jsonify, render_template, request, session
 
-from app import registry
+from app import inventory, registry
+from app import policies as policy_facade
 from app.decorators import check_adom_access, tab_required
 from app.fmg_client import FMGError
 from app.fmg_helpers import make_client
@@ -58,7 +59,7 @@ def rr_adoms():
             _session.get("user", ""), ad_groups=_session.get("ad_groups", [])
         )
         with make_client() as client:
-            raw = client.get_adoms()
+            raw = inventory.adoms(client)
         names = sorted(
             a["name"]
             for a in raw
@@ -96,7 +97,7 @@ def rr_devices():
             _session.get("user", ""), ad_groups=_session.get("ad_groups", [])
         )
         with make_client() as client:
-            raw_adoms = client.get_adoms()
+            raw_adoms = inventory.adoms(client)
             adom_names = sorted(
                 a["name"]
                 for a in raw_adoms
@@ -109,7 +110,7 @@ def rr_devices():
 
             results = []
             for adom in adom_names:
-                for d in client.get_devices(adom):
+                for d in inventory.devices(client, adom):
                     if isinstance(d, dict) and d.get("name"):
                         results.append({"device": d["name"], "adom": adom})
         results.sort(key=lambda r: (r["device"], r["adom"]))
@@ -130,7 +131,7 @@ def rr_packages(adom: str):
         return err
     try:
         with make_client() as client:
-            raw = client.get_policy_packages(adom)
+            raw = policy_facade.packages(client, adom)
         packages = [
             {"name": p["name"], "path": p.get("path", p["name"])}
             for p in raw

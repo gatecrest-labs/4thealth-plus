@@ -78,13 +78,14 @@
 
 <h2>Per-Device Detail</h2>
 <table>
-  <thead><tr><th>Device</th><th>Workaround Status</th><th>Reason</th></tr></thead>
+  <thead><tr><th>Device</th><th>Workaround Status</th><th>Reason</th>{% if has_provenance %}<th>Data as of</th>{% endif %}</tr></thead>
   <tbody>
   {% for f in findings %}
     <tr>
       <td>{{ f.device }}</td>
       <td>{{ f.workaround_status | replace('_', ' ') }}</td>
       <td>{{ f.reason }}</td>
+      {% if has_provenance %}<td>{{ f.data_as_of or '—' }}{% if f.source %} ({{ f.source }}){% endif %}</td>{% endif %}
     </tr>
   {% endfor %}
   </tbody>

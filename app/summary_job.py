@@ -15,6 +15,9 @@ import threading
 import time as _time
 from datetime import UTC, datetime
 
+from app import boot_warmup, inventory
+from app import policies as policy_facade
+
 logger = logging.getLogger(__name__)
 
 # ── Shared state ──────────────────────────────────────────────────────────────
@@ -95,7 +98,7 @@ def _run_job(app):
 
         with make_client() as client:
             # ── Step 1: enumerate ADOMs ───────────────────────────────────
-            adoms_raw = client.get_adoms()
+            adoms_raw = inventory.adoms(client)
             adom_names = [
                 a.get("name", "")
                 for a in adoms_raw
@@ -109,7 +112,7 @@ def _run_job(app):
             adoms_with_devices = []
             for adom in adom_names:
                 try:
-                    devices = client.get_devices(adom)
+                    devices = inventory.devices(client, adom)
                     count = len(devices) if isinstance(devices, list) else 0
                     if isinstance(devices, list):
                         for d in devices:
@@ -134,7 +137,8 @@ def _run_job(app):
             # ── Step 3: count policy rules — only ADOMs that have devices ─
             for adom in adoms_with_devices:
                 try:
-                    packages = client.get_policy_packages(adom)
+                    packages = policy_facade.packages(client, adom)
+                    stored_counts = policy_facade.package_counts(adom)
                     logger.info(
                         "summary_job: ADOM %s — %d packages to count",
                         adom,
@@ -145,7 +149,9 @@ def _run_job(app):
                         pkg_path = pkg.get("path", pkg.get("name", ""))
                         if not pkg_path:
                             continue
-                        count = client.get_policy_count(adom, pkg_path)
+                        count = stored_counts.get(pkg_path)
+                        if count is None:
+                            count = client.get_policy_count(adom, pkg_path)
                         rules_total += count
                         adom_rule_count += count
                     adom_rules[adom] = adom_rule_count
@@ -259,7 +265,6 @@ def init_scheduler(app):
             _time.sleep(15)
             _run_job(app)
 
-    t = threading.Thread(target=_startup, name="summary_job_startup", daemon=True)
-    t.start()
+    boot_warmup.defer("summary_job", _startup, 1)
 
     return scheduler

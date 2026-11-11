@@ -93,6 +93,31 @@ def _advisory_from_payload(data: dict) -> Advisory:
     )
 
 
+def _engine_client(client, live: bool):
+    """The object the PSIRT engine reads FortiManager through.
+
+    With ``AUDIT_SNAPSHOTS`` off this is the real client (legacy behaviour);
+    with it on, an adapter that serves per-device reads from snapshots.
+    """
+    if not Config.AUDIT_SNAPSHOTS:
+        return client
+    from app.psirt_adapter import SnapshotFMGAdapter
+
+    return SnapshotFMGAdapter(client, live=live)
+
+
+def _stamp_provenance(finding: dict, engine_client) -> dict:
+    """Add data_as_of/source to a finding dict when the adapter read it from the store."""
+    if not Config.AUDIT_SNAPSHOTS:
+        return finding
+    prov = getattr(engine_client, "provenance", None)
+    row = prov(finding.get("device", "")) if callable(prov) else None
+    if row:
+        finding["data_as_of"] = row["collected_at"]
+        finding["source"] = row["source"]
+    return finding
+
+
 def _http_client():
     import requests
 
@@ -173,11 +198,13 @@ def psirt_assess_device():
 
     advisory = _advisory_from_payload(data.get("advisory") or {})
 
+    live = bool(data.get("live"))
     try:
         with make_client() as client:
+            engine_client = _engine_client(client, live)
             result = psirt_assess(
                 advisory,
-                client,
+                engine_client,
                 adom,
                 _http_client(),
                 Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else "",
@@ -193,7 +220,9 @@ def psirt_assess_device():
     finding = matching[0] if matching else None
     return jsonify(
         {
-            "finding": finding.to_dict() if finding else None,
+            "finding": _stamp_provenance(finding.to_dict(), engine_client)
+            if finding
+            else None,
             "priority": result.priority,
             "priority_rationale": result.priority_rationale,
             "kev_hit": result.kev_hit,
@@ -238,12 +267,14 @@ def psirt_assess_bulk():
 
     advisory = _advisory_from_payload(data.get("advisory") or {})
 
+    live = bool(data.get("live"))
     try:
         with make_client() as client:
+            engine_client = _engine_client(client, live)
             if adom_scope is not None:
                 result = psirt_assess(
                     advisory,
-                    client,
+                    engine_client,
                     adom_scope,
                     _http_client(),
                     Config.PSIRT_KEV_URL if Config.PSIRT_ENRICHMENT_ENABLED else "",
@@ -277,7 +308,7 @@ def psirt_assess_bulk():
                 for one_adom in allowed:
                     partial = psirt_assess(
                         advisory,
-                        client,
+                        engine_client,
                         one_adom,
                         _http_client(),
                         kev_url,
@@ -339,6 +370,9 @@ def psirt_assess_bulk():
         return internal_api_error("psirt", exc)
 
     result_dict = result.to_dict()
+    if Config.AUDIT_SNAPSHOTS:
+        for f in result_dict.get("findings", []):
+            _stamp_provenance(f, engine_client)
     try:
         psirt_store.save_assessment_result(result_dict)
     except Exception:

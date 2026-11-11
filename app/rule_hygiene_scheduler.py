@@ -18,6 +18,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from app import policies as policy_facade
 from app.app_logger import app_log
 from app.atomic_io import atomic_write_json
 
@@ -641,7 +642,9 @@ def _execute_job(job_id: str) -> None:
             }
         )
 
-        summary_html = _build_summary_html(adom, results, generated_at, include_unused)
+        summary_html = policy_facade.age_note_html(adom) + _build_summary_html(
+            adom, results, generated_at, include_unused
+        )
         attachments = _build_all_attachments(results, fmt, generated_at)
 
         safe_adom = adom.replace(" ", "_")
