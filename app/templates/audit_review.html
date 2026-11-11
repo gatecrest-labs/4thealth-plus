@@ -475,8 +475,8 @@
 const CHECK_DEFS = {{ dr_checks | tojson }};
 </script>
 {% if audit_snapshots_enabled %}<script>window._auditSnapshots = true;</script>{% endif %}
-{% if job_queue_enabled %}<script>window._jobQueue = true;</script>{% endif %}
-<script src="{{ url_for('static', filename='js/audit_review.js') }}?v=3"></script>
+{% if job_queue_enabled %}<script>window._jobQueue = true; window._jobUser = {{ (session.get('user') or '') | tojson }};</script>{% endif %}
+<script src="{{ url_for('static', filename='js/audit_review.js') }}?v=4"></script>
 <script src="{{ url_for('static', filename='js/psirt.js') }}?v=1"></script>
 {% if policy_store_enabled %}
 <script>window._policyFreshness = [{adom: 'hygieneAdom', pkg: 'hygienePackage', mount: 'hygieneFreshness'}];</script>

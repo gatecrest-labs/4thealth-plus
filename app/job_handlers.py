@@ -52,7 +52,7 @@ def prepare(kind: str, data: dict) -> tuple[str, dict]:
 
 def run(
     kind: str, adom: str, request: dict, progress, should_cancel
-) -> tuple[dict, bool]:
+) -> tuple[dict | None, bool]:
     if kind == "device_review":
         from app.routes.audit_review_routes import compute_device_review
 
@@ -70,7 +70,7 @@ def run(
         from app.routes.hygiene_routes import compute_hygiene_run
 
         if should_cancel():
-            return {}, True
+            return None, True
         progress(0, 1, request["path"].rsplit("/", 1)[-1])
         result = compute_hygiene_run(adom, request["path"], request["checks"])
         progress(1, 1, "done")

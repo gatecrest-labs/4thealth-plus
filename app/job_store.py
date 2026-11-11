@@ -73,6 +73,9 @@ def enqueue(kind: str, owner: str, adom: str, request: dict) -> str:
     """Queue a job; raises ``JobLimitError`` past the per-user queued cap."""
     jid = uuid.uuid4().hex
     with _conn(write=True) as conn:
+        # take the database write lock before counting: the process lock does not
+        # cover a second web worker process, and the cap must hold across them
+        conn.execute("BEGIN IMMEDIATE")
         queued = conn.execute(
             "SELECT COUNT(*) FROM job WHERE owner=? AND status='queued'", (owner,)
         ).fetchone()[0]

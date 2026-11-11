@@ -138,3 +138,15 @@ def test_init_scheduler_registers_jobs_when_on(monkeypatch):
     monkeypatch.setattr(job_runner.boot_warmup, "defer", lambda *a, **k: None)
     assert job_runner.init_scheduler(None) is True
     assert added == ["job_runner_tick", "job_runner_prune"]
+
+
+def test_a_failing_submit_fails_the_job_and_frees_the_slot():
+    jid = _enq()
+
+    def bad_submit(job):
+        raise RuntimeError("pool is shut down")
+
+    job_runner.tick(submit=bad_submit)
+    j = job_store.get(jid)
+    assert j["status"] == "failed" and job_runner._active == 0
+    assert job_store.running_count() == 0

@@ -137,3 +137,12 @@ def test_hygiene_job_result_equals_endpoint(rig, http):
         and _stable(result) == _stable(sync)
         and result["policy_count"] > 0
     )
+
+
+def test_hygiene_job_cancelled_before_start_returns_no_result(rig):
+    _real, adom = rig
+    _a, req = job_handlers.prepare("hygiene_run", {"adom": adom, "path": "p"})
+    result, cancelled = job_handlers.run(
+        "hygiene_run", adom, req, lambda *a: None, lambda: True
+    )
+    assert cancelled and result is None

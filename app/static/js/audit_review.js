@@ -1792,7 +1792,7 @@ async function runJob(kind, body, onProgress, meta) {
   const created = await resp.json();
   if (!resp.ok) throw new Error(created.error || 'Could not start the job');
   _currentJobId = created.id;
-  rememberJob({ id: created.id, kind, ...meta });
+  rememberJob({ id: created.id, kind, user: window._jobUser || '', ...meta });
   return pollJob(created.id, onProgress);
 }
 
@@ -1802,7 +1802,7 @@ async function pollJob(id, onProgress) {
     for (;;) {
       const r = await fetch('/api/jobs/' + id);
       if (r.status === 401) { location.href = '/login'; return null; }
-      if (r.status === 404) throw new Error('The job is no longer available');
+      if (r.status === 404) { forgetJob(); throw new Error('The job is no longer available'); }
       const j = await r.json();
       if (onProgress) onProgress(j.done || 0, j.total || 0, j.message || '');
       if (j.status === 'done') { forgetJob(); return j.result; }
@@ -1835,6 +1835,7 @@ async function resumeJobOnLoad() {
   let info = null;
   try { info = JSON.parse(localStorage.getItem(JOB_KEY) || 'null'); } catch (_) {}
   if (!info || info.kind !== 'device_review' || !info.id) return;
+  if ((info.user || '') !== (window._jobUser || '')) { forgetJob(); return; }
   document.getElementById('drRunBtn').disabled = true;
   const cancelBtn = document.getElementById('drCancelBtn');
   cancelBtn.style.display = '';

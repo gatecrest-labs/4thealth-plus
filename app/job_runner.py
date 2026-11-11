@@ -82,8 +82,22 @@ def tick(submit=None) -> int:
             with _lock:
                 _active -= 1
             break
+        try:
+            (submit or _submit)(job)
+        except Exception as exc:
+            # the job is already 'running': fail it and free the slot, or the
+            # queue would wedge after a couple of such failures
+            logger.exception("job_runner: could not start job %s", job["id"])
+            with _lock:
+                _active -= 1
+            try:
+                job_store.fail(job["id"], f"could not start job ({type(exc).__name__})")
+            except Exception:
+                logger.exception(
+                    "job_runner: could not record failure of %s", job["id"]
+                )
+            continue
         started += 1
-        (submit or _submit)(job)
     return started
 
 

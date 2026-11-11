@@ -52,3 +52,12 @@ def test_js_keeps_the_legacy_paths_and_adds_the_job_flow():
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 def test_js_parses():
     subprocess.run(["node", "--check", str(_JS)], check=True)
+
+
+def test_stale_resume_key_is_forgotten_and_scoped_to_the_user():
+    js = _JS.read_text()
+    poll = js[
+        js.index("async function pollJob") : js.index("function jobRowsToCollected")
+    ]
+    assert "r.status === 404) { forgetJob();" in poll
+    assert "window._jobUser" in js
