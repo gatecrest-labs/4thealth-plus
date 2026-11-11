@@ -63,6 +63,7 @@
     <button class="btn btn-primary" id="drRunBtn" disabled>&#9654; Run Review</button>
     <button class="btn btn-secondary" id="drCancelBtn" style="display:none">&#9632; Cancel</button>
     {% if audit_snapshots_enabled %}
+    <span id="drSnapshotBadge" class="text-muted" style="font-size:.82rem" title="Device configuration snapshots collected in the background"></span>
     <label class="text-muted" style="font-size:.85rem" title="Read the devices now instead of using the collected snapshots (slower, loads FortiManager)">
       <input type="checkbox" id="drLive" /> Live (read devices now)
     </label>

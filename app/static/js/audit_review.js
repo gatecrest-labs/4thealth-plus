@@ -1702,3 +1702,30 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('logUsageRunBtn').addEventListener('click', runLogUsageCheck);
   document.getElementById('logUsageExportCsvBtn').addEventListener('click', exportLogUsageCsv);
 });
+
+
+// ── Snapshot coverage badge (only present when snapshots are enabled) ──────────
+async function loadSnapshotBadge(adom) {
+  const el = document.getElementById('drSnapshotBadge');
+  if (!el || !adom) return;
+  try {
+    const r = await fetch('/api/audit-snapshots/status?adom=' + encodeURIComponent(adom));
+    if (!r.ok) { el.textContent = ''; return; }
+    const d = await r.json();
+    if (!d.enabled) { el.textContent = ''; return; }
+    let age = '';
+    if (d.oldest_at) {
+      const hrs = Math.max(0, Math.round((Date.now() - new Date(d.oldest_at)) / 3600000));
+      age = hrs >= 48 ? `, oldest ${Math.round(hrs / 24)} days ago` : `, oldest ${hrs} h ago`;
+    }
+    el.textContent = `Snapshots cover ${d.devices_captured} of ${d.devices_total} devices${age}`
+      + (d.devices_stale ? ` · ${d.devices_stale} stale` : '')
+      + (d.devices_unreachable ? ` · ${d.devices_unreachable} unreachable` : '');
+    el.style.color = (d.devices_stale || d.devices_unreachable || d.coverage_pct < 100)
+      ? '#ca8a04' : '';
+  } catch (_e) { el.textContent = ''; }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('drAdom');
+  if (sel) sel.addEventListener('change', () => loadSnapshotBadge(sel.value));
+});

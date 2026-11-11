@@ -1113,6 +1113,76 @@ def policy_store_status():
     return jsonify(body)
 
 
+# ── Device snapshot coverage (Phase 5) ───────────────────────────────────────
+
+
+@bp.route("/audit-snapshots/status")
+@login_required
+@tab_required("audit_review")
+def audit_snapshots_status():
+    """Coverage of the device configuration snapshots for one ADOM (no config content)."""
+    from datetime import UTC, datetime
+
+    from app import snapshot_store
+
+    adom = (request.args.get("adom") or "").strip()
+    if not adom:
+        return jsonify({"error": "adom is required"}), 400
+    if err := check_adom_access(adom):
+        return err
+    window_days = Config.AUDIT_SNAPSHOT_WINDOW_DAYS
+    limit = snapshot_store.max_age_seconds()
+    body = {
+        "enabled": bool(Config.AUDIT_SNAPSHOTS),
+        "adom": adom,
+        "window_days": window_days,
+        "max_age_hours": round(limit / 3600),
+        "devices_total": 0,
+        "devices_captured": 0,
+        "coverage_pct": 0.0,
+        "devices_stale": 0,
+        "devices_unreachable": 0,
+        "oldest_at": None,
+        "newest_at": None,
+    }
+    if not Config.AUDIT_SNAPSHOTS:
+        return jsonify(body)
+    try:
+        rows = snapshot_store.device_meta_rows(adom)
+    except snapshot_store.SnapshotStoreError as exc:
+        return internal_api_error("api", exc)
+    try:
+        with _make_client() as client:
+            total = len(inventory.devices(client, adom))
+    except Exception:
+        total = len(rows)
+    now = datetime.now(UTC)
+    captured = [r for r in rows if r["keys"] > 0 and r["oldest_key_at"]]
+    stale = 0
+    for r in captured:
+        try:
+            then = datetime.fromisoformat(r["oldest_key_at"])
+            if then.tzinfo is None:
+                then = then.replace(tzinfo=UTC)
+            if (now - then).total_seconds() > limit:
+                stale += 1
+        except ValueError:
+            stale += 1
+    stamps = sorted(r["oldest_key_at"] for r in captured)
+    body.update(
+        devices_total=max(total, len(captured)),
+        devices_captured=len(captured),
+        coverage_pct=round(100.0 * len(captured) / total, 1) if total else 0.0,
+        devices_stale=stale,
+        devices_unreachable=sum(
+            1 for r in rows if r["has_unreachable"] or r["fail_count"] > 0
+        ),
+        oldest_at=stamps[0] if stamps else None,
+        newest_at=stamps[-1] if stamps else None,
+    )
+    return jsonify(body)
+
+
 @bp.route("/policy-store/refresh", methods=["POST"])
 @login_required
 @tab_required("rule_hygiene", "audit_review")
