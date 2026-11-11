@@ -360,7 +360,9 @@ def _policy_reports(adom: str, packages: list[str], fmt: str) -> dict[str, list[
     """
     from app import rule_policy_scheduler as rp
 
-    bulk = rp._bulk_policy_adom(adom, packages, False, False, 2)
+    # fresh=True: the report must show the change that triggered the alert, so it
+    # bypasses the policy store (which can be hours old).
+    bulk = rp._bulk_policy_adom(adom, packages, False, False, 2, fresh=True)
     out: dict[str, list[dict]] = {}
     for result in bulk.get("results", []):
         if result.get("error"):

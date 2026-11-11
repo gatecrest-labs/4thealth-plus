@@ -286,7 +286,7 @@ def test_policy_reports_groups_attachments_by_package(monkeypatch):
     monkeypatch.setattr(
         rp,
         "_bulk_policy_adom",
-        lambda adom, pkgs, g, h, w=4: {
+        lambda adom, pkgs, g, h, w=4, **kw: {
             "results": [
                 {"package_name": "Pkg-A", "error": None},
                 {"package_name": "Pkg-B", "error": "boom"},

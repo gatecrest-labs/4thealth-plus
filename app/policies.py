@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
+from datetime import UTC, datetime
 
 from app import policy_store
 from app.config import Config
@@ -171,7 +172,9 @@ def pblock_policies(client, adom: str, block: str, strict: bool = False) -> list
 # ── objects ──────────────────────────────────────────────────────────────────
 
 
-def objects(client, adom: str, kind: str, scope: str = "all") -> list[dict]:
+def objects(
+    client, adom: str, kind: str, scope: str = "all", fresh: bool = False
+) -> list[dict]:
     """Firewall objects of *kind* (address, addrgrp, service, svcgrp, vip, ippool)."""
     method = getattr(client, _LIVE_OBJECT_METHOD[kind])
 
@@ -180,7 +183,7 @@ def objects(client, adom: str, kind: str, scope: str = "all") -> list[dict]:
         # doubles) take only the ADOM for some object kinds.
         return method(adom_name) if scope == "all" else method(adom_name, scope=scope)
 
-    if not _enabled():
+    if not _enabled() or fresh:
         return live(adom, scope=scope)
     if _is_system_adom(adom):
         return []
@@ -286,3 +289,25 @@ def data_as_of(adom: str, pkg_path: str | None = None) -> str | None:
     except policy_store.PolicyStoreError:
         return None
     return min(stamps) if stamps else None
+
+
+def age_note_html(adom: str, threshold_seconds: float = 900.0) -> str:
+    """A one-line HTML note for scheduled reports when the data behind them is older
+    than *threshold_seconds*; ``""`` when the layer is off, nothing is stored or the
+    data is recent."""
+    stamp = data_as_of(adom)
+    if not stamp:
+        return ""
+    try:
+        taken = datetime.fromisoformat(stamp)
+    except ValueError:
+        return ""
+    age = (datetime.now(UTC) - taken).total_seconds()
+    if age <= threshold_seconds:
+        return ""
+    ago = f"{round(age / 3600)} h" if age >= 5400 else f"{round(age / 60)} min"
+    return (
+        '<p style="font-size:12px;color:#6b7280;margin:0 0 12px 0">'
+        f"Policy data as of {taken.strftime('%Y-%m-%d %H:%M')} UTC ({ago} ago). "
+        "The collector refreshes policies from FortiManager about every 6 hours.</p>"
+    )

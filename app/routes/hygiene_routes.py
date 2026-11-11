@@ -1726,9 +1726,9 @@ def _hygiene_for_pkg(
 
     try:
         with make_client() as client:
-            policies = client.get_policies(adom, pkg_path)
-            pkg_settings = client.get_pkg_settings(adom, pkg_path)
-            scope_raw = client.get_pkg_scope_members(adom, pkg_path)
+            policies = policy_facade.policies(client, adom, pkg_path)
+            pkg_settings = policy_facade.pkg_settings(client, adom, pkg_path)
+            scope_raw = policy_facade.pkg_scope(client, adom, pkg_path)
             scope_members = sorted(
                 {
                     m.get("name", "")
@@ -1812,13 +1812,13 @@ def bulk_hygiene_adom(
     # The client is closed BEFORE ThreadPoolExecutor starts — each _hygiene_for_pkg
     # call opens its own client independently (thread-safe).
     with make_client() as client:
-        packages = client.get_policy_packages(adom)
+        packages = policy_facade.packages(client, adom)
         unused_catalogs: dict = {
-            "addresses": client.get_address_objects(adom) or [],
-            "addr_groups": client.get_address_groups(adom) or [],
-            "vip_objects": client.get_vip_objects(adom) or [],
-            "services": client.get_service_objects(adom) or [],
-            "svc_groups": client.get_service_groups(adom) or [],
+            "addresses": policy_facade.objects(client, adom, "address") or [],
+            "addr_groups": policy_facade.objects(client, adom, "addrgrp") or [],
+            "vip_objects": policy_facade.objects(client, adom, "vip") or [],
+            "services": policy_facade.objects(client, adom, "service") or [],
+            "svc_groups": policy_facade.objects(client, adom, "svcgrp") or [],
         }
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
