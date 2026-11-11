@@ -124,15 +124,20 @@ def with_policy_store():
     return mod.measure(devices=20, inventory_cache=True, policy_store=True, **SMALL)
 
 
-def test_policy_store_run_lowers_hygiene_steady_state(
+def test_policy_store_run_reports_the_collector_policy_refresh_and_store_backed_sweeps(
     with_inventory_cache, with_policy_store
 ):
-    before = with_inventory_cache["sweeps"]["exec_hygiene_sweep"]
-    after = with_policy_store["sweeps"]["exec_hygiene_sweep"]
-    assert after["warm_calls"] < after["calls"]  # the second pass is served from cache
-    assert after["steady_state"] is True
-    assert after["calls_per_hour"] < before["calls_per_hour"]
-    assert with_policy_store["calls_per_hour"] < with_inventory_cache["calls_per_hour"]
+    sweeps = with_policy_store["sweeps"]
+    assert {"policy_cache_objects", "policy_cache_packages"} <= set(sweeps)
+    pk = sweeps["policy_cache_packages"]
+    assert pk["steady_state"] is True and pk["warm_calls"] < pk["calls"]
+    for name in ("exec_hygiene_sweep", "summary_job"):
+        keys = sweeps[name]["by_url"]
+        assert not any("/firewall/policy" in k or "/obj/firewall" in k for k in keys), (
+            name
+        )
+    before = with_inventory_cache["sweeps"]["exec_hygiene_sweep"]["calls_per_hour"]
+    assert sweeps["exec_hygiene_sweep"]["calls_per_hour"] < before
 
 
 def test_policy_store_run_reports_config_delta_gating(with_policy_store):

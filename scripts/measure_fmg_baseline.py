@@ -107,10 +107,13 @@ def measure(
     source, at its own refresh interval) and every other sweep then reads the
     store instead of FortiManager.
 
-    With ``policy_store`` the ``POLICY_STORE`` layer is on too: the hygiene sweep
-    runs cold, then again warm, and its calls/hour is the steady state
-    ``warm x (60 / interval) + (cold - warm) / ttl_hours`` (every package is
-    refetched once per TTL, the rest of the time it is served from the cache).
+    With ``policy_store`` the ``POLICY_STORE`` layer is on too: the collector's
+    policy refresh runs first (sources ``policy_cache_objects`` and
+    ``policy_cache_packages``) and the hygiene sweep and summary then read the
+    store. The packages refresh runs cold, then warm, and its calls/hour is the
+    steady state ``warm x (60 / interval) + (cold - warm) / ttl_hours`` (every
+    package is refetched once per TTL, the rest of the time only the package
+    lists are read).
     Also reports how many devices a scheduled Config-Delta run would preview.
     """
     from app import (
@@ -173,6 +176,24 @@ def measure(
                     ),
                     *sweeps,
                 ]
+            if policy_store:
+                from app import policy_cache as policy_job
+
+                sweeps = [
+                    (
+                        "policy_cache_objects",
+                        policy_job,
+                        "_run_objects",
+                        float(Config.POLICY_OBJECTS_REFRESH_MINUTES),
+                    ),
+                    (
+                        "policy_cache_packages",
+                        policy_job,
+                        "_run_refresh",
+                        policy_job._CYCLE_SECONDS / 60.0,
+                    ),
+                    *sweeps,
+                ]
             for name, module, func, interval_min in sweeps:
                 before = Counter(synth.calls)
                 started = time.monotonic()
@@ -190,11 +211,11 @@ def measure(
                     "calls_per_hour": calls * 60.0 / interval_min,
                     "seconds": round(time.monotonic() - started, 2),
                 }
-                if policy_store and name == "exec_hygiene_sweep" and not error:
+                if policy_store and name == "policy_cache_packages" and not error:
                     warm_before = Counter(synth.calls)
                     getattr(module, func)(app)
                     warm = sum((Counter(synth.calls) - warm_before).values())
-                    ttl_h = float(Config.HYGIENE_PACKAGE_TTL_HOURS)
+                    ttl_h = float(Config.POLICY_PACKAGE_TTL_HOURS)
                     entry["warm_calls"] = warm
                     entry["steady_state"] = True
                     entry["calls_per_hour"] = (
