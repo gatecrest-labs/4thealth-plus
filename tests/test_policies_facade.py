@@ -284,3 +284,35 @@ def test_package_counts_equal_client_policy_count(rig):
     real, adom, path = rig
     counts = policies.package_counts(adom)
     assert counts[path] == real.get_policy_count(adom, path)
+
+
+def test_generation_changes_with_content_not_with_touch(rig):
+    real, adom, path = rig
+    g1 = policies.generation(adom)
+    assert g1
+    policy_store.touch_policies(
+        adom, path
+    )  # an unchanged refetch only refreshes the age
+    assert policies.generation(adom) == g1
+    policy_store.put_policies(
+        adom, path, [{"policyid": 1, "name": "changed"}], "different-fingerprint"
+    )
+    assert policies.generation(adom) != g1
+
+
+def test_generation_changes_when_objects_or_blocks_change(rig):
+    real, adom, _ = rig
+    g = policies.generation(adom)
+    policy_store.put_objects(adom, "address", [{"name": "new"}], "fp-new")
+    g2 = policies.generation(adom)
+    assert g2 != g
+    policy_store.put_block(adom, "blk-0", [{"policyid": 1}], "fp-block")
+    assert policies.generation(adom) != g2
+
+
+def test_generation_none_when_never_collected_or_flag_off(monkeypatch, rig):
+    _, adom, _ = rig
+    assert policies.generation("never-collected") is None
+    assert policies.generation("FortiAnalyzer") is None
+    monkeypatch.setattr(Config, "POLICY_STORE", False)
+    assert policies.generation(adom) is None

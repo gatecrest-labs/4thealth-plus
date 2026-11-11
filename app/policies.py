@@ -9,6 +9,7 @@ fails open to a live call for that read only (counted). Results are copies.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 
@@ -172,7 +173,13 @@ def pblock_policies(client, adom: str, block: str, strict: bool = False) -> list
 
 def objects(client, adom: str, kind: str, scope: str = "all") -> list[dict]:
     """Firewall objects of *kind* (address, addrgrp, service, svcgrp, vip, ippool)."""
-    live = getattr(client, _LIVE_OBJECT_METHOD[kind])
+    method = getattr(client, _LIVE_OBJECT_METHOD[kind])
+
+    def live(adom_name: str, scope: str = "all"):
+        # The default scope is passed implicitly: older callers' clients (and test
+        # doubles) take only the ADOM for some object kinds.
+        return method(adom_name) if scope == "all" else method(adom_name, scope=scope)
+
     if not _enabled():
         return live(adom, scope=scope)
     if _is_system_adom(adom):
@@ -233,6 +240,33 @@ def package_state(adom: str) -> dict[str, dict]:
 def package_counts(adom: str) -> dict[str, int]:
     """``{package path: rule count}`` from the store (see ``package_state``)."""
     return {path: row["policy_count"] for path, row in package_state(adom).items()}
+
+
+def generation(adom: str) -> str | None:
+    """A token that changes only when the stored *content* behind an ADOM changes
+    (package, policy-block and object fingerprints), not when a refetch merely
+    refreshes ages. ``None`` when the layer is off or nothing is stored. Used to
+    decide when an in-process index built from the store must be rebuilt."""
+    if not _enabled() or _is_system_adom(adom):
+        return None
+    try:
+        packages = [m for m in policy_store.package_meta(adom) if m["fetched_at"]]
+        if not packages:
+            return None
+        parts = [f"p:{m['pkg']}:{m['fingerprint']}" for m in packages]
+        parts += [
+            f"b:{m['block']}:{m['fingerprint']}"
+            for m in policy_store.block_meta(adom)
+            if m["fetched_at"]
+        ]
+        parts += [
+            f"o:{m['scope_key']}:{m['kind']}:{m['fingerprint']}"
+            for m in policy_store.objects_meta()
+            if m["fetched_at"] and m["scope_key"] in (adom, policy_store.GLOBAL_KEY)
+        ]
+    except policy_store.PolicyStoreError:
+        return None
+    return hashlib.sha1("\n".join(sorted(parts)).encode()).hexdigest()
 
 
 # ── freshness ────────────────────────────────────────────────────────────────

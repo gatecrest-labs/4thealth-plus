@@ -17,7 +17,9 @@ from datetime import UTC, datetime
 
 from flask import Blueprint, jsonify, render_template, request, session
 
-from app import registry, rule_lookup, rule_lookup_cache
+from app import policies as policy_facade
+from app import policy_store, registry, rule_lookup, rule_lookup_cache
+from app.config import Config
 from app.decorators import check_adom_access, tab_required
 from app.fmg_client import FMGError
 from app.fmg_helpers import make_client
@@ -678,9 +680,18 @@ def hygiene_rule_lookup(adom: str):
 
     entry = rule_lookup_cache.get_adom(adom)
     if entry is None:
-        rule_lookup_cache.refresh_adom_async(adom)
-        return jsonify({"status": "warming"}), 202
-    if rule_lookup_cache.is_stale(entry):
+        if Config.POLICY_STORE and policy_facade.generation(adom) is not None:
+            # The collector already stored this ADOM: build the index from it now,
+            # in this request, with no FMG calls (another thread building -> warming).
+            rule_lookup_cache.refresh_adom(adom)
+            entry = rule_lookup_cache.get_adom(adom)
+        if entry is None or not entry.get("last_updated"):
+            rule_lookup_cache.refresh_adom_async(adom)
+            return jsonify({"status": "warming"}), 202
+    elif entry.get("source") == "store" and Config.POLICY_STORE:
+        if policy_facade.generation(adom) != entry.get("generation"):
+            rule_lookup_cache.refresh_adom_async(adom)
+    elif rule_lookup_cache.is_stale(entry):
         rule_lookup_cache.refresh_adom_async(adom)
     ctx = entry["ctx"]
 
@@ -708,6 +719,8 @@ def hygiene_rule_lookup(adom: str):
             **result,
             "total": len(result["rows"]),
             "last_updated": entry.get("last_updated"),
+            "source": entry.get("source", "fmg"),
+            "data_as_of": policy_facade.data_as_of(adom),
             "status": entry.get("status"),
             "error": entry.get("error"),
             "package_errors": entry.get("package_errors", []),
@@ -723,6 +736,16 @@ def hygiene_rule_lookup_refresh(adom: str):
         return err
     if adom.lower().startswith("forti"):
         return jsonify({"error": "Unknown ADOM"}), 404
+    if Config.POLICY_STORE and policy_facade.generation(adom) is not None:
+        # Ask the collector to refetch every package (it picks the requests up
+        # within ~10 s); the index rebuilds itself when the stored content changes.
+        requested = 0
+        for meta in policy_store.package_meta(adom):
+            if policy_store.request_package_refresh(
+                adom, meta["pkg"], Config.POLICY_REFRESH_MIN_INTERVAL_SECS
+            ):
+                requested += 1
+        return jsonify({"status": "refreshing", "requested": requested}), 202
     rule_lookup_cache.refresh_adom_async(adom)
     return jsonify({"status": "refreshing"}), 202
 
