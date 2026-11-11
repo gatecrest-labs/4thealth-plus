@@ -187,3 +187,25 @@ def test_request_poll_triggers_refresh_once(monkeypatch):
     inventory_cache.poll_refresh_request()
     inventory_cache.poll_refresh_request()
     assert calls == [1]
+
+
+def test_empty_adom_list_does_not_wipe_a_populated_inventory():
+    synth = SyntheticFMG(adoms=3, devices=30)
+    c = _client(synth)
+    inventory_cache.refresh_once(c)
+    adom = _non_forti(c)[0]
+    before = inventory_store.read_devices(adom)
+    c.get_adoms = list
+    with pytest.raises(RuntimeError, match="empty ADOM list"):
+        inventory_cache.refresh_once(c)
+    assert inventory_store.read_devices(adom) == before
+    assert inventory_store.read_adom_list()  # still the previous list
+
+
+def test_empty_adom_list_on_a_fresh_store_is_a_valid_answer():
+    synth = SyntheticFMG(adoms=1, devices=5)
+    c = _client(synth)
+    c.get_adoms = list
+    result = inventory_cache.refresh_once(c)
+    assert result["adoms"] == 0
+    assert inventory_store.read_adom_list() == []

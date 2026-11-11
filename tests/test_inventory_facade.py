@@ -249,3 +249,34 @@ def test_system_adoms_still_live_when_flag_off(monkeypatch, fleet):
             return [{"name": "carrier-fw"}]
 
     assert inventory.devices(OnlyDevices(), "FortiCarrier") == [{"name": "carrier-fw"}]
+
+
+def test_old_package_rows_are_not_served_when_only_devices_refreshed(fleet):
+    """Bulk package call keeps failing: meta stays fresh, package rows age out."""
+    real, adom = fleet
+    inventory_store.replace_adom(
+        adom, real.get_devices(adom), [], _old(5000)
+    )  # pkg collected long ago
+    inventory_store.replace_adom(
+        adom, real.get_devices(adom), None, datetime.now(UTC).isoformat()
+    )
+    d = real.get_devices(adom)[0]
+    vd = [v["name"] for v in d.get("vdom") or []] or ["root"]
+    spy = Spy(real)
+    assert inventory.pkg_status(spy, adom, d["name"], vd) == real.get_device_pkg_status(
+        adom, d["name"], vd
+    )
+    assert spy.calls == ["get_device_pkg_status"]  # went live, not stale cache
+    spy2 = Spy(real)
+    inventory.pkg_status_lookup(spy2, adom)(d["name"], vd)
+    assert spy2.calls == ["get_device_pkg_status"]
+
+
+def test_freshness_flags_adom_whose_package_status_is_old(fleet):
+    real, adom = fleet
+    inventory_store.replace_adom(adom, real.get_devices(adom), [], _old(5000))
+    inventory_store.replace_adom(
+        adom, real.get_devices(adom), None, datetime.now(UTC).isoformat()
+    )
+    rows = {r["adom"]: r for r in inventory.freshness()}
+    assert rows[adom]["stale"] is True

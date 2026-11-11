@@ -66,6 +66,12 @@ def _refresh(client) -> dict:
     calls: list = []
     adoms = client.get_adoms() or []
     calls.append(1)
+    if not adoms and (inventory_store.read_adom_list() or inventory_store.read_meta()):
+        # FMG answered with no data (permission, upgrade, hiccup). Treating that as
+        # "every ADOM was deleted" would wipe the inventory and serve empty pickers.
+        raise RuntimeError(
+            "FortiManager returned an empty ADOM list; keeping the previous inventory"
+        )
     inventory_store.write_adom_list(adoms)
     names = [
         a["name"]

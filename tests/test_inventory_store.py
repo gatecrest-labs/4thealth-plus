@@ -158,3 +158,44 @@ def test_has_pkg_status_distinguishes_never_collected_from_empty():
     assert inv.has_pkg_status("A") is True
     inv.delete_missing_adoms(set())
     assert inv.has_pkg_status("A") is False
+
+
+def test_pkg_status_ages_track_the_package_collection_time_not_the_meta_time():
+    old = (datetime.now(UTC) - timedelta(seconds=500)).isoformat()
+    inv.replace_adom("A", _devs("a", 1), [], old)
+    inv.replace_adom(
+        "A", _devs("a", 1), None, _now()
+    )  # devices refreshed, packages not
+    assert inv.read_meta("A")["age_seconds"] < 5
+    assert 495 <= inv.pkg_status_ages()["A"] <= 510
+
+
+def test_reads_do_not_wait_for_the_process_write_lock():
+    from app import collector_store
+
+    inv.replace_adom("A", _devs("a", 3), None, _now())
+    done = threading.Event()
+
+    def reader():
+        inv.read_devices("A")
+        inv.read_meta("A")
+        done.set()
+
+    with collector_store._lock:  # a long write elsewhere in this process
+        t = threading.Thread(target=reader, daemon=True)
+        t.start()
+        assert done.wait(2.0)
+    t.join()
+
+
+def test_schema_is_created_once_per_database(monkeypatch):
+    calls = []
+    real = inv._create_schema
+    monkeypatch.setattr(
+        inv, "_create_schema", lambda conn: (calls.append(1), real(conn))
+    )
+    inv.replace_adom("A", _devs("a", 1), None, _now())
+    inv.read_devices("A")
+    inv.read_meta("A")
+    inv.read_pkg_status("A")
+    assert len(calls) == 1

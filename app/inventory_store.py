@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import UTC, datetime
 
 from app import collector_store
@@ -64,31 +65,61 @@ def _age(collected_at: str | None) -> float | None:
         return None
 
 
+_ready_lock = threading.Lock()
+_ready: set[str] = set()  # database files whose schema this process has created
+
+
+def _create_schema(conn: sqlite3.Connection) -> None:
+    collector_store._retry_locked(lambda: conn.executescript(_SCHEMA))
+
+
 class _Conn:
-    """Per-operation connection under the store's process lock; errors normalised."""
+    """Per-operation connection; errors normalised to ``InventoryStoreError``.
+
+    Writers hold the store's process lock (one writer at a time in a process).
+    Readers do not: WAL readers never block, and a request thread must not queue
+    behind a long write or a lock retry. The schema script runs once per
+    database file per process, not on every call.
+    """
+
+    def __init__(self, write: bool = False):
+        self.write = write
+        self.conn = None
 
     def __enter__(self) -> sqlite3.Connection:
-        collector_store._lock.acquire()
+        if self.write:
+            collector_store._lock.acquire()
         try:
             self.conn = collector_store._connect()
-            collector_store._retry_locked(lambda: self.conn.executescript(_SCHEMA))
+            key = str(collector_store._db_path())
+            with _ready_lock:
+                needs_schema = key not in _ready
+            if needs_schema:
+                _create_schema(self.conn)
+                with _ready_lock:
+                    _ready.add(key)
         except sqlite3.Error as exc:
-            collector_store._lock.release()
+            self._release()
             raise InventoryStoreError(str(exc)) from exc
         except BaseException:
-            collector_store._lock.release()
+            self._release()
             raise
         return self.conn
 
-    def __exit__(self, exc_type, exc, tb) -> bool:
+    def _release(self) -> None:
         try:
-            try:
-                if exc_type is not None and self.conn.in_transaction:
-                    self.conn.rollback()
-            finally:
+            if self.conn is not None:
                 self.conn.close()
         finally:
-            collector_store._lock.release()
+            if self.write:
+                collector_store._lock.release()
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        try:
+            if exc_type is not None and self.conn.in_transaction:
+                self.conn.rollback()
+        finally:
+            self._release()
         if exc_type is not None and issubclass(exc_type, sqlite3.Error):
             raise InventoryStoreError(str(exc)) from exc
         return False
@@ -102,7 +133,7 @@ def replace_adom(
 ) -> None:
     """Replace one ADOM's devices (and package rows unless ``pkg_rows`` is None) atomically."""
     named = [d for d in devices if isinstance(d, dict) and d.get("name")]
-    with _Conn() as conn:
+    with _Conn(write=True) as conn:
         conn.execute("BEGIN IMMEDIATE")
         conn.execute("DELETE FROM inventory_device WHERE adom=?", (adom,))
         conn.executemany(
@@ -145,7 +176,7 @@ def replace_adom(
 
 def mark_adom_error(adom: str, error: str) -> None:
     """Keep the ADOM's last good rows but flag the failed refresh."""
-    with _Conn() as conn:
+    with _Conn(write=True) as conn:
         conn.execute(
             "INSERT INTO inventory_meta (adom, collected_at, device_count, status, error) "
             "VALUES (?,NULL,0,'error',?) ON CONFLICT(adom) DO UPDATE SET "
@@ -156,7 +187,7 @@ def mark_adom_error(adom: str, error: str) -> None:
 
 
 def write_adom_list(adoms: list[dict]) -> None:
-    with _Conn() as conn:
+    with _Conn(write=True) as conn:
         conn.execute("BEGIN IMMEDIATE")
         conn.execute("DELETE FROM inventory_adom")
         conn.executemany(
@@ -177,7 +208,7 @@ def write_adom_list(adoms: list[dict]) -> None:
 
 def delete_missing_adoms(keep: set[str]) -> None:
     """Drop every row of ADOMs no longer present in FortiManager."""
-    with _Conn() as conn:
+    with _Conn(write=True) as conn:
         known = {
             r[0]
             for t in ("inventory_device", "inventory_pkg", "inventory_meta")
@@ -246,6 +277,29 @@ def has_pkg_status(adom: str) -> bool:
         )
 
 
+def pkg_status_ages() -> dict[str, float]:
+    """Seconds since each ADOM's package status was last collected (ADOMs that have it)."""
+    out: dict[str, float] = {}
+    with _Conn() as conn:
+        rows = conn.execute(
+            "SELECT key, value FROM inventory_state WHERE key LIKE ?", (_PKG_OK + "%",)
+        ).fetchall()
+    for key, value in rows:
+        age = _age(value)
+        if age is not None:
+            out[key[len(_PKG_OK) :]] = age
+    return out
+
+
+def pkg_status_age_seconds(adom: str) -> float | None:
+    """Seconds since the ADOM's package status was last collected, or None if never."""
+    with _Conn() as conn:
+        row = conn.execute(
+            "SELECT value FROM inventory_state WHERE key=?", (_PKG_OK + adom,)
+        ).fetchone()
+    return _age(row[0]) if row else None
+
+
 def _meta_row(r) -> dict:
     return {
         "adom": r["adom"],
@@ -273,7 +327,7 @@ def read_meta(adom: str | None = None) -> dict | list[dict] | None:
 
 def request_refresh(min_interval_s: float) -> bool:
     """Ask the collector for an immediate refresh; False if asked too recently."""
-    with _Conn() as conn:
+    with _Conn(write=True) as conn:
         last = conn.execute(
             "SELECT value FROM inventory_state WHERE key=?", (_REFRESH_LAST,)
         ).fetchone()
@@ -302,7 +356,7 @@ def refresh_request_age_seconds() -> float | None:
 
 def pop_refresh_request() -> bool:
     """True (once) if a refresh was requested since the last pop."""
-    with _Conn() as conn:
+    with _Conn(write=True) as conn:
         cur = conn.execute(
             "DELETE FROM inventory_state WHERE key=?", (_REFRESH_PENDING,)
         )

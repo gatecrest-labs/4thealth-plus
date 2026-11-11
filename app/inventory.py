@@ -62,6 +62,13 @@ def _cached_devices(adom: str) -> list[dict] | None:
         return None
 
 
+def _pkg_fresh(adom: str) -> bool:
+    """Package status collected, and recently: it is refreshed by its own call, which
+    can keep failing (e.g. no /pm permission) while the device list stays current."""
+    age = inventory_store.pkg_status_age_seconds(adom)
+    return age is not None and age <= inventory_store.max_age_seconds()
+
+
 def adoms(client) -> list[dict]:
     if not _enabled():
         return client.get_adoms()
@@ -120,7 +127,7 @@ def pkg_status(client, adom: str, device: str, vdom_names: list) -> str:
             meta is not None
             and meta["age_seconds"] is not None
             and meta["age_seconds"] <= inventory_store.max_age_seconds()
-            and inventory_store.has_pkg_status(adom)
+            and _pkg_fresh(adom)
         )
         if fresh:
             _bump("hits")
@@ -153,7 +160,7 @@ def pkg_status_lookup(client, adom: str):
             meta is not None
             and meta["age_seconds"] is not None
             and meta["age_seconds"] <= inventory_store.max_age_seconds()
-            and inventory_store.has_pkg_status(adom)
+            and _pkg_fresh(adom)
         )
         if fresh:
             by_dev: dict[str, list] = {}
@@ -183,6 +190,7 @@ def freshness() -> list[dict]:
     try:
         limit = inventory_store.max_age_seconds()
         rows = inventory_store.read_meta() or []
+        pkg_ages = inventory_store.pkg_status_ages()
     except inventory_store.InventoryStoreError:
         return []
     return [
@@ -192,7 +200,9 @@ def freshness() -> list[dict]:
             "age_seconds": m["age_seconds"],
             "status": m["status"],
             "device_count": m["device_count"],
-            "stale": m["age_seconds"] is None or m["age_seconds"] > limit,
+            "stale": m["age_seconds"] is None
+            or m["age_seconds"] > limit
+            or pkg_ages.get(m["adom"], 0.0) > limit,
         }
         for m in rows
     ]
