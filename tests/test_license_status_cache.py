@@ -64,6 +64,7 @@ def test_classify_devices_all_devices_includes_every_status_with_firmware():
             "status": "licensed",
             "expires": "2027-01-01",
             "firmware": "v7.4.5",
+            "platform": "",
             "subscriptions": {"antivirus": {"status": "licensed", "expires": None}},
         },
         {
@@ -72,6 +73,7 @@ def test_classify_devices_all_devices_includes_every_status_with_firmware():
             "status": "expired",
             "expires": None,
             "firmware": "v7.2.1",
+            "platform": "",
             "subscriptions": {},
         },
     ]
@@ -308,6 +310,7 @@ def test_run_sweep_persists_classified_result(tmp_path, monkeypatch):
             "status": "licensed",
             "expires": "2286-11-20",
             "firmware": "n/a",
+            "platform": "",
             "subscriptions": no_subs,
         }
     ]
@@ -431,3 +434,11 @@ def test_should_skip_startup_sweep_unparseable_collected_at():
     now = datetime(2026, 9, 15, 12, 0, 0, tzinfo=UTC)
     latest = {"collected_at": "not-a-timestamp"}
     assert _should_skip_startup_sweep(latest, now) is False
+
+
+def test_classify_devices_all_devices_carry_platform():
+    result = _classify_devices({"Corp": [
+        {"name": "a", "license": {"status": "licensed"}, "platform": "FortiGate-100F"},
+        {"name": "b", "license": {"status": "licensed"}},
+    ]})
+    assert [d["platform"] for d in result["all_devices"]] == ["FortiGate-100F", ""]

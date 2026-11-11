@@ -490,6 +490,57 @@ def adom_license(adom: str):
     )
 
 
+@bp.route("/devices/all/license/ai-status")
+@tab_required("versions")
+def license_ai_status():
+    from app.ai_narrate import ai_enabled
+
+    return jsonify({"available": ai_enabled()})
+
+
+@bp.route("/devices/all/license/renewal-plan", methods=["POST"])
+@tab_required("versions")
+def license_renewal_plan():
+    """Deterministic renewal buckets plus an optional AI-written plan."""
+    from app import license_renewal_ai, license_status_cache
+    from app.ai_narrate import ai_enabled
+    from app.groups import get_allowed_adoms
+
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object body required"}), 400
+    adom = data.get("adom")
+    if adom is not None and (not isinstance(adom, str) or not adom.strip()):
+        return jsonify({"error": "adom must be a non-empty string"}), 400
+
+    latest = license_status_cache.get_latest() or {}
+    devices = latest.get("all_devices", [])
+    if adom:
+        if err := check_adom_access(adom):
+            return err
+        devices = [d for d in devices if d.get("adom") == adom]
+    else:
+        allowed = get_allowed_adoms(
+            session.get("user", ""),
+            ad_groups=session.get("ad_groups", []),
+            role=session.get("role"),
+        )
+        if allowed is not None:
+            devices = [d for d in devices if d.get("adom") in allowed]
+
+    buckets = license_renewal_ai.build_renewal_buckets(devices)
+    narrative = error = None
+    if ai_enabled():
+        narrative, error = license_renewal_ai.build_renewal_plan(
+            buckets, user=session.get("user")
+        )
+    return jsonify(
+        {"buckets": buckets, "narrative": narrative, "narrative_error": error}
+    )
+
+
 # ── ADOM list ────────────────────────────────────────────────────────────────
 
 

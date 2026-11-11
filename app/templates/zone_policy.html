@@ -66,6 +66,10 @@
       </select>
       <button class="btn btn-secondary btn-sm" id="zpExportBtn">&#8595; Export Report</button>
     </div>
+    <div style="margin-bottom:.75rem">
+      <button class="btn btn-secondary btn-sm" id="zpExplainBtn" style="display:none">Explain with AI</button>
+      <div id="zpExplain" class="text-muted" style="display:none;white-space:pre-wrap;margin-top:.5rem"></div>
+    </div>
     <div id="zpResultCards"></div>
   </div>
 </div>
@@ -154,6 +158,10 @@
   <div id="zpSegLoading" class="text-muted" style="display:none;font-style:italic;margin-top:.5rem">Loading…</div>
 
   <div id="zpSegContent" style="display:none">
+    <div style="margin-bottom:1rem">
+      <button class="btn btn-secondary btn-sm" id="zpSegSummBtn" style="display:none">Summarize with AI</button>
+      <div id="zpSegSumm" class="text-muted" style="display:none;white-space:pre-wrap;margin-top:.5rem"></div>
+    </div>
     <!-- Score bar -->
     <div class="zp-stat-bar" style="margin-bottom:1.5rem">
       <div class="zp-stat">
@@ -205,5 +213,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/zone_policy.js') }}?v=5"></script>
+<script src="{{ url_for('static', filename='js/zone_policy.js') }}?v=6"></script>
 {% endblock %}

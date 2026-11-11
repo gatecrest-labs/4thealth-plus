@@ -761,6 +761,78 @@ def hygiene_rule_lookup_refresh(adom: str):
     return jsonify({"status": "refreshing"}), 202
 
 
+@bp.route("/api/hygiene/rule-lookup/ai-status")
+@tab_required("rule_hygiene")
+def hygiene_rule_lookup_ai_status():
+    from app.ai_narrate import ai_enabled
+
+    return jsonify({"available": ai_enabled()})
+
+
+@bp.route("/api/hygiene/adoms/<adom>/rule-lookup/explain", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_rule_lookup_explain(adom: str):
+    """Narrate a Rule Lookup result the client already holds. No search, no cache."""
+    from app.ai_narrate import ai_enabled
+    from app.rule_lookup_ai import build_lookup_narrative
+
+    if err := check_adom_access(adom):
+        return err
+    if adom.lower().startswith("forti"):
+        return jsonify({"error": "Unknown ADOM"}), 404
+    if not ai_enabled():
+        return jsonify({"error": "AI Assist is not enabled"}), 503
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+    searched = data.get("searched")
+    rows = data.get("rows")
+    if not isinstance(searched, dict):
+        return jsonify({"error": "searched must be an object"}), 400
+    if not isinstance(rows, list):
+        return jsonify({"error": "rows must be a list of objects"}), 400
+    rows_len = len(rows)
+    rows = rows[:25]  # slice before validating so a huge post stays cheap
+    if not all(isinstance(r, dict) for r in rows):
+        return jsonify({"error": "rows must be a list of objects"}), 400
+    out = {}
+    for key in ("skipped_count", "total"):
+        val = data.get(key, 0)
+        if isinstance(val, bool) or not isinstance(val, int) or val < 0:
+            return jsonify({"error": f"{key} must be a non-negative integer"}), 400
+        out[key] = val
+    out["total"] = max(out["total"], rows_len)
+    searched = {k: str(searched.get(k) or "")[:200] for k in ("src", "dst", "port")}
+    narrative, error = build_lookup_narrative(
+        adom, searched, {"rows": rows, **out}, session.get("user")
+    )
+    return jsonify({"narrative": narrative, "narrative_error": error})
+
+
+@bp.route("/api/hygiene/rule-lookup/parse", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_rule_lookup_parse():
+    """Turn natural language into the three Rule Lookup fields. Never searches."""
+    from app.ai_narrate import ai_enabled
+    from app.llm.base import LLMError
+    from app.rule_lookup_ai import parse_nl_query
+
+    if not ai_enabled():
+        return jsonify({"error": "AI Assist is not enabled"}), 503
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("text"), str):
+        return jsonify({"error": "text must be a string"}), 400
+    try:
+        fields = parse_nl_query(data["text"], user=session.get("user"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LLMError as exc:
+        return jsonify({"error": f"AI request failed: {exc}"}), 502
+    except Exception:
+        return jsonify({"error": "AI request failed"}), 502
+    return jsonify(fields)
+
+
 # ── API: object expansion maps (deferred, called after policy table renders) ──
 
 

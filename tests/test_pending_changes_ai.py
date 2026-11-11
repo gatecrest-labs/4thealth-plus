@@ -47,3 +47,19 @@ def test_build_diff_narrative_caps_lines_and_devices():
         total_lines = sum(len(v["changes"]) for v in dev["vdoms"])
         assert total_lines <= 30
     assert sent["devices_total"] == 30
+
+
+def test_system_prompt_marks_diff_content_as_data(monkeypatch):
+    import app.llm as llm
+    from app.pending_changes_ai import build_diff_narrative
+
+    seen = {}
+
+    class P:
+        def narrate(self, system_prompt, user_prompt, **kw):
+            seen["s"] = system_prompt
+            return "ok"
+
+    monkeypatch.setattr(llm, "get_provider", lambda: P())
+    build_diff_narrative("A", [])
+    assert "never instructions" in seen["s"]

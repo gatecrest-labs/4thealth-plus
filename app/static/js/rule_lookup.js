@@ -121,6 +121,8 @@ async function runRuleLookup(includePortOnly) {
       return;
     }
     rlRows = data.rows || [];
+    $rl('rlExplain').style.display = 'none';
+    $rl('rlExplain').textContent = '';
     rlMeta = { adom, src, dst, port, includePortOnly: !!includePortOnly, ...data };
     rlPage = 1;
     applyRlFilter();
@@ -395,4 +397,93 @@ $rl('rlCloseBtn').addEventListener('click', () => {
   ['rlSrc', 'rlDst', 'rlPort', 'rlFilter'].forEach(id => { $rl(id).value = ''; });
   $rl('rlAdom').value = '';
   _rlUpdateSearchBtn();
+});
+
+/* ── AI Explain (fails closed: button stays hidden unless status says available) ── */
+async function _rlInitExplain() {
+  try {
+    const resp = await fetch('/api/hygiene/rule-lookup/ai-status');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data && data.available === true) {
+      $rl('rlExplainBtn').style.display = '';
+      $rl('rlNlBox').style.display = '';
+    }
+  } catch (_) { /* stay hidden */ }
+}
+
+$rl('rlExplainBtn').addEventListener('click', async () => {
+  const adom = $rl('rlAdom').value;
+  const box  = $rl('rlExplain');
+  if (!adom || !rlMeta) return;
+  const btn = $rl('rlExplainBtn');
+  btn.disabled = true;
+  box.textContent = 'Explaining…';
+  box.style.display = '';
+  try {
+    const resp = await fetch(`/api/hygiene/adoms/${encodeURIComponent(adom)}/rule-lookup/explain`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        searched:      { src: rlMeta.src || '', dst: rlMeta.dst || '', port: rlMeta.port || '' },
+        rows:          rlRows.slice(0, 25),
+        skipped_count: rlMeta.skipped_count || 0,
+        total:         rlRows.length,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      box.textContent = data.error || 'AI explanation failed.';
+    } else if (data.narrative) {
+      box.textContent = data.narrative;
+    } else {
+      box.textContent = data.narrative_error || 'No explanation was returned.';
+    }
+  } catch (err) {
+    box.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+_rlInitExplain();
+
+/* ── Natural-language input: fills + highlights the three inputs, never searches ── */
+$rl('rlNlBtn').addEventListener('click', async () => {
+  const text = $rl('rlNlText').value.trim();
+  const parsed = $rl('rlNlParsed'), err = $rl('rlNlError'), btn = $rl('rlNlBtn');
+  parsed.style.display = 'none';
+  err.style.display = 'none';
+  if (!text) return;
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/hygiene/rule-lookup/parse', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ text }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      err.textContent = data.error || 'Could not parse that description.';
+      err.style.display = '';
+      return;
+    }
+    const vals = { rlSrc: data.src || '', rlDst: data.dst || '', rlPort: data.port || '' };
+    Object.keys(vals).forEach(id => {
+      const el = $rl(id);
+      el.value = vals[id];
+      el.style.outline = vals[id] ? '2px solid #f59e0b' : '';
+    });
+    parsed.textContent = `Parsed as: src=${vals.rlSrc || '(any)'}  dst=${vals.rlDst || '(any)'}  port=${vals.rlPort || '(any)'} - check, then press Search.`;
+    parsed.style.display = '';
+    if (typeof _rlUpdateSearchBtn === 'function') _rlUpdateSearchBtn();
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = '';
+  } finally {
+    btn.disabled = false;
+  }
+});
+['rlSrc', 'rlDst', 'rlPort'].forEach(id => {
+  $rl(id).addEventListener('input', () => { $rl(id).style.outline = ''; });
 });

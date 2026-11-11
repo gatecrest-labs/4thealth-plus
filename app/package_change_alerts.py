@@ -166,6 +166,10 @@ def _validate_rule_fields(data: dict) -> None:
         raise ValueError("packages must be a list of package names")
     if data.get("format", "html") not in _VALID_FORMATS:
         raise ValueError(f"format must be one of {sorted(_VALID_FORMATS)}")
+    if "ai_summary_enabled" in data and not isinstance(
+        data["ai_summary_enabled"], bool
+    ):
+        raise ValueError("ai_summary_enabled must be true or false")
 
 
 def _load() -> list[dict]:
@@ -197,6 +201,7 @@ def create_rule(data: dict) -> dict:
         "email": data["email"].strip(),
         "format": data.get("format", "html"),
         "enabled": bool(data.get("enabled", True)),
+        "ai_summary_enabled": bool(data.get("ai_summary_enabled", True)),
         "sent": {},
         "runs": [],
         "created_at": datetime.datetime.now(datetime.UTC)
@@ -225,6 +230,7 @@ def update_rule(rule_id: str, data: dict) -> dict:
                     "email": data["email"].strip(),
                     "format": data.get("format", "html"),
                     "enabled": bool(data.get("enabled", True)),
+                    "ai_summary_enabled": bool(data.get("ai_summary_enabled", True)),
                 }
                 _save(rules)
                 return rules[i]
@@ -325,8 +331,61 @@ def build_diff_attachment(
     return {"filename": f"{base}.{fmt}", "data": data, "mimetype": _MIME[fmt]}
 
 
+def _ai_summary_html(
+    adom: str, pkg: str, diffs: dict, enabled: bool = True
+) -> tuple[str, str | None]:
+    """Return (html, error) for the AI summary section of an alert email.
+
+    html is '' when disabled/opted-out/failed; error is the failure message when
+    narration was attempted but raised. Never raises."""
+    from app.app_settings import get_setting
+
+    if not enabled or not get_setting("ai_assist_enabled", False) or not diffs:
+        return "", None
+    try:
+        from app.pending_changes_ai import build_diff_narrative
+
+        devices = [
+            {
+                "device": device,
+                "summary": {},
+                "vdoms": [
+                    {"name": vdom, "changes": diffs[device][vdom]}
+                    for vdom in sorted(diffs[device])
+                ],
+            }
+            for device in sorted(diffs)
+        ]
+        text = build_diff_narrative(adom, devices, feature="package_alert_summary")
+    except Exception as exc:
+        app_log(
+            "WARNING",
+            "package_change_alerts",
+            f"AI summary failed for {adom}/{pkg}: {exc}",
+        )
+        return "", str(exc)
+    if not str(text or "").strip():
+        msg = "The AI provider returned an empty response"
+        app_log(
+            "WARNING", "package_change_alerts", f"AI summary empty for {adom}/{pkg}"
+        )
+        return "", msg
+    return (
+        (
+            "<h3>AI Summary</h3>"
+            f"<p style='white-space:pre-wrap'>{html.escape(str(text or ''))}</p>"
+        ),
+        None,
+    )
+
+
 def build_email_html(
-    rule_name: str, adom: str, package: str, diffs: dict, generated_at: str
+    rule_name: str,
+    adom: str,
+    package: str,
+    diffs: dict,
+    generated_at: str,
+    ai_html: str = "",
 ) -> str:
     rows = "".join(
         f"<tr><td>{html.escape(device)}</td><td>{html.escape(vdom)}</td>"
@@ -338,6 +397,7 @@ def build_email_html(
         f"<p>Policy package <strong>{html.escape(package)}</strong> in ADOM "
         f"<strong>{html.escape(adom)}</strong> has pending policy changes "
         f"(rule: {html.escape(rule_name)}, detected {html.escape(generated_at)}).</p>"
+        f"{ai_html}"
         "<table border='1' cellpadding='4' cellspacing='0'>"
         "<thead><tr><th>Device</th><th>VDOM</th><th>Changed lines</th></tr></thead>"
         f"<tbody>{rows}</tbody></table>"
@@ -465,10 +525,15 @@ def _evaluate_rule(
                     adom, pkg, diffs, rule.get("format", "html"), generated_at
                 )
             ] + reports[pkg]
+            ai_html, ai_err = _ai_summary_html(
+                adom, pkg, diffs, rule.get("ai_summary_enabled", True)
+            )
+            if ai_err:
+                record["ai_narrative_error"] = ai_err
             _send_email(
                 rule["email"],
                 f"[Package Change] {adom} / {pkg}",
-                build_email_html(rule["name"], adom, pkg, diffs, generated_at),
+                build_email_html(rule["name"], adom, pkg, diffs, generated_at, ai_html),
                 attachments,
             )
             sent[pkg] = digest

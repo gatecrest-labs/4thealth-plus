@@ -107,6 +107,12 @@ app/
   app_settings.py      # Persistent app settings (app_settings.json); used for external_api_enabled toggle
   api_tokens.py        # Bearer token CRUD for the external API; SHA-256 hashes stored in api_tokens.json
   package_change_alerts.py  # Package Change Alerts: rules, policy-diff filter, dedupe, email; invoked by config_diff_scheduler
+  ai_narrate.py        # Shared best-effort LLM narration helper (ai_enabled(), safe_narrate()); the AI only explains computed results
+  rule_lookup_ai.py    # Rule Lookup AI: Explain results + natural-language to Source/Destination/Port fields (re-validated by the search parsers)
+  zone_ai.py           # Zone Policy AI: Explain query results, Segmentation Health summary (server recomputes the data)
+  executive_briefing.py            # Executive Briefing: allow-listed KPIs, week-over-week deltas, freshness, email HTML
+  executive_briefing_scheduler.py  # Weekly Executive Briefing job + config (executive_briefing.json)
+  license_renewal_ai.py  # License renewal plan: deterministic per-ADOM grouping/tags + optional AI narration
   routes/
     auth_routes.py            # /login, /logout
     dashboard_routes.py       # /, /firewalls, /versions (Jinja2 pages)
@@ -198,6 +204,8 @@ Four sections, each with its own ADOM selector, working independently (tab displ
    - **Inputs:** source/destination accept IP, CIDR, dotted netmask, trailing-octet wildcard (`10.1.*.*`) or an address/group name pattern (`grp-App*`); port accepts `tcp/443`, a bare port (tcp or udp), a range, or a service name.
    - **Labels per field:** `exact`, `broader`, `narrower`, `overlap`, `name`. A rule is listed if source or destination matches; port-only matches are counted and shown on request (`include_port_only`).
    - **Not matched:** `all`/`any` or negated (`srcaddr-negate`/`dstaddr-negate`) fields — counted in `skipped_count`. FQDN/geography objects match by name only.
+   - **AI Explain:** `GET /api/hygiene/rule-lookup/ai-status` and `POST /api/hygiene/adoms/<adom>/rule-lookup/explain` (`app/rule_lookup_ai.py`, feature tag `rule_lookup_explain`; gated on `ai_assist_enabled`). The client posts back the rows it already holds (first 25 used, `rows_not_shown` passed to the model); no re-search, no cache access. Button hidden unless status is available.
+   - **Natural-language input:** `POST /api/hygiene/rule-lookup/parse` body `{text}` -> `{src,dst,port}` (`app/rule_lookup_ai.parse_nl_query`, feature tag `rule_lookup_nl_parse`; 503 when AI off, 400 invalid/oversized/all-empty, 502 provider failure). Only src/dst/port are read from the model, each post-validated with `_parse_addr_search` / `parse_port_query`; a bare service-name port is not validated (needs ADOM data; the search reports unknown names). Never runs the search or touches the cache; the UI fills + highlights the inputs and the user presses Search. Box hidden unless `ai-status` is available.
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`. Gated to both `rule_hygiene` and `audit_review` tabs — the latter because Audit Review's own Log-Based Rule Review section (see below) also resolves package rules through this endpoint.
 
@@ -493,6 +501,10 @@ sweep result.
 - `GET  /api/devices/all/license` — fleet-wide `all_devices`, ADOM-access filtered
 - `POST /api/devices/all/license/refresh` — trigger an immediate sweep (non-blocking)
 - `GET  /api/adoms/<adom>/license` — `all_devices` filtered to one ADOM (`check_adom_access` enforced)
+- `GET  /api/devices/all/license/ai-status` — `{available}` (the `ai_assist_enabled` flag)
+- `POST /api/devices/all/license/renewal-plan` — body `{adom?}`; returns `{buckets, narrative, narrative_error}`. See below.
+
+**Renewal plan (AI Assist):** `app/license_renewal_ai.py::build_renewal_buckets(all_devices, as_of)` is deterministic: per-ADOM groups ordered by the soonest of license expiry / hardware EOS, devices tagged `expired|<=30|<=60|<=90|eos_12m`. each `all_devices` record now carries a `platform` string (from the sweep's roster, `""` on older persisted files), matched with `app.model_eos.hw_eos_date`; `eos_12m` is applied only to platforms in the EOS table. `build_renewal_plan()` narrates at most 40 devices (+ counts for the rest; feature tag `license_renewal_plan`). The route always returns the buckets; with AI off it skips the LLM (`narrative` and `narrative_error` both null). Without `adom` it is filtered to accessible ADOMs like `/devices/all/license`; with `adom`, `check_adom_access`. The "Renewal plan" button in License Status is hidden unless the status route says available; output is on-screen only (no export).
 
 **FortiGuard Subscriptions table on the Firewalls tab:** the same
 `parse_license_payload()` `subscriptions` dict is also rendered as a table
@@ -654,6 +666,8 @@ Three sub-tab panels, read-only for all users:
 1. **Query Flow** — enter source/destination IPs (multi-line or comma-separated), optional service, get ALLOWED/BLOCKED/UNKNOWN verdict with governing rules
 2. **Browse** — zone accordion list (searchable, filterable) + full policy table (filterable by access type/severity)
 3. **Segmentation Health** — effectiveness score, open zone-pair list, and trust-boundary mismatch report (see below)
+
+**AI narration** (`app/zone_ai.py`, reuses the `ai_assist_enabled` flag): `GET /api/zone/ai-status`; `POST /api/zone/query/explain` (body `{src, dst, service}`) **re-runs `zdb.run_query` server-side** and narrates it (cap 20 flow results, any client-supplied verdict ignored; 400 on malformed body); `POST /api/zone/segmentation-report/summarize` computes the report itself (all trust mismatches first, top 15 open pairs). Feature tags `zone_query_explain` / `zone_segmentation_summary`. 503 when AI is off (checked first) or `policy_db.json` is missing; never 500 on LLM failure. Buttons in `zone_policy.js` stay hidden unless ai-status is true; narrative rendered with `textContent`.
 
 **Validate** and **Edit Database** live under **Admin → Zone Policy** (admin only) — see the Admin tab section below. This keeps the Zone Policy tab fully read-only for every user and consolidates all `policy_db.json` write operations in Admin.
 
@@ -893,7 +907,18 @@ Rules persist in `package_change_alerts.json` (gitignored; copy `package_change_
 
 The rules file is read by the collector (which runs Config-Delta jobs) and written by the web admin UI, so `docker-compose.yml` bind-mounts it into **both** services.
 
+**AI Summary:** when `ai_assist_enabled` is on AND the rule's `ai_summary_enabled` (default `true`) is on, each alert email includes an AI summary (`_ai_summary_html`, reusing `pending_changes_ai.build_diff_narrative` with `feature="package_alert_summary"`). Computed after the dedupe hash and never part of it; failure never blocks the send and is recorded as `ai_narrative_error` on the run (status stays `ok`).
+
 Admin endpoints (all `admin_required`): `GET/POST /admin/api/package-alerts/rules`, `PUT/DELETE /admin/api/package-alerts/rules/<id>`, `POST /admin/api/package-alerts/rules/<id>/test` (sample email; no FMG calls, no dedupe state). UI: Admin → Scheduled → Package Change Alerts (`admin.html` / `admin.js`, `pca*` functions).
+
+#### Executive Briefing
+
+`app/executive_briefing.py` (deterministic payload + narration) and `app/executive_briefing_scheduler.py` (weekly email). Config in `executive_briefing.json` (gitignored; copy `executive_briefing.example.json`): `{enabled, day (MON..SUN), time (HH:MM), email, last_payload, last_sent_at, runs}`, atomic via `app/atomic_io.py`.
+
+- **Payload:** `build_executive_payload()` in `app/routes/external_api_routes.py` is the single assembly of the `/external/api/executive/summary` payload (the route just returns it). `briefing_payload()` narrows it to an **allow-list** (`KPIS`: hygiene score, version compliance %, pending diffs, online/total, backup ok/stale/never, license licensed/expired/unknown + expiring 30/60/90, PSIRT counts, HW-EOS counts, silent devices) of numbers only (anything non-numeric, including bools, becomes `null`), plus `freshness` per section (`hygiene`, `device_sweep`, `pending_status`, `device_backup`, `license_status`, `psirt`) with `stale` = missing or older than `STALE_HOURS` (48). `infra`, `by_adom`, device names, details lists and AI-usage fields never reach the LLM. Week-over-week `compute_deltas()` is plain Python against `last_payload` (the stored allow-listed snapshot, so no device names are persisted either). `build_briefing()` narrates via `safe_narrate(..., feature="executive_briefing")`; the prompt says cite figures verbatim and flag `stale_sections`.
+- **Email:** `run_briefing()` always sends the deterministic KPI table (current / previous / change, stale rows marked) and a freshness table; the AI Summary (HTML-escaped) is added only when `ai_assist_enabled` is on and narration succeeds (failure recorded as `ai_narrative_error`, status stays `ok`). `last_payload` is written only after a successful send. No recipients or SMTP not configured → an `error` run record, never a crash. A file lock stops concurrent runs.
+- **Where it runs:** registered in `start_all_schedulers()` beside the other email schedulers, so in the split deployment it runs in the **collector**. The web admin UI writes the file, so `docker-compose.yml` bind-mounts `executive_briefing.json` into **both** services (same as Package Change Alerts), and the collector re-reads the file every 5 minutes (`_reconcile`, mtime check) to re-register its cron trigger — a schedule edit takes effect within 5 minutes without a restart. "Send now" and "Generate preview" run in the web process.
+- **Admin endpoints** (all `admin_required`): `GET/PUT /admin/api/executive-briefing` (PUT validates `enabled` bool, `day`, `time`, `email` string → 400), `POST /admin/api/executive-briefing/generate` (on-demand `{narrative, narrative_error, deltas, stale_sections}`, no email, nothing saved; 503 when AI off; 502 if the payload cannot be assembled), `POST /admin/api/executive-briefing/send-now` (synchronous; 502 with the run's error). UI: Admin → Scheduled → Executive Briefing (`eb*` in `admin.js`); the Generate preview button is hidden unless `/admin/api/settings` says AI Assist is on (fails closed), the schedule form always shows.
 
 ### External API
 

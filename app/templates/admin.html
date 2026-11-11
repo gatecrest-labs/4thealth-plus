@@ -835,6 +835,31 @@
     </table>
   </div>
 
+  <!-- Executive Briefing -->
+  <div class="rr-section-label" style="margin-top:2rem">Executive Briefing</div>
+  <p class="admin-panel-desc" style="margin-bottom:1rem">
+    Weekly email of the fleet KPIs (the same figures as the executive summary) with week-over-week change versus the last briefing sent.
+    When AI Assist is on, a short AI-written summary is added below the table; the table is always sent.
+  </p>
+  <div id="ebConfigForm" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:10px">
+    <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="eb-enabled"> Enabled</label>
+    <label>Day<br>
+      <select id="eb-day">
+        <option value="MON">Monday</option><option value="TUE">Tuesday</option><option value="WED">Wednesday</option>
+        <option value="THU">Thursday</option><option value="FRI">Friday</option><option value="SAT">Saturday</option>
+        <option value="SUN">Sunday</option>
+      </select>
+    </label>
+    <label>Time<br><input type="time" id="eb-time" value="07:00"></label>
+    <label>Recipients<br><input type="text" id="eb-email" placeholder="alice@corp.com, bob@corp.com" style="min-width:280px"></label>
+    <button type="button" class="btn-primary" id="ebSaveBtn">Save</button>
+    <button type="button" class="btn btn-secondary" id="ebSendNowBtn">Send now</button>
+    <button type="button" class="btn btn-secondary" id="ebPreviewBtn" style="display:none">Generate preview</button>
+  </div>
+  <div id="ebMsg" style="font-size:0.85rem;margin-bottom:6px"></div>
+  <div id="ebLastRun" style="font-size:0.85rem;color:#6b7280;margin-bottom:6px"></div>
+  <div id="ebPreviewOutput" style="display:none;margin-top:8px;padding:12px 16px;border:1px solid var(--border);border-radius:6px;background:var(--surface-alt);font-size:0.9rem;line-height:1.5;white-space:pre-wrap"></div>
+
 </div>
 
 <!-- ═══════════════════════  BACKUP PANEL  ═══════════════════════ -->
@@ -1591,6 +1616,11 @@
       <div class="form-row">
         <label>Enabled</label>
         <input type="checkbox" id="pca-enabled" checked>
+      </div>
+      <div class="form-row">
+        <label>AI Summary</label>
+        <input type="checkbox" id="pca-ai-summary" checked>
+        <span style="font-size:.82rem;color:var(--text-muted)">Add an AI-written summary to alert emails (needs AI Assist on)</span>
       </div>
       <div id="pca-modal-error" style="display:none;color:var(--danger);font-size:.88rem;margin-top:.5rem"></div>
     </div>

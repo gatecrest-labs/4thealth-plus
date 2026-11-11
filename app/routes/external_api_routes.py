@@ -456,12 +456,14 @@ def ext_zone_policies():
 # ── Executive summary ────────────────────────────────────────────────────────
 
 
-@bp.route("/executive/summary")
-def ext_executive_summary():
-    err = _gate()
-    if err:
-        return err
+def build_executive_payload() -> dict:
+    """Assemble the executive-summary payload served by
+    ``/external/api/executive/summary``.
 
+    Shared with app.executive_briefing (which narrows it to an allow-list
+    before anything reaches an LLM). Includes the AI-usage fields exactly as
+    the route has always returned them.
+    """
     from app.executive_summary_cache import get_summary
 
     summary = get_summary()
@@ -504,4 +506,13 @@ def ext_executive_summary():
         payload["ai_usage_24h"] = usage_24h
         payload["ai_usage_by_feature"] = usage_by_feature
 
-    return jsonify(payload)
+    return payload
+
+
+@bp.route("/executive/summary")
+def ext_executive_summary():
+    err = _gate()
+    if err:
+        return err
+
+    return jsonify(build_executive_payload())
