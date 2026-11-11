@@ -739,18 +739,23 @@ document.getElementById('rrAiFirewalls')?.addEventListener('blur', () => {
 });
 
 async function checkAiAssistAvailable() {
+  // Fail closed: if status can't be read, treat AI Assist as unavailable
+  // (matches PSIRT and the hidden-when-off features) instead of leaving the
+  // forms enabled and surfacing a 503 on submit.
+  let available = false;
   try {
     const resp = await fetch('/api/rule-review/ai-assist-status');
     const data = await resp.json();
-    if (!data.available) {
-      document.getElementById('rrAiDisabledNotice').style.display = '';
-      document.getElementById('rrAiSubmitBtn').disabled = true;
-      const fqdnSubmit = document.getElementById('rrAiFqdnSubmitBtn');
-      if (fqdnSubmit) fqdnSubmit.disabled = true;
-    }
+    available = !!data.available;
   } catch (e) {
-    // Non-fatal — the form's own submit handler will surface any real error.
+    available = false;
   }
+  if (available) return;
+  document.getElementById('rrAiDisabledNotice').style.display = '';
+  ['rrAiSubmitBtn', 'rrAiFqdnSubmitBtn', 'rrHfSubmitBtn'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = true;
+  });
 }
 
 async function runAiAssist(evt) {
