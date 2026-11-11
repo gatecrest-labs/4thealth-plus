@@ -294,6 +294,86 @@ def bulk_device_review_adom(
 # ── API: bulk run checks ──────────────────────────────────────────────────────
 
 
+def compute_device_review(
+    adom: str,
+    devices: list[str],
+    check_keys: list[str] | None,
+    check_params: dict,
+    live: bool = False,
+    progress=None,
+    should_cancel=None,
+) -> dict:
+    """Run Device Review for an ADOM and return the bulk-run payload.
+
+    Shared by ``POST /api/audit-review/run`` and the job queue. ``progress(done,
+    total, name)`` and ``should_cancel()`` are optional; a cancelled run returns
+    what it has with ``cancelled: True``. Raises on an inventory/FMG failure.
+    """
+    needed = _needed_data_keys(check_keys)
+    with make_client() as client:
+        all_devices = inventory.devices(client, adom)
+
+    if devices:
+        device_set = {d.lower() for d in devices}
+        all_devices = [
+            d
+            for d in all_devices
+            if isinstance(d, dict) and d.get("name", "").lower() in device_set
+        ]
+    all_devices = [d for d in all_devices if isinstance(d, dict) and d.get("name")]
+
+    rows = []
+    reviewed = []
+    cancelled = False
+
+    try:
+        _client_ctx = make_client()
+        client = _client_ctx.__enter__()
+    except Exception:
+        client = None
+        _client_ctx = None
+
+    try:
+        for dev in all_devices:
+            if should_cancel is not None and should_cancel():
+                cancelled = True
+                break
+            name = dev.get("name", "")
+            reviewed.append(name)
+            try:
+                if client:
+                    dev_rows, _at, _src = _review_device(
+                        client, adom, name, needed, dev, check_keys, check_params, live
+                    )
+                else:
+                    dev_rows = run_checks(name, {}, check_keys, check_params)
+            except Exception:
+                dev_rows = run_checks(name, {}, check_keys, check_params)
+            rows.extend(dev_rows)
+            if progress is not None:
+                progress(len(reviewed), len(all_devices), name)
+    finally:
+        if _client_ctx is not None:
+            _client_ctx.__exit__(None, None, None)
+
+    run_at = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    checks_run = (
+        check_keys if check_keys is not None else [c["key"] for c in CHECKS_META]
+    )
+    out = {
+        "adom": adom,
+        "run_at": run_at,
+        "devices_reviewed": reviewed,
+        "device_count": len(reviewed),
+        "checks_run": checks_run,
+        "total": len(rows),
+        "rows": rows,
+    }
+    if cancelled:
+        out["cancelled"] = True
+    return out
+
+
 @bp.route("/api/audit-review/run", methods=["POST"])
 @tab_required("audit_review")
 def device_review_run():
@@ -314,73 +394,15 @@ def device_review_run():
         if not check_keys:
             return jsonify({"error": "No valid check keys provided"}), 400
 
-    needed = _needed_data_keys(check_keys)
-    live = bool(data.get("live"))
-
     try:
-        with make_client() as client:
-            all_devices = inventory.devices(client, adom)
+        payload = compute_device_review(
+            adom, devices, check_keys, check_params, bool(data.get("live"))
+        )
     except FMGError as exc:
         return upstream_api_error("audit_review", exc)
     except Exception as exc:
         return internal_api_error("audit_review", exc)
-
-    if devices:
-        device_set = {d.lower() for d in devices}
-        all_devices = [
-            d
-            for d in all_devices
-            if isinstance(d, dict) and d.get("name", "").lower() in device_set
-        ]
-
-    rows = []
-    reviewed = []
-
-    try:
-        _client_ctx = make_client()
-        client = _client_ctx.__enter__()
-    except Exception:
-        client = None
-        _client_ctx = None
-
-    try:
-        for dev in all_devices:
-            if not isinstance(dev, dict):
-                continue
-            name = dev.get("name", "")
-            if not name:
-                continue
-            reviewed.append(name)
-            try:
-                if client:
-                    dev_rows, _at, _src = _review_device(
-                        client, adom, name, needed, dev, check_keys, check_params, live
-                    )
-                else:
-                    dev_rows = run_checks(name, {}, check_keys, check_params)
-            except Exception:
-                dev_rows = run_checks(name, {}, check_keys, check_params)
-            rows.extend(dev_rows)
-    finally:
-        if _client_ctx is not None:
-            _client_ctx.__exit__(None, None, None)
-
-    run_at = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
-    checks_run = (
-        check_keys if check_keys is not None else [c["key"] for c in CHECKS_META]
-    )
-
-    return jsonify(
-        {
-            "adom": adom,
-            "run_at": run_at,
-            "devices_reviewed": reviewed,
-            "device_count": len(reviewed),
-            "checks_run": checks_run,
-            "total": len(rows),
-            "rows": rows,
-        }
-    )
+    return jsonify(payload)
 
 
 # ── AI Summary ─────────────────────────────────────────────────────────────

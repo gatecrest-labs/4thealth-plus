@@ -1522,93 +1522,69 @@ def hygiene_explain_finding():
 # ── API: run checks ───────────────────────────────────────────────────────────
 
 
-@bp.route("/api/hygiene/run", methods=["POST"])
-@tab_required("audit_review")
-def hygiene_run():
-    data = request.get_json(silent=True) or {}
-    adom = (data.get("adom") or "").strip()
-    path = _pkg_path(data)
-    checks = data.get("checks", list(CHECKS.keys()))
+def compute_hygiene_run(adom: str, path: str, valid_checks: list[str]) -> dict:
+    """Run the selected hygiene checks on one package and return the response payload.
 
-    if not adom or not path:
-        return jsonify({"error": "adom and package are required"}), 400
-    if err := check_adom_access(adom):
-        return err
-
-    valid_checks = [c for c in checks if c in CHECKS]
-    if not valid_checks:
-        return jsonify({"error": "No valid check keys provided"}), 400
-
+    Shared by the interactive endpoint and the job queue; raises on FMG errors.
+    """
     addr_resolver = None
     svc_resolver = None
     addr_groups: list = []
     svc_groups: list = []
 
-    try:
-        with make_client() as client:
-            policies = policy_facade.policies(client, adom, path)
-            pkg_settings = policy_facade.pkg_settings(client, adom, path)
+    with make_client() as client:
+        policies = policy_facade.policies(client, adom, path)
+        pkg_settings = policy_facade.pkg_settings(client, adom, path)
 
-            # For the unhit check, FMG's stored _hitcount is only updated when
-            # FMG syncs stats from the device — which may be stale or never run.
-            # Fetch live hit counts from each device in scope and overlay them so
-            # the check always reflects what the device actually sees.
-            if "unhit" in valid_checks:
-                scope = policy_facade.pkg_scope(client, adom, path)
-                live_hits: dict[int, int] = {}
-                for member in scope[:10]:
-                    dev = (
-                        member.get("name", "")
-                        if isinstance(member, dict)
-                        else str(member)
-                    )
-                    vdom = (
-                        member.get("vdom", "root")
-                        if isinstance(member, dict)
-                        else "root"
-                    )
-                    if not dev:
-                        continue
-                    for pid, count in client.get_live_policy_hits(
-                        adom, dev, vdom
-                    ).items():
-                        live_hits[pid] = live_hits.get(pid, 0) + count
-                if live_hits:
-                    for p in policies:
-                        pid = p.get("policyid")
-                        if pid is not None:
-                            p["_hitcount"] = live_hits.get(
-                                int(pid), p.get("_hitcount") or 0
-                            )
+        # For the unhit check, FMG's stored _hitcount is only updated when
+        # FMG syncs stats from the device — which may be stale or never run.
+        # Fetch live hit counts from each device in scope and overlay them so
+        # the check always reflects what the device actually sees.
+        if "unhit" in valid_checks:
+            scope = policy_facade.pkg_scope(client, adom, path)
+            live_hits: dict[int, int] = {}
+            for member in scope[:10]:
+                dev = (
+                    member.get("name", "") if isinstance(member, dict) else str(member)
+                )
+                vdom = (
+                    member.get("vdom", "root") if isinstance(member, dict) else "root"
+                )
+                if not dev:
+                    continue
+                for pid, count in client.get_live_policy_hits(adom, dev, vdom).items():
+                    live_hits[pid] = live_hits.get(pid, 0) + count
+            if live_hits:
+                for p in policies:
+                    pid = p.get("policyid")
+                    if pid is not None:
+                        p["_hitcount"] = live_hits.get(
+                            int(pid), p.get("_hitcount") or 0
+                        )
 
-            # For shadow, redundant, and broken_refs checks fetch address/service
-            # objects — shadow/redundant use resolvers for IP-containment analysis;
-            # broken_refs uses the raw group lists to detect empty groups.
-            _needs_objects = any(
-                k in valid_checks for k in ("shadow", "redundant", "broken_refs")
-            )
-            if _needs_objects:
-                try:
-                    addr_objects = policy_facade.objects(client, adom, "address")
-                    addr_groups = policy_facade.objects(client, adom, "addrgrp")
-                    vip_objects = policy_facade.objects(client, adom, "vip")
-                    svc_objects = policy_facade.objects(client, adom, "service")
-                    svc_groups = policy_facade.objects(client, adom, "svcgrp")
-                    addr_resolver = build_addr_resolver(
-                        addr_objects, addr_groups, vip_objects
-                    )
-                    svc_resolver = build_svc_resolver(svc_objects, svc_groups)
-                except Exception:
-                    # Object fetch failure is non-fatal — fall back to name-only matching.
-                    addr_resolver = None
-                    svc_resolver = None
-                    addr_groups = []
-                    svc_groups = []
-
-    except FMGError as exc:
-        return upstream_api_error("hygiene", exc)
-    except Exception as exc:
-        return internal_api_error("hygiene", exc)
+        # For shadow, redundant, and broken_refs checks fetch address/service
+        # objects — shadow/redundant use resolvers for IP-containment analysis;
+        # broken_refs uses the raw group lists to detect empty groups.
+        _needs_objects = any(
+            k in valid_checks for k in ("shadow", "redundant", "broken_refs")
+        )
+        if _needs_objects:
+            try:
+                addr_objects = policy_facade.objects(client, adom, "address")
+                addr_groups = policy_facade.objects(client, adom, "addrgrp")
+                vip_objects = policy_facade.objects(client, adom, "vip")
+                svc_objects = policy_facade.objects(client, adom, "service")
+                svc_groups = policy_facade.objects(client, adom, "svcgrp")
+                addr_resolver = build_addr_resolver(
+                    addr_objects, addr_groups, vip_objects
+                )
+                svc_resolver = build_svc_resolver(svc_objects, svc_groups)
+            except Exception:
+                # Object fetch failure is non-fatal — fall back to name-only matching.
+                addr_resolver = None
+                svc_resolver = None
+                addr_groups = []
+                svc_groups = []
 
     findings = run_checks(
         policies,
@@ -1657,17 +1633,41 @@ def hygiene_run():
         }
 
     pkg_display = path.rsplit("/", 1)[-1]
-    return jsonify(
-        {
-            "adom": adom,
-            "package": pkg_display,
-            "checks_run": valid_checks,
-            "policy_count": len(policies),
-            "total": len(findings),
-            "findings": findings,
-            **_as_of(adom, path),
-        }
-    )
+    return {
+        "adom": adom,
+        "package": pkg_display,
+        "checks_run": valid_checks,
+        "policy_count": len(policies),
+        "total": len(findings),
+        "findings": findings,
+        **_as_of(adom, path),
+    }
+
+
+@bp.route("/api/hygiene/run", methods=["POST"])
+@tab_required("audit_review")
+def hygiene_run():
+    data = request.get_json(silent=True) or {}
+    adom = (data.get("adom") or "").strip()
+    path = _pkg_path(data)
+    checks = data.get("checks", list(CHECKS.keys()))
+
+    if not adom or not path:
+        return jsonify({"error": "adom and package are required"}), 400
+    if err := check_adom_access(adom):
+        return err
+
+    valid_checks = [c for c in checks if c in CHECKS]
+    if not valid_checks:
+        return jsonify({"error": "No valid check keys provided"}), 400
+
+    try:
+        payload = compute_hygiene_run(adom, path, valid_checks)
+    except FMGError as exc:
+        return upstream_api_error("hygiene", exc)
+    except Exception as exc:
+        return internal_api_error("hygiene", exc)
+    return jsonify(payload)
 
 
 @bp.route("/api/hygiene/unused-objects")
