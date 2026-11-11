@@ -179,6 +179,10 @@ class Config:
     )
     AUDIT_SNAPSHOTS = _env_flag("AUDIT_SNAPSHOTS")
     JOB_QUEUE = _env_flag("JOB_QUEUE")
+    JOB_MAX_RUNNING = _env_int("JOB_MAX_RUNNING", 2)
+    JOB_MAX_QUEUED_PER_USER = _env_int("JOB_MAX_QUEUED_PER_USER", 5)
+    JOB_MAX_RESULT_BYTES = _env_int("JOB_MAX_RESULT_BYTES", 20 * 1024 * 1024)
+    JOB_RETENTION_DAYS = _env_int("JOB_RETENTION_DAYS", 7)
 
     # SNMP (FortiManager / FortiAnalyzer / FortiAuthenticator CPU & memory polling)
     SNMP_ENABLED = os.environ.get("SNMP_ENABLED", "false").lower() == "true"
