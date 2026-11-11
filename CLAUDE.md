@@ -656,6 +656,8 @@ Three sub-tab panels, read-only for all users:
 2. **Browse** — zone accordion list (searchable, filterable) + full policy table (filterable by access type/severity)
 3. **Segmentation Health** — effectiveness score, open zone-pair list, and trust-boundary mismatch report (see below)
 
+**AI narration** (`app/zone_ai.py`, reuses the `ai_assist_enabled` flag): `GET /api/zone/ai-status`; `POST /api/zone/query/explain` (body `{src, dst, service}`) **re-runs `zdb.run_query` server-side** and narrates it (cap 20 flow results, any client-supplied verdict ignored; 400 on malformed body); `POST /api/zone/segmentation-report/summarize` computes the report itself (all trust mismatches first, top 15 open pairs). Feature tags `zone_query_explain` / `zone_segmentation_summary`. 503 when AI is off (checked first) or `policy_db.json` is missing; never 500 on LLM failure. Buttons in `zone_policy.js` stay hidden unless ai-status is true; narrative rendered with `textContent`.
+
 **Validate** and **Edit Database** live under **Admin → Zone Policy** (admin only) — see the Admin tab section below. This keeps the Zone Policy tab fully read-only for every user and consolidates all `policy_db.json` write operations in Admin.
 
 Backend: `app/zone_db.py` is the single source of truth — query engine, validation, and all CRUD mutations. It writes back to `policy_db.json` atomically. Routes in `app/routes/zone_routes.py`:

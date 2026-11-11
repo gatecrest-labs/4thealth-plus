@@ -369,6 +369,7 @@ const SECTIONS = [
 </ul>
 <h3>Evaluation Order</h3>
 <p>Rules are evaluated in priority order: <strong>block all</strong> &gt; <strong>block only</strong> (service match) &gt; <strong>allow all</strong>. Zone hierarchy is supported — a zone can inherit policies from its parent zones.</p>
+<p><em>If AI Assist is enabled (Admin → AI Assist):</em> click <strong>Explain with AI</strong> above the query results for a plain-English explanation of each verdict, citing the governing rule. The server re-runs the query itself; the AI only narrates it. On <strong>Segmentation Health</strong>, <strong>Summarize with AI</strong> lists the three highest-risk items and a suggested order of remediation.</p>
 <h3>Browse</h3>
 <ul>
   <li><strong>Zones tab</strong> — accordion list of all zones with their subnets. Search by name, description, or subnet. Filter by shared/children/top-level.</li>
@@ -586,7 +587,7 @@ const SECTIONS = [
 <p>Lets external programs query Zone Policy data over a bearer-token API, without a browser session. Disabled by default — check <strong>External API enabled</strong> and save to turn it on. Create tokens with <strong>+ New Token</strong>; the plaintext value is shown once and never again, so copy it immediately. Tokens can be revoked at any time. When disabled, every <code>/external/api/</code> request returns <code>503</code> regardless of token validity.</p>
 
 <h3>AI Assist</h3>
-<p>One <strong>ai_assist_enabled</strong> toggle turns on every AI feature in the app at once — Rule Validation's AI Assist, Audit Review's AI Summary/AI Explain/PSIRT extraction, Config-Delta's AI Summary, Rule Lookup's Explain results, Package Change Alert email summaries (per-rule checkbox), and the Admin AI Trend Summary. Off by default. This sub-tab also shows an AI usage/cost chart — every LLM call the app makes (which provider, how many tokens, estimated cost) is tracked here regardless of which feature triggered it.</p>
+<p>One <strong>ai_assist_enabled</strong> toggle turns on every AI feature in the app at once — Rule Validation's AI Assist, Audit Review's AI Summary/AI Explain/PSIRT extraction, Config-Delta's AI Summary, Rule Lookup's Explain results, Zone Policy's Explain/Summarize buttons, Package Change Alert email summaries (per-rule checkbox), and the Admin AI Trend Summary. Off by default. This sub-tab also shows an AI usage/cost chart — every LLM call the app makes (which provider, how many tokens, estimated cost) is tracked here regardless of which feature triggered it.</p>
 
 <h3>Backup</h3>
 <p>Creates AES-256 encrypted ZIP backups of all runtime configuration. <strong>One-time backups</strong> download directly to your browser. <strong>Scheduled backups</strong> (daily/weekly/custom) run server-side and can optionally push the archive to a remote FTP or SFTP server. The backup password is shown once on first save, the same as API tokens — store it offline, it cannot be retrieved again. The last 20 local archives are kept automatically; older ones are pruned.</p>

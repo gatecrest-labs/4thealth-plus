@@ -96,6 +96,81 @@ def api_query():
         return internal_api_error("zone_policy", exc)
 
 
+# ── AI narration ──────────────────────────────────────────────────────────────
+
+_MAX_EXPLAIN_COMBOS = 400
+
+
+@bp.route("/api/zone/ai-status")
+@tab_required("zone_policy")
+def api_ai_status():
+    from app.ai_narrate import ai_enabled
+
+    return jsonify({"available": ai_enabled()})
+
+
+def _endpoint_list(raw):
+    if isinstance(raw, str):
+        return _parse_endpoints(raw)
+    if isinstance(raw, list) and all(isinstance(i, str) for i in raw):
+        return [i.strip() for i in raw if i.strip()]
+    return None
+
+
+@bp.route("/api/zone/query/explain", methods=["POST"])
+@tab_required("zone_policy")
+def api_query_explain():
+    """Re-run the query server-side and narrate it; client verdicts are ignored."""
+    from app.ai_narrate import ai_enabled
+
+    if not ai_enabled():
+        return jsonify({"error": "AI Assist is not enabled"}), 503
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _err("JSON object body required")
+    service = data.get("service", "")
+    if service is None:
+        service = ""
+    if not isinstance(service, str):
+        return _err("service must be a string")
+    src_list = _endpoint_list(data.get("src", ""))
+    dst_list = _endpoint_list(data.get("dst", ""))
+    if not src_list or not dst_list:
+        return _err("src and dst are required")
+    if len(src_list) * len(dst_list) > _MAX_EXPLAIN_COMBOS:
+        return _err("Too many src/dst combinations to explain")
+    if not zdb.db_available():
+        return _err("policy_db.json not found", 503)
+    try:
+        from app.zone_ai import explain_query
+
+        results = zdb.run_query(src_list, dst_list, service.strip() or None, verbose=True)
+        narrative, error = explain_query(results, user=session.get("user"))
+        return jsonify({"narrative": narrative, "narrative_error": error})
+    except Exception as exc:
+        return internal_api_error("zone_policy", exc)
+
+
+@bp.route("/api/zone/segmentation-report/summarize", methods=["POST"])
+@tab_required("zone_policy")
+def api_segmentation_summarize():
+    """Compute the segmentation report server-side and narrate it."""
+    from app.ai_narrate import ai_enabled
+
+    if not ai_enabled():
+        return jsonify({"error": "AI Assist is not enabled"}), 503
+    if not zdb.db_available():
+        return _err("policy_db.json not found", 503)
+    try:
+        from app.zone_ai import summarize_segmentation
+
+        report = zdb.compute_segmentation_report(zdb.load_db())
+        narrative, error = summarize_segmentation(report, user=session.get("user"))
+        return jsonify({"narrative": narrative, "narrative_error": error})
+    except Exception as exc:
+        return internal_api_error("zone_policy", exc)
+
+
 # ── Browse ────────────────────────────────────────────────────────────────────
 
 

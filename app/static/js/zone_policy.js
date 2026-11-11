@@ -55,6 +55,7 @@ async function runQuery() {
     const data = await resp.json();
     if (!resp.ok) { showQueryError(data.error || 'Query failed.'); return; }
     renderQueryResults(data);
+    zpResetNarrative('zpExplain');
     lastQuery = { src, dst, service: svc, verbose, ranAt: new Date(), results: data };
     document.getElementById('zpResults').style.display = '';
     document.getElementById('zpStatusLine').textContent = `Last query: ${new Date().toLocaleString()}`;
@@ -617,3 +618,54 @@ function renderSegHealth(data) {
 
   document.getElementById('zpSegContent').style.display = '';
 }
+
+
+/* ── AI narration (fails closed: buttons stay hidden unless status says available) ── */
+function zpResetNarrative(boxId) {
+  const box = document.getElementById(boxId);
+  box.style.display = 'none';
+  box.textContent = '';
+}
+
+async function zpAiNarrate(btnId, boxId, url, body) {
+  const btn = document.getElementById(btnId);
+  const box = document.getElementById(boxId);
+  btn.disabled = true;
+  box.style.display = '';
+  box.textContent = 'Working…';
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+    const d = await resp.json().catch(() => ({}));
+    if (!resp.ok) box.textContent = d.error || 'AI request failed.';
+    else if (d.narrative) box.textContent = d.narrative;
+    else box.textContent = d.narrative_error || 'No explanation was produced.';
+  } catch (e) {
+    box.textContent = 'AI request failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function zpInitAi() {
+  try {
+    const resp = await fetch('/api/zone/ai-status');
+    const d = resp.ok ? await resp.json() : null;
+    if (!d || d.available !== true) return;
+  } catch (e) { return; }
+  document.getElementById('zpExplainBtn').style.display = '';
+  document.getElementById('zpSegSummBtn').style.display = '';
+}
+
+document.getElementById('zpExplainBtn').addEventListener('click', () => {
+  if (!lastQuery) return;
+  // Only the inputs are sent; the server re-runs the query itself.
+  zpAiNarrate('zpExplainBtn', 'zpExplain', '/api/zone/query/explain',
+    { src: lastQuery.src, dst: lastQuery.dst, service: lastQuery.service });
+});
+document.getElementById('zpSegSummBtn').addEventListener('click', () =>
+  zpAiNarrate('zpSegSummBtn', 'zpSegSumm', '/api/zone/segmentation-report/summarize', {}));
+zpInitAi();
