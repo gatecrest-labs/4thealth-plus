@@ -399,3 +399,38 @@ def test_pending_changes_task_poll_unauthenticated(client):
     """GET /api/pending-changes/task/<id> redirects unauthenticated users."""
     resp = client.get("/api/pending-changes/task/nonexistent-task-id")
     assert resp.status_code in (302, 401)
+
+
+def test_parse_preview_diff_merges_repeated_vdom_blocks():
+    """FMG can emit several `config vdom` blocks for the same VDOM; they must merge."""
+    from app.fmg_client import parse_preview_diff
+
+    raw = (
+        "config vdom\n"
+        "    edit EXT01\n"
+        "        config firewall address\n"
+        '            edit "a"\n'
+        "            next\n"
+        "        end\n"
+        "    next\n"
+        "end\n"
+        "config vdom\n"
+        "    edit VPN01\n"
+        "        config router static\n"
+        "            delete 1959\n"
+        "        end\n"
+        "    next\n"
+        "end\n"
+        "config vdom\n"
+        "    edit VPN01\n"
+        "        config router static\n"
+        "            delete 1761\n"
+        "        end\n"
+        "    next\n"
+        "end\n"
+    )
+    names = [v["name"] for v in parse_preview_diff(raw)["vdoms"]]
+    assert names == ["EXT01", "VPN01"]
+    vpn = parse_preview_diff(raw)["vdoms"][1]["changes"]
+    joined = "\n".join(c["line"] for c in vpn)
+    assert "delete 1959" in joined and "delete 1761" in joined
