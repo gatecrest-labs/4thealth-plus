@@ -378,7 +378,12 @@ def parse_preview_diff(raw: str) -> dict:
             "raw": raw,
         }
 
-    vdom_blocks = _split_vdom_blocks(raw)
+    # FMG may emit several `config vdom` blocks for the same VDOM (one per
+    # changed config section); merge them so each VDOM appears once.
+    merged: dict[str, str] = {}
+    for vname, content in _split_vdom_blocks(raw):
+        merged[vname] = merged[vname] + "\n" + content if vname in merged else content
+    vdom_blocks = list(merged.items())
 
     summary = dict(empty_summary)
     vdoms_out = []
