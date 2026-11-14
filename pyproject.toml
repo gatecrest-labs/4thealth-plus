@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-prod = ["gunicorn>=26.2.0"]
+prod = ["gunicorn>=27.0.0"]
 
 [tool.uv]
 package = false
