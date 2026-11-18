@@ -514,7 +514,7 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--border);
   border-radius: 12px;
   width: 100%;
-  max-width: 900px;
+  max-width: 1100px;
   box-shadow: 0 8px 32px rgba(0,0,0,.3);
 }
 
@@ -3090,3 +3090,27 @@ a:hover { text-decoration: underline; }
 .inv-freshness.degraded::before { background: var(--status-red); }
 .inv-freshness-warn { color: var(--text-muted); }
 .inv-freshness-btn { padding: 0 .35rem; }
+
+/* ── BGP / OSPF neighbor health ──────────────────────────────────────── */
+.nbr-badge { display:inline-block; padding:1px 8px; border-radius:4px; font-size:.78rem; font-weight:600; border:1px solid transparent; }
+.nbr-ok   { background: rgba(25,135,84,.15);  color: var(--success); border-color: rgba(25,135,84,.35); }
+.nbr-warn { background: rgba(253,126,20,.15); color: var(--warning); border-color: rgba(253,126,20,.35); }
+.nbr-bad  { background: rgba(220,53,69,.15);  color: var(--danger);  border-color: rgba(220,53,69,.35); }
+.sub-table tr.nbr-row-bad  td { background: rgba(220,53,69,.07); }
+.sub-table tr.nbr-row-warn td { background: rgba(253,126,20,.07); }
+.nbr-summary { font-size:.82rem; font-weight:600; margin:.25rem 0 .5rem; color: var(--text-muted); }
+
+/* ── Firewalls detail modal: pinned header + tabs, scrolling panel ───── */
+#deviceModal .modal-body { display: flex; flex-direction: column; max-height: calc(100vh - 11rem); overflow-y: auto; }
+#deviceModal .modal-body > * { flex-shrink: 0; }
+.detail-panels { flex: 1 1 auto !important; min-height: 12rem; overflow-y: auto; padding-top: .25rem; }
+.detail-tabs { display: flex; gap: .25rem; border-bottom: 2px solid var(--border); margin: 1rem 0 .5rem; }
+.detail-tab {
+  background: none; border: none; border-bottom: 3px solid transparent; margin-bottom: -2px;
+  padding: .5rem 1rem; font-size: .9rem; font-weight: 500; color: var(--text-muted); cursor: pointer;
+}
+.detail-tab:hover { color: var(--text); }
+.detail-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.detail-tab-badge { margin-left: .35rem; padding: 0 6px; border-radius: 10px; font-size: .72rem; font-weight: 700; background: rgba(220,53,69,.15); color: var(--danger); }
+.detail-tab-badge.hidden { display: none; }
+.detail-panel.hidden { display: none; }
