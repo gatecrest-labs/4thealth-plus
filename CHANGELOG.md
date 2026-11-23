@@ -9,6 +9,10 @@ All notable changes to 4THealth+ are documented in this file.
 - **Added: BGP/OSPF neighbor health.** Neighbor state is shown as a badge with an icon: BGP `Established` and OSPF `Full` are green, OSPF `2-Way` is amber, every other state is red, and unhealthy rows are tinted. Each neighbor table has a summary line (e.g. "3 of 4 Established · 1 down"), lists unhealthy neighbors first and has a **Problems only** filter. The Routing tab shows a warning count when any neighbor is not healthy.
 - Front-end only: no API changes; neighbor state does not affect device health status on the list or map. Classifier helpers live in `app/static/js/neighbor_health.js` with Node tests in `tests/js/` (`node --test tests/js/*.test.js`).
 
+### Config-Delta scheduled jobs: batched emails & run visibility
+- **Added:** per-job **Devices per email** (`batch_size`, default 100, 1-500). Larger ADOMs are split into `[Part N of M]` emails; Part 1 carries the full summary and AI Summary, each part has its own attachment. Small ADOMs send one email as before; existing jobs default to 100.
+- **Added:** a `running` run record is written when a job starts and updated in place (device counts, `emails_sent`); Admin → Scheduled shows RUNNING…. Runs orphaned by a restart become `interrupted`, and the status endpoint reports `running` correctly across gunicorn workers.
+
 ### AI features expansion
 - **Added:** shared `app/ai_narrate.py` helper used by the new AI features.
 - **Added: Rule Lookup Explain results.** A button on Rule Lookup results (shown only when AI Assist is on) narrates which rules would allow or deny the searched flow, flags broader/overlap matches as less certain and notes that all/negated rules were not evaluated. It sends the first 25 rows already on the page; no search or cache access.

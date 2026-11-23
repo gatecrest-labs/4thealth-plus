@@ -26,8 +26,24 @@ _running_jobs: set[str] = set()  # job IDs currently executing (for status polli
 
 _VALID_DAYS = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
 
+DEFAULT_BATCH_SIZE = 100  # devices per email
+_MAX_BATCH_SIZE = 500
+
+
+def _parse_batch_size(data: dict) -> int:
+    """Return the validated batch_size from job data (default if absent)."""
+    raw = data.get("batch_size", DEFAULT_BATCH_SIZE)
+    try:
+        batch_size = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("batch_size must be an integer") from None
+    if not (1 <= batch_size <= _MAX_BATCH_SIZE):
+        raise ValueError(f"batch_size must be between 1 and {_MAX_BATCH_SIZE}")
+    return batch_size
+
 
 def _validate_job_fields(data: dict) -> None:
+    _parse_batch_size(data)
     days = data.get("days_of_week")
     if not isinstance(days, list) or not days:
         raise ValueError("days_of_week must be a non-empty list")
@@ -79,6 +95,7 @@ def create_job(data: dict) -> dict:
         "time": data["time"],
         "format": data.get("format", "pdf"),
         "email": data["email"],
+        "batch_size": _parse_batch_size(data),
         "enabled": bool(data.get("enabled", True)),
         "ai_summary_enabled": bool(data.get("ai_summary_enabled", True)),
         "created_at": datetime.datetime.now(datetime.UTC)
@@ -109,6 +126,7 @@ def update_job(job_id: str, data: dict) -> dict:
                     "time": data["time"],
                     "format": data.get("format", "pdf"),
                     "email": data["email"],
+                    "batch_size": _parse_batch_size(data),
                     "enabled": bool(data.get("enabled", True)),
                     "ai_summary_enabled": bool(
                         data.get(
@@ -184,6 +202,72 @@ def _append_run(job_id: str, record: dict) -> None:
         _save(jobs)
 
 
+def _now_iso() -> str:
+    return datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z"
+
+
+def _start_run(job_id: str) -> str:
+    """Persist an in-progress run record so a long job is visible while running."""
+    run_id = str(uuid.uuid4())
+    now = _now_iso()
+    _append_run(
+        job_id,
+        {"run_id": run_id, "started_at": now, "ran_at": now, "status": "running"},
+    )
+    return run_id
+
+
+def _update_run(job_id: str, run_id: str | None, updates: dict) -> None:
+    """Merge `updates` into the run record `run_id`; insert one if it's missing."""
+    with _lock:
+        jobs = _load()
+        for j in jobs:
+            if j["id"] != job_id:
+                continue
+            runs = j.setdefault("runs", [])
+            rec = next((r for r in runs if run_id and r.get("run_id") == run_id), None)
+            if rec is None:
+                rec = {"run_id": run_id} if run_id else {}
+                runs.insert(0, rec)
+            rec.update(updates)
+        _save(jobs)
+
+
+def _mark_interrupted_runs() -> None:
+    """At startup, flip 'running' records whose job isn't executing to 'interrupted'.
+
+    The per-job flock is held for the life of a running job (by whichever
+    worker owns it), so a lock we can take means nothing is running it: the
+    process that started the run died before finishing.
+    """
+    with _lock:
+        jobs = _load()
+    for j in jobs:
+        stale = [r for r in j.get("runs", []) if r.get("status") == "running"]
+        if not stale:
+            continue
+        fh = _try_acquire_job_lock(j["id"])
+        if fh is None:
+            continue  # genuinely running in another worker
+        try:
+            for r in stale:
+                _update_run(
+                    j["id"],
+                    r.get("run_id"),
+                    {
+                        "status": "interrupted",
+                        "ran_at": _now_iso(),
+                        "error": "Run interrupted (app restarted before it finished)",
+                    },
+                )
+        finally:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+                fh.close()
+            except Exception:
+                pass
+
+
 # ── Job execution ─────────────────────────────────────────────────────────────
 
 
@@ -212,6 +296,7 @@ def _execute_job(job_id: str) -> None:
         )
         return
     _running_jobs.add(job_id)
+    run_id: str | None = None
     try:
         with _lock:
             jobs = _load()
@@ -220,14 +305,17 @@ def _execute_job(job_id: str) -> None:
             app_log("ERROR", "config_diff_scheduler", f"Job {job_id} not found")
             return
 
+        run_id = _start_run(job_id)
         adom = job["adom"]
         fmt = job.get("format", "pdf")
         email = job["email"]
+        batch_size = int(job.get("batch_size", DEFAULT_BATCH_SIZE))
 
         app_log(
             "INFO",
             "config_diff_scheduler",
-            f"Running scheduled Config-Delta export: adom={adom} format={fmt} to={email}",
+            f"Running scheduled Config-Delta export: adom={adom} format={fmt} "
+            f"batch_size={batch_size} to={email}",
         )
 
         from app.routes.pending_changes_routes import bulk_preview_adom
@@ -253,12 +341,9 @@ def _execute_job(job_id: str) -> None:
             )
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
-        record: dict[str, Any] = {
-            "ran_at": datetime.datetime.now(datetime.UTC)
-            .replace(tzinfo=None)
-            .isoformat()
-            + "Z",
-            "status": "ok",
+        # Fetch phase is done; record counts now so they are visible while the
+        # (batched) emails are still going out.
+        updates: dict[str, Any] = {
             "devices_total": len(results),
             "devices_with_changes": ok_count,
             **_gate_counts(results),
@@ -268,39 +353,72 @@ def _execute_job(job_id: str) -> None:
             adom, results, job.get("ai_summary_enabled", True)
         )
         if ai_narrative_error:
-            record["ai_narrative_error"] = ai_narrative_error
+            updates["ai_narrative_error"] = ai_narrative_error
+        _update_run(job_id, run_id, updates)
 
-        generated_at = (
-            datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z"
-        )
-        subject = f"4THealth+ Config-Delta — {adom} — {generated_at[:10]}"
-        body_html = _build_summary_html(adom, results, ai_narrative_html)
-        attachment = _build_attachment(
-            adom, fmt, results, generated_at, ai_narrative_html
-        )
+        generated_at = _now_iso()
+        base_subject = f"4THealth+ Config-Delta — {adom} — {generated_at[:10]}"
+        summary_html = _build_summary_html(adom, results, ai_narrative_html)
 
         from app.smtp_client import send_email
 
-        send_email(email, subject, body_html, [attachment])
+        # Split into batches of `batch_size` devices so a large ADOM does not
+        # produce one huge message the mail path may drop. Part 1 carries the
+        # full per-device summary and AI summary; later parts are short.
+        batches = _chunk(results, batch_size) or [[]]
+        total_parts = len(batches)
+        for part_idx, batch in enumerate(batches):
+            part_num = part_idx + 1
+            if total_parts == 1:
+                subject, body_html, part = base_subject, summary_html, None
+                narrative = ai_narrative_html
+            elif part_num == 1:
+                subject = base_subject
+                body_html = summary_html + (
+                    f"<p style='color:#6b7280'>This is Part 1 of {total_parts}. "
+                    f"Parts 2–{total_parts} contain the remaining devices.</p>"
+                )
+                part = (part_num, total_parts)
+                narrative = ai_narrative_html
+            else:
+                subject = f"[Part {part_num} of {total_parts}] {base_subject}"
+                body_html = (
+                    f"<p>This is Part {part_num} of {total_parts}. "
+                    f"See Part 1 for the full summary.</p>"
+                )
+                part = (part_num, total_parts)
+                narrative = ""
+            attachment = _build_attachment(
+                adom, fmt, batch, generated_at, narrative, part
+            )
+            send_email(email, subject, body_html, [attachment])
+            _update_run(job_id, run_id, {"emails_sent": part_num})
+            app_log(
+                "INFO",
+                "config_diff_scheduler",
+                f"Config-Delta email sent: adom={adom} part={part_num}/{total_parts} "
+                f"devices={len(batch)} to={email}",
+            )
 
-        _append_run(job_id, record)
+        _update_run(
+            job_id,
+            run_id,
+            {"status": "ok", "ran_at": _now_iso(), "emails_sent": total_parts},
+        )
         _prune_runs(job_id)
         app_log(
             "INFO",
             "config_diff_scheduler",
-            f"Config-Delta export sent: adom={adom} devices={len(results)} changes={ok_count} to={email}",
+            f"Config-Delta export sent: adom={adom} devices={len(results)} "
+            f"changes={ok_count} emails={total_parts} to={email}",
         )
 
     except Exception as exc:
-        record = {
-            "ran_at": datetime.datetime.now(datetime.UTC)
-            .replace(tzinfo=None)
-            .isoformat()
-            + "Z",
-            "status": "error",
-            "error": str(exc),
-        }
-        _append_run(job_id, record)
+        _update_run(
+            job_id,
+            run_id,
+            {"status": "error", "ran_at": _now_iso(), "error": str(exc)},
+        )
         app_log(
             "ERROR",
             "config_diff_scheduler",
@@ -414,17 +532,24 @@ def _build_summary_html(
     )
 
 
+def _chunk(items: list, size: int) -> list[list]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
 def _build_attachment(
     adom: str,
     fmt: str,
     results: list[dict],
     generated_at: str,
     ai_narrative_html: str = "",
+    part: tuple[int, int] | None = None,
 ) -> dict:
     import csv
     import io
 
     date = generated_at[:10]  # "YYYY-MM-DD" from ISO string
+    if part:
+        date = f"{date}-part{part[0]}of{part[1]}"
     if fmt == "json":
         data = json.dumps(
             {
@@ -655,6 +780,14 @@ def init_scheduler(app) -> None:
     from apscheduler.schedulers.background import BackgroundScheduler
 
     _scheduler = BackgroundScheduler(daemon=True)
+    try:
+        _mark_interrupted_runs()
+    except Exception as exc:
+        app_log(
+            "ERROR",
+            "config_diff_scheduler",
+            f"Failed to reconcile interrupted runs: {exc}",
+        )
     jobs = _load()
     for job in jobs:
         if job.get("enabled"):
