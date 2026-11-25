@@ -1,7 +1,7 @@
 [project]
 name = "4thealth"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.11.5"
 dependencies = [
     "flask>=3.1.3,<4",
     "python-dotenv>=1.2.4",
@@ -9,7 +9,7 @@ dependencies = [
     "bcrypt>=5.0.0",
     "apscheduler>=3.11.3",
     "openpyxl>=3.1.5",
-    "pysnmp>=7.1.32",
+    "pysnmp>=7.1.33",
     "cryptography>=50.0.2",
     "pyzipper>=0.4.0",
     "paramiko>=5.1.0",
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-prod = ["gunicorn>=27.0.0"]
+prod = ["gunicorn>=27.0.1"]
 
 [tool.uv]
 package = false
@@ -61,5 +61,5 @@ exclude = ["app/tsuite_adapter.py"]
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
-    "ruff>=0.17.4",
+    "ruff>=0.17.5",
 ]

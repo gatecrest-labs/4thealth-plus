@@ -747,7 +747,12 @@ def admin_cdiff_jobs_status(job_id: str):
     if not job:
         return jsonify({"error": "Job not found"}), 404
     last_run = job["runs"][0] if job.get("runs") else None
-    return jsonify({"running": _sched.is_job_running(job_id), "last_run": last_run})
+    # _running_jobs is per-process (gunicorn runs several workers), so also
+    # trust the persisted in-progress record written by the executing worker.
+    running = _sched.is_job_running(job_id) or bool(
+        last_run and last_run.get("status") == "running"
+    )
+    return jsonify({"running": running, "last_run": last_run})
 
 
 # ── Audit Review: Scheduled Jobs ──────────────────────────────────────────────

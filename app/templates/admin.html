@@ -426,6 +426,11 @@
       <input type="email" id="jobFormEmail" placeholder="recipient@example.com" style="min-width:240px">
     </div>
     <div class="form-row">
+      <label>Devices per email</label>
+      <input type="number" id="jobFormBatchSize" min="1" max="500" value="100" style="width:90px">
+      <span style="font-size:11px;color:var(--text-muted)">Large ADOMs are split into multiple emails (Part N of M).</span>
+    </div>
+    <div class="form-row">
       <label>Enabled</label>
       <input type="checkbox" id="jobFormEnabled" checked>
     </div>

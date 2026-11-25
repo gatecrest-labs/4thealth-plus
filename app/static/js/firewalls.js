@@ -367,13 +367,25 @@ ${(d.vdoms || []).map(v => `<tr><td>${vdomBadge(v.name)}</td><td>${escHtml(v.opm
   <div class="detail-item"><span class="detail-label">Policy Package</span><span class="detail-value">${escHtml(d.policy_package || '—')}</span></div>
 </div>
 
+<div class="detail-tabs" role="tablist">
+  <button class="detail-tab active" data-tab="overview">Overview</button>
+  <button class="detail-tab" data-tab="interfaces">Interfaces (${visibleIfaces.length})</button>
+  <button class="detail-tab" data-tab="routing">Routing <span class="detail-tab-badge hidden" id="routingBadge"></span></button>
+  <button class="detail-tab" data-tab="tunnels">Tunnels (${(d.ipsec || []).length})</button>
+</div>
+
+<div class="detail-panels">
+<div class="detail-panel" data-panel="overview">
 ${fgSubsHtml}
 
-${vdomSection}
+${(fgSubsHtml || vdomSection) ? vdomSection : '<p class="empty-state">No additional overview data.</p>'}
+</div>
 
-<div class="section-title">Interfaces (<span id="ifaceCountLabel">${visibleIfaces.length}</span>)</div>
+<div class="detail-panel hidden" data-panel="interfaces">
 <div id="ifaceWidget"></div>
+</div>
 
+<div class="detail-panel hidden" data-panel="routing">
 <div class="section-title">IPv4 Routes</div>
 <div id="routeWidget"></div>
 
@@ -388,11 +400,33 @@ ${vdomSection}
 
 <div class="section-title">OSPF Neighbors</div>
 <div id="ospfWidget"></div>
+</div>
 
-<div class="section-title">IPsec Tunnels (${(d.ipsec || []).length})</div>
-${subTable(['Tunnel','Remote Gateway','Status','Uptime'], ipsecRows, 'No IPsec tunnels')}`;
+<div class="detail-panel hidden" data-panel="tunnels">
+${subTable(['Tunnel','Remote Gateway','Status','Uptime'], ipsecRows, 'No IPsec tunnels')}
+</div>
+</div>`;
 
   return { html, visibleIfaces, vdomColorMap };
+}
+
+/* ── Detail modal tabs ──────────────────────────────────────────────────── */
+function initDetailTabs(root) {
+  const tabs   = root.querySelectorAll('.detail-tab');
+  const panels = root.querySelectorAll('.detail-panel');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.toggle('active', t === tab));
+      panels.forEach(p => p.classList.toggle('hidden', p.dataset.panel !== tab.dataset.tab));
+    });
+  });
+}
+
+function setRoutingBadge(count) {
+  const el = document.getElementById('routingBadge');
+  if (!el) return;
+  el.textContent = count > 0 ? `⚠ ${count}` : '';
+  el.classList.toggle('hidden', count <= 0);
 }
 
 /* ── Interface widget (paginated + filterable) ──────────────────────────── */
@@ -639,7 +673,14 @@ ${pgHtml ? `<div class="pagination">${pgHtml}</div>` : ''}`;
 // rowsFn(item) → array of <td> HTML strings for one data item
 // headers      → array of column header strings
 // filterFn(item, q) → bool
-function renderVdomWidget(byVdom, colorMap, widgetId, headers, rowsFn, filterFn, emptyMsg, filterPlaceholder) {
+// Count items whose level is not 'ok' across all VDOMs (shared with the Routing tab badge).
+function neighborProblemCount(byVdom, levelFn) {
+  return Object.values(byVdom || {}).reduce(
+    (n, items) => n + (items || []).filter(i => levelFn(i) !== 'ok').length, 0);
+}
+
+// opts (optional): { levelFn(item) -> 'ok'|'warn'|'bad', summaryFn(items) -> string }
+function renderVdomWidget(byVdom, colorMap, widgetId, headers, rowsFn, filterFn, emptyMsg, filterPlaceholder, opts = {}) {
   const widget = document.getElementById(widgetId);
   if (!widget) return;
 
@@ -654,6 +695,9 @@ function renderVdomWidget(byVdom, colorMap, widgetId, headers, rowsFn, filterFn,
   let filter = '';
   let page   = 1;
   let size   = 25;
+  let problemsOnly = false;
+  const levelFn = opts.levelFn;
+  const LEVEL_RANK = { bad: 0, warn: 1, ok: 2 };
 
   function vdomTabColor(name) {
     if (name === 'root') return { bg: '#222', border: '#222', text: '#fff' };
@@ -661,7 +705,11 @@ function renderVdomWidget(byVdom, colorMap, widgetId, headers, rowsFn, filterFn,
   }
 
   function filtered() {
-    const items = byVdom[activeVdom] || [];
+    let items = byVdom[activeVdom] || [];
+    if (levelFn) {
+      if (problemsOnly) items = items.filter(i => levelFn(i) !== 'ok');
+      items = items.slice().sort((a, b) => LEVEL_RANK[levelFn(a)] - LEVEL_RANK[levelFn(b)]);
+    }
     if (!filter) return items;
     const q = filter.toLowerCase();
     return items.filter(item => filterFn(item, q));
@@ -689,7 +737,11 @@ function renderVdomWidget(byVdom, colorMap, widgetId, headers, rowsFn, filterFn,
     }).join('');
 
     const ths = headers.map(h => `<th>${escHtml(h)}</th>`).join('');
-    const trs = slice.map(item => `<tr>${rowsFn(item).join('')}</tr>`).join('');
+    const trs = slice.map(item => {
+      const lvl = levelFn ? levelFn(item) : 'ok';
+      const cls = lvl === 'bad' ? ' class="nbr-row-bad"' : lvl === 'warn' ? ' class="nbr-row-warn"' : '';
+      return `<tr${cls}>${rowsFn(item).join('')}</tr>`;
+    }).join('');
     const table = slice.length
       ? `<table class="sub-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`
       : `<p class="empty-state">No entries match.</p>`;
@@ -709,8 +761,10 @@ function renderVdomWidget(byVdom, colorMap, widgetId, headers, rowsFn, filterFn,
 
     widget.innerHTML = `
 <div style="margin-bottom:6px">${tabs}</div>
+${opts.summaryFn ? `<div class="nbr-summary">${escHtml(opts.summaryFn(byVdom[activeVdom] || []))}</div>` : ''}
 <div class="route-controls">
   <input type="text" class="form-control vw-filter-input" placeholder="${escHtml(filterPlaceholder)}" value="${escHtml(filter)}" />
+  ${levelFn ? `<label style="font-size:.8rem;white-space:nowrap"><input type="checkbox" class="vw-problems-input" ${problemsOnly ? 'checked' : ''} /> Problems only</label>` : ''}
   <select class="form-select-sm vw-size-select">
     <option value="25"  ${size === 25  ? 'selected' : ''}>25</option>
     <option value="50"  ${size === 50  ? 'selected' : ''}>50</option>
@@ -725,10 +779,13 @@ ${pgHtml ? `<div class="pagination">${pgHtml}</div>` : ''}`;
       btn.addEventListener('click', function () {
         activeVdom = this.dataset.vdom;
         filter = '';
+        problemsOnly = false;
         page   = 1;
         draw();
       });
     });
+    const pi = widget.querySelector('.vw-problems-input');
+    if (pi) pi.addEventListener('change', function () { problemsOnly = this.checked; page = 1; draw(); });
     widget.querySelector('.vw-filter-input').addEventListener('input', function () {
       filter = this.value; page = 1; draw();
       const el = widget.querySelector('.vw-filter-input');
@@ -755,13 +812,21 @@ function renderBgpNeighWidget(byVdom, colorMap) {
       `<td>${escHtml(b.neighbor_ip || b.neighborip || '')}</td>`,
       `<td>${escHtml(b.local_ip || '')}</td>`,
       `<td>${escHtml(String(b.remote_as || b.remoteas || ''))}</td>`,
-      `<td>${escHtml(b.state || '')}</td>`,
+      `<td>${stateBadgeHtml(b.state, classifyBgpState(b.state))}</td>`,
       `<td>${escHtml(b.type || '')}</td>`,
     ],
     (b, q) => (b.neighbor_ip||'').includes(q) || (b.local_ip||'').includes(q) ||
               String(b.remote_as||'').includes(q) || (b.state||'').toLowerCase().includes(q),
     'No BGP neighbors.',
-    'Filter by neighbor, AS, state…'
+    'Filter by neighbor, AS, state…',
+    {
+      levelFn: b => classifyBgpState(b.state),
+      summaryFn: items => {
+        const up = items.filter(b => classifyBgpState(b.state) === 'ok').length;
+        const down = items.length - up;
+        return `${up} of ${items.length} Established` + (down ? ` · ${down} down` : '');
+      },
+    }
   );
 }
 
@@ -795,12 +860,22 @@ function renderOspfWidget(byVdom, colorMap) {
     o => [
       `<td>${escHtml(o.router_id || o.neighbor_id || '')}</td>`,
       `<td>${escHtml(o.neighbor_ip || '')}</td>`,
-      `<td>${escHtml(o.state || '')}</td>`,
+      `<td>${stateBadgeHtml(o.state, classifyOspfState(o.state))}</td>`,
       `<td>${escHtml(String(o.priority ?? ''))}</td>`,
     ],
     (o, q) => (o.router_id||'').includes(q) || (o.neighbor_ip||'').includes(q) || (o.state||'').toLowerCase().includes(q),
     'No OSPF neighbors.',
-    'Filter by router ID, neighbor, state…'
+    'Filter by router ID, neighbor, state…',
+    {
+      levelFn: o => classifyOspfState(o.state),
+      summaryFn: items => {
+        const n = lvl => items.filter(o => classifyOspfState(o.state) === lvl).length;
+        const parts = [`${n('ok')} of ${items.length} Full`];
+        if (n('warn')) parts.push(`${n('warn')} 2-Way`);
+        if (n('bad')) parts.push(`${n('bad')} down`);
+        return parts.join(' · ');
+      },
+    }
   );
 }
 
@@ -858,6 +933,11 @@ function loadDeviceDetail(adom, deviceName) {
     renderBgpNeighWidget(data.bgp_by_vdom       || {}, vdomColorMap);
     renderBgpPathsWidget(data.bgp_paths_by_vdom || {}, vdomColorMap);
     renderOspfWidget(data.ospf_by_vdom          || {}, vdomColorMap);
+
+    initDetailTabs(document.getElementById('modalBody'));
+    setRoutingBadge(
+      neighborProblemCount(data.bgp_by_vdom  || {}, b => classifyBgpState(b.state)) +
+      neighborProblemCount(data.ospf_by_vdom || {}, o => classifyOspfState(o.state)));
   });
 
   es.addEventListener('error', e => {

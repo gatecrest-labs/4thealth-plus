@@ -389,3 +389,187 @@ def test_config_delta_job_calls_alert_evaluator(jobs_path):
          patch("app.package_change_alerts.evaluate_alerts") as ev:
         sched._execute_job(job["id"])
     ev.assert_called_once_with("TEST", results)
+
+def _mk_results(n):
+    return [
+        {
+            "device": f"FW{i}",
+            "ip": f"10.0.0.{i % 250}",
+            "status": "no_changes",
+            "pkg_status": "nochange",
+            "summary": {},
+            "vdoms": [],
+            "raw": "",
+            "error": None,
+        }
+        for i in range(n)
+    ]
+
+
+def _batch_job(sched, batch_size=None):
+    data = {
+        "adom": "TEST",
+        "days_of_week": ["MON"],
+        "time": "06:00",
+        "format": "json",
+        "email": "x@x.com",
+        "enabled": False,
+    }
+    if batch_size is not None:
+        data["batch_size"] = batch_size
+    return sched.create_job(data)
+
+
+def _run_with(sched, job, results):
+    with (
+        patch(
+            "app.routes.pending_changes_routes.bulk_preview_adom", return_value=results
+        ),
+        patch("app.smtp_client.send_email") as send,
+        patch("app.package_change_alerts.evaluate_alerts"),
+    ):
+        sched._execute_job(job["id"])
+    return send
+
+
+def test_batch_size_defaults_and_validates(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    assert _batch_job(sched)["batch_size"] == 100
+    for bad in (0, 501, "abc"):
+        with pytest.raises(ValueError):
+            _batch_job(sched, bad)
+
+
+def test_small_adom_sends_single_unsplit_email(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    send = _run_with(sched, job, _mk_results(73))
+    assert send.call_count == 1
+    subject, _body, atts = send.call_args.args[1:4]
+    assert "Part" not in subject
+    assert "part" not in atts[0]["filename"]
+    assert sched.get_all_jobs()[0]["runs"][0]["emails_sent"] == 1
+
+
+def test_large_adom_splits_into_parts(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    send = _run_with(sched, job, _mk_results(250))
+    assert send.call_count == 3
+    calls = [c.args for c in send.call_args_list]
+    # Part 1: plain subject + full summary listing every device
+    assert "Part" not in calls[0][1]
+    assert "FW249" in calls[0][2]
+    assert "part1of3" in calls[0][3][0]["filename"]
+    # Later parts: tagged subject, short body, own attachment
+    assert calls[1][1].startswith("[Part 2 of 3]")
+    assert calls[2][1].startswith("[Part 3 of 3]")
+    assert "part3of3" in calls[2][3][0]["filename"]
+    # Every device appears in exactly one attachment
+    seen = []
+    for c in calls:
+        seen += [r["device"] for r in json.loads(c[3][0]["data"])["results"]]
+    assert sorted(seen) == sorted(f"FW{i}" for i in range(250))
+    assert sched.get_all_jobs()[0]["runs"][0]["emails_sent"] == 3
+
+
+def test_failed_part_records_error(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    with (
+        patch(
+            "app.routes.pending_changes_routes.bulk_preview_adom",
+            return_value=_mk_results(250),
+        ),
+        patch(
+            "app.smtp_client.send_email",
+            side_effect=[None, RuntimeError("550 too big")],
+        ),
+        patch("app.package_change_alerts.evaluate_alerts"),
+    ):
+        sched._execute_job(job["id"])
+    run = sched.get_all_jobs()[0]["runs"][0]
+    assert run["status"] == "error"
+    assert "550 too big" in run["error"]
+
+def test_running_record_visible_during_run_then_updated_in_place(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    seen = {}
+
+    def fake_bulk(adom, max_workers=1):
+        runs = sched.get_all_jobs()[0]["runs"]
+        seen["runs"] = [dict(r) for r in runs]
+        return _mk_results(3)
+
+    with (
+        patch(
+            "app.routes.pending_changes_routes.bulk_preview_adom", side_effect=fake_bulk
+        ),
+        patch("app.smtp_client.send_email"),
+        patch("app.package_change_alerts.evaluate_alerts"),
+    ):
+        sched._execute_job(job["id"])
+
+    # While the fetch was in flight a 'running' record with started_at existed
+    assert len(seen["runs"]) == 1
+    assert seen["runs"][0]["status"] == "running"
+    assert seen["runs"][0]["started_at"]
+    # After completion: still ONE record, same run_id, now ok with counts
+    runs = sched.get_all_jobs()[0]["runs"]
+    assert len(runs) == 1
+    assert runs[0]["run_id"] == seen["runs"][0]["run_id"]
+    assert runs[0]["status"] == "ok"
+    assert runs[0]["started_at"] == seen["runs"][0]["started_at"]
+    assert runs[0]["devices_total"] == 3
+
+
+def test_failure_updates_running_record_to_error(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    with (
+        patch(
+            "app.routes.pending_changes_routes.bulk_preview_adom",
+            side_effect=RuntimeError("fmg down"),
+        ),
+        patch("app.smtp_client.send_email"),
+    ):
+        sched._execute_job(job["id"])
+    runs = sched.get_all_jobs()[0]["runs"]
+    assert len(runs) == 1
+    assert runs[0]["status"] == "error"
+    assert "fmg down" in runs[0]["error"]
+    assert runs[0]["started_at"]
+
+
+def test_startup_marks_dead_running_record_interrupted(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    sched._start_run(job["id"])  # simulates a run whose process died
+    sched._mark_interrupted_runs()
+    run = sched.get_all_jobs()[0]["runs"][0]
+    assert run["status"] == "interrupted"
+    assert "interrupted" in run["error"].lower()
+
+
+def test_startup_leaves_genuinely_running_record_alone(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    sched._start_run(job["id"])
+    held = sched._try_acquire_job_lock(job["id"])  # another worker owns the job
+    try:
+        sched._mark_interrupted_runs()
+    finally:
+        import fcntl
+
+        fcntl.flock(held, fcntl.LOCK_UN)
+        held.close()
+    assert sched.get_all_jobs()[0]["runs"][0]["status"] == "running"
